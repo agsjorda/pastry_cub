@@ -8,7 +8,7 @@
  * - Get overlay texture keys
  */
 
-import { MULTIPLIER_VALUES } from './constants';
+import { MULTIPLIER_VALUES } from '../../../config/GameConfig';
 
 /**
  * Static utility class for multiplier symbol operations

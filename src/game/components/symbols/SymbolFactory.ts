@@ -12,7 +12,7 @@ import type { SymbolObject } from './types';
 import { SymbolAnimations } from './SymbolAnimations';
 import { MultiplierSymbols } from './MultiplierSymbols';
 import type { SymbolOverlay } from './SymbolOverlay';
-import { MULTIPLIER_VISUAL_SCALE } from './constants';
+import { SYMBOL_MULTIPLIER_VISUAL_SCALE } from '../../../config/GameConfig';
 import { gameStateManager } from '../../../managers/GameStateManager';
 
 /**
@@ -278,7 +278,7 @@ export class SymbolFactory {
         const baseX = (spineObj as any)?.scaleX ?? 1;
         const baseY = (spineObj as any)?.scaleY ?? 1;
         if (typeof spineObj.setScale === 'function') {
-          spineObj.setScale(baseX * MULTIPLIER_VISUAL_SCALE, baseY * MULTIPLIER_VISUAL_SCALE);
+          spineObj.setScale(baseX * SYMBOL_MULTIPLIER_VISUAL_SCALE, baseY * SYMBOL_MULTIPLIER_VISUAL_SCALE);
         }
       } catch { /* ignore */ }
       

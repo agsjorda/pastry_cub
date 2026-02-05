@@ -11,13 +11,13 @@
 import type { Game } from '../../scenes/Game';
 import type { SymbolObject, SpineTrackEntry } from './types';
 import { gameStateManager } from '../../../managers/GameStateManager';
-import { 
-  SPINE_SYMBOL_SCALES, 
-  DEFAULT_SPINE_SCALE, 
+import {
+  SPINE_SYMBOL_SCALES,
+  DEFAULT_SPINE_SCALE,
   SPINE_SCALE_ADJUSTMENT,
   SCALE_UP_DELAY_MS,
-  MULTIPLIER_VISUAL_SCALE,
-} from './constants';
+  SYMBOL_MULTIPLIER_VISUAL_SCALE,
+} from '../../../config/GameConfig';
 import { MultiplierSymbols } from './MultiplierSymbols';
 
 /**
@@ -309,7 +309,7 @@ export class SymbolAnimations {
   /**
    * Schedule a scale-up effect after a delay
    */
-  public scheduleScaleUp(obj: any, delayMs: number = SCALE_UP_DELAY_MS, scaleFactor: number = MULTIPLIER_VISUAL_SCALE): void {
+  public scheduleScaleUp(obj: any, delayMs: number = SCALE_UP_DELAY_MS, scaleFactor: number = SYMBOL_MULTIPLIER_VISUAL_SCALE): void {
     try {
       const baseX = obj?.scaleX ?? 1;
       const baseY = obj?.scaleY ?? 1;

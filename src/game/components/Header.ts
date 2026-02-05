@@ -1,7 +1,6 @@
 import { Scene } from "phaser";
 import { NetworkManager } from "../../managers/NetworkManager";
 import { ScreenModeManager } from "../../managers/ScreenModeManager";
-import { Data } from "../../tmp_backend/Data";
 import { gameEventManager, GameEventType } from '../../event/EventManager';
 import { gameStateManager } from '../../managers/GameStateManager';
 import { PaylineData } from '../../backend/SpinData';

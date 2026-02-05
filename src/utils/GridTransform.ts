@@ -1,13 +1,40 @@
+import { SLOT_COLUMNS, SLOT_ROWS } from '../config/GameConfig';
+
 /**
  * Grid Transformation Utilities
  * Handles conversions between row-major and column-major grid representations
- * 
+ *
  * Grid Orientation Notes:
  * - Row-major: [row][col] - Used by tumble logic and backend SpinData
  * - Column-major: [col][row] - Used by rendering/display
  * - SpinData area uses bottom->top ordering (row 0 = bottom)
  * - Display uses top->bottom ordering (row 0 = top)
  */
+
+/** Default symbol used when padding area to game config size */
+const PAD_SYMBOL = 1;
+
+/**
+ * Normalize slot.area to the grid size defined in GameConfig (SLOT_COLUMNS x SLOT_ROWS).
+ * Pads with PAD_SYMBOL if smaller, crops if larger. Ensures the grid never changes size.
+ * @param area slot.area in [column][row] format (may be any size)
+ * @returns area of size SLOT_COLUMNS x SLOT_ROWS
+ */
+export function normalizeAreaToGameConfig(area: number[][] | undefined): number[][] {
+  const cols = SLOT_COLUMNS;
+  const rows = SLOT_ROWS;
+  const result: number[][] = [];
+
+  for (let c = 0; c < cols; c++) {
+    const col: number[] = [];
+    const srcCol = Array.isArray(area) && area[c] ? area[c] : [];
+    for (let r = 0; r < rows; r++) {
+      col[r] = typeof srcCol[r] === 'number' ? srcCol[r] : PAD_SYMBOL;
+    }
+    result.push(col);
+  }
+  return result;
+}
 
 /**
  * Convert row-major grid to column-major grid

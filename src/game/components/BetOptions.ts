@@ -52,7 +52,7 @@ export class BetOptions {
 		
 		// Create main container
 		this.container = scene.add.container(0, 0);
-		this.container.setDepth(2000); // Very high depth to appear above everything including winlines and symbols
+		this.container.setDepth(2000); // Very high depth to appear above everything including win animations and symbols
 		
 		// Create background
 		this.createBackground(scene);

@@ -18,16 +18,18 @@ import type {
   SymbolIteratorCallback
 } from './types';
 import {
-  SYMBOL_DISPLAY_WIDTH,
-  SYMBOL_DISPLAY_HEIGHT,
-  SYMBOL_HORIZONTAL_SPACING,
-  SYMBOL_VERTICAL_SPACING,
+  SLOT_ROWS,
+  SLOT_COLUMNS,
+  SYMBOL_CONFIG,
+  GRID_CENTER_X_RATIO,
+  GRID_CENTER_X_OFFSET_PX,
+  GRID_CENTER_Y_RATIO,
+  GRID_CENTER_Y_OFFSET_PX,
   GRID_MASK_PADDING,
   GRID_MASK_GRADIENT_FADE_HEIGHT,
   GRID_OVERLAY_PADDING,
   DEPTH_SYMBOL_DEFAULT,
-} from './constants';
-import { SLOT_ROWS, SLOT_COLUMNS } from '../../../config/GameConfig';
+} from '../../../config/GameConfig';
 
 /**
  * Manages the symbol grid for the slot game
@@ -49,10 +51,10 @@ export class SymbolGrid {
   public container!: Phaser.GameObjects.Container;
   
   /** Grid dimensions */
-  public displayWidth: number = SYMBOL_DISPLAY_WIDTH * 0.9;
-  public displayHeight: number = SYMBOL_DISPLAY_HEIGHT * 0.9;
-  public horizontalSpacing: number = SYMBOL_HORIZONTAL_SPACING;
-  public verticalSpacing: number = SYMBOL_VERTICAL_SPACING;
+  public displayWidth: number = SYMBOL_CONFIG.DISPLAY_WIDTH * 0.9;
+  public displayHeight: number = SYMBOL_CONFIG.DISPLAY_HEIGHT * 0.9;
+  public horizontalSpacing: number = SYMBOL_CONFIG.HORIZONTAL_SPACING;
+  public verticalSpacing: number = SYMBOL_CONFIG.VERTICAL_SPACING;
   
   /** Slot center position */
   public slotX: number = 0;
@@ -76,8 +78,8 @@ export class SymbolGrid {
    * Initialize grid variables and calculate dimensions
    */
   private initializeVariables(): void {
-    const centerX = this.scene.scale.width * 0.5 - 5;
-    const centerY = this.scene.scale.height * 0.56; // Move grid higher
+    const centerX = this.scene.scale.width * GRID_CENTER_X_RATIO + GRID_CENTER_X_OFFSET_PX;
+    const centerY = this.scene.scale.height * GRID_CENTER_Y_RATIO + GRID_CENTER_Y_OFFSET_PX;
 
     this.symbols = [];
     this.newSymbols = [];

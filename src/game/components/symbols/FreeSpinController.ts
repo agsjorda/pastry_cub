@@ -32,7 +32,7 @@ export class FreeSpinController {
   private waitingForReelsStop: boolean = false;
   
   /** Waiting for win lines to complete before continuing */
-  private waitingForWinlines: boolean = false;
+  private waitingForWinAnimation: boolean = false;
   
   /** Whether free spin autoplay has been triggered (prevents duplicates) */
   private hasTriggered: boolean = false;
@@ -162,7 +162,7 @@ export class FreeSpinController {
     
     // Listen for win stop to schedule next spin
     gameEventManager.on(GameEventType.WIN_STOP, () => {
-      if (this._isActive && this.waitingForWinlines) {
+      if (this._isActive && this.waitingForWinAnimation) {
         this.handleWinStop();
       }
     });
@@ -358,7 +358,7 @@ export class FreeSpinController {
   private continueAutoplay(): void {
     console.log(`[FreeSpinController] Continuing - ${this.spinsRemaining} spins remaining`);
     console.log('[FreeSpinController] Waiting for WIN_STOP');
-    this.waitingForWinlines = true;
+    this.waitingForWinAnimation = true;
   }
 
   /**
@@ -367,11 +367,11 @@ export class FreeSpinController {
   private handleWinStop(): void {
     console.log('[FreeSpinController] WIN_STOP received');
 
-    if (!this.waitingForWinlines) {
+    if (!this.waitingForWinAnimation) {
       return;
     }
 
-    this.waitingForWinlines = false;
+    this.waitingForWinAnimation = false;
 
     // If a scatter or Symbol0 retrigger is pending, wait for the retrigger dialog to finish
     // before scheduling the next spin.
@@ -550,7 +550,7 @@ export class FreeSpinController {
     this._isActive = false;
     this.spinsRemaining = 0;
     this.waitingForReelsStop = false;
-    this.waitingForWinlines = false;
+    this.waitingForWinAnimation = false;
     this.hasTriggered = false;
     this.awaitingReelsStart = false;
     this.dialogListenerSetup = false;
@@ -580,7 +580,7 @@ export class FreeSpinController {
       this.scene.gameData.isAutoPlaying = false;
     }
     
-    // Restore winline timing
+    // Restore win animation timing
     if (this.callbacks.onSetTurboMode) {
       this.callbacks.onSetTurboMode(false);
     }
@@ -706,7 +706,7 @@ export class FreeSpinController {
     this._isActive = false;
     this.spinsRemaining = 0;
     this.waitingForReelsStop = false;
-    this.waitingForWinlines = false;
+    this.waitingForWinAnimation = false;
     this.hasTriggered = false;
     this.awaitingReelsStart = false;
     this.dialogListenerSetup = false;

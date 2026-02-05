@@ -93,7 +93,8 @@ export class AssetConfig {
 
 		return {
 			images: {
-				'loading_background': `${prefix}/background/LoadingScreen_BZ.png`,
+				'loading_background': `${prefix}/background/LoadingScreen.png`,
+				'header_logo': `${prefix}/background/HeaderLogo.png`,
 				'button_bg': `${prefix}/loading/button_bg.png`,
 				'button_spin': `${prefix}/loading/button_spin.png`,
 				'logo_loading': `${prefix}/loading/logo-loading.png`,
@@ -128,7 +129,7 @@ export class AssetConfig {
 	// Add more asset groups as needed
 	getSymbolAssets(): AssetGroup {
 		const prefix = this.getAssetPrefix(); // This gives us assets/{orientation}/{quality}
-		const suffix = 'BZ'
+		const suffix = 'PC'
 		console.log(`[AssetConfig] Loading symbol assets from: ${prefix}/symbols/`);
 
 		// Generate symbol assets for all symbols (0-10)

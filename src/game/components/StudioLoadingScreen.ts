@@ -1,5 +1,4 @@
 import { Scene } from 'phaser';
-import { ensureSpineLoader } from '../../utils/SpineGuard';
 import { AssetLoader } from '../../utils/AssetLoader';
 
 export interface StudioLoadingScreenOptions {
@@ -27,7 +26,6 @@ export class StudioLoadingScreen {
     private scene: Scene;
     private container: Phaser.GameObjects.Container;
     private shownAtMs: number = 0;
-    private spine?: any;
     private bg?: Phaser.GameObjects.Rectangle;
     private loadingFrame?: Phaser.GameObjects.Image;
     private text?: Phaser.GameObjects.Text;
@@ -253,59 +251,12 @@ export class StudioLoadingScreen {
 
             // Time display disabled in this game (no TimeUtils helper available)
 
-            // Spine animation (DI JOKER)
-            const hasSpine = ensureSpineLoader(this.scene, '[StudioLoadingScreen] show');
-            if (hasSpine) {
-                const cx = this.scene.scale.width * 0.35;
-                const cy = this.scene.scale.height * 0.48;
-                const spine = (this.scene.add as any).spine(cx, cy, 'di_joker', 'di_joker-atlas');
-                spine.setOrigin(0.5, 0.5);
-
-                // Auto scale to fit comfortably
-                const desiredHeight = this.scene.scale.height * 0.4;
-                const spineH = (spine as any).height || 800;
-                const scale = desiredHeight / spineH;
-                spine.setScale(0.09);
-                this.container.add(spine);
-                this.spine = spine;
-
-                try { (spine as any).animationState?.setAnimation(0, 'animation', true); } catch {}
-                
-                // Add DiJoker logo next to the spine
-                if (this.scene.textures.exists('dijoker_logo')) {
-                    const logo = this.scene.add.image(
-                        cx + this.scene.scale.width * 0.27, // Position to the right of the spine
-                        cy,
-                        'dijoker_logo'
-                    );
-                    
-                    // Scale the logo appropriately (adjust scale factor as needed)
-                    const logoScale = 1; // Adjust this value to make the logo larger or smaller
-                    logo.setScale(logoScale);
-                    
-                    // Center the logo vertically with the spine
-                    logo.setOrigin(0.5, 0.5);
-                    
-                    // Add to the same container as the spine for proper layering
-                    this.container.add(logo);
-                } else {
-                    console.warn('DiJoker logo texture not found');
-                }
-            }
-
-            // Progress bar (similar to Preloader) – positioned just below the spine
+            // Progress bar – positioned in lower area
             const assetScale = 1; // static scale for studio screen
             const barWidth = this.scene.scale.width * 0.5;
             const barHeight = Math.max(13, 13 * assetScale);
             const barX = this.scene.scale.width * 0.5;
-            let barY = this.scene.scale.height * 0.8;
-            if (this.spine) {
-                const cy = this.scene.scale.height * 0.5;
-                const spineH = ((this.spine as any).height || 800) as number;
-                const appliedScaleY = (this.spine.scaleY ?? this.spine.scale ?? 1) as number;
-                const displayH = spineH * appliedScaleY;
-                barY = cy + displayH * 0.5 + Math.max(20, 24 * assetScale);
-            }
+            const barY = this.scene.scale.height * 0.8;
 
             // Store progress bar properties for animation updates
             this.progressBarX = barX;
@@ -364,7 +315,7 @@ export class StudioLoadingScreen {
                 this.fadeOutAndDestroy(3000, 500);
             });
         } catch (e) {
-            console.warn('[StudioLoadingScreen] Failed to display spine:', e);
+            console.warn('[StudioLoadingScreen] Failed to display loading screen:', e);
         }
     }
 
@@ -387,14 +338,6 @@ export class StudioLoadingScreen {
                 if (this.timeUpdateTimer) {
                     this.timeUpdateTimer.destroy();
                     this.timeUpdateTimer = undefined;
-                }
-            } catch {}
-
-            // First disable/stop spine animations
-            try {
-                if (this.spine) {
-                    this.spine.animationState?.clearTracks();
-                    this.spine.setVisible(false);
                 }
             } catch {}
 

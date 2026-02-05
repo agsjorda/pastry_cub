@@ -1,5 +1,5 @@
 import { Scene } from 'phaser';
-import { RadialDimmerTransition } from '../components/RadialDimmerTransition';
+import { RadialDimmerTransition } from '../game/components/RadialDimmerTransition';
 
 export function playRadialDimmerTransition(scene: Scene, onComplete: () => void) {
     const dimmer = new RadialDimmerTransition(scene);
