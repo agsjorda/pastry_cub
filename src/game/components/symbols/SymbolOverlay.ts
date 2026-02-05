@@ -16,7 +16,7 @@ import {
   DEPTH_RETRIGGER_SYMBOL,
   OVERLAY_FADE_IN_DURATION_MS,
   OVERLAY_FADE_OUT_DURATION_MS,
-} from './constants';
+} from '../../../config/GameConfig';
 import { MultiplierSymbols } from './MultiplierSymbols';
 import { CurrencyManager } from '../CurrencyManager';
 

@@ -18,8 +18,6 @@ import { SlotController } from '../components/controller/SlotController';
 import { NetworkManager } from '../../managers/NetworkManager';
 import { ScreenModeManager } from '../../managers/ScreenModeManager';
 import { AssetConfig } from '../../config/AssetConfig';
-import { PaylineData } from '../../backend/SpinData';
-import { AssetLoader } from '../../utils/AssetLoader';
 import { Symbols } from '../components/symbols/index';
 import { GameData } from '../components/GameData';
 import { BonusBackground } from '../components/BonusBackground';
@@ -29,16 +27,24 @@ import { BetOptions } from '../components/BetOptions';
 import { AutoplayOptions } from '../components/AutoplayOptions';
 import { gameEventManager, GameEventType } from '../../event/EventManager';
 import { gameStateManager } from '../../managers/GameStateManager';
-import { SymbolExplosionTransition } from '../components/SymbolExplosionTransition';
 import { GameAPI } from '../../backend/GameAPI';
-import { SpinData } from '../../backend/SpinData';
-import { AudioManager, MusicType, SoundEffectType } from '../../managers/AudioManager';
+import { AudioManager, MusicType } from '../../managers/AudioManager';
 import { Menu } from '../components/Menu';
 import { FullScreenManager } from '../../managers/FullScreenManager';
 import { ScatterAnticipation } from '../components/ScatterAnticipation';
 import { ClockDisplay } from '../components/ClockDisplay';
 import WinTracker from '../components/WinTracker';
-import { WIN_THRESHOLDS } from '../../config/GameConfig';
+import {
+	WIN_THRESHOLDS,
+	CLOCK_DISPLAY_NAME,
+	GAME_DISPLAY_NAME,
+	CLOCK_DISPLAY_CONFIG,
+	WIN_TRACKER_LAYOUT,
+	GAME_SCENE_PHYSICS_BOTTOM_OFFSET,
+	GAME_SCENE_FADE_IN_DURATION_MS,
+	GAME_SCENE_CHARACTER_1,
+	GAME_SCENE_CHARACTER_2,
+} from '../../config/GameConfig';
 import { FreeRoundManager } from '../components/FreeRoundManager';
 import { ensureSpineFactory } from '../../utils/SpineGuard';
 import { Character } from '../components/Character';
@@ -51,15 +57,12 @@ export class Game extends Scene {
 	private background!: Background;
 	private header!: Header;
 	private slotController!: SlotController;
-	private assetConfig!: AssetConfig;
-	private assetLoader!: AssetLoader;
 
 	private bonusBackground!: BonusBackground;
 	private bonusHeader!: BonusHeader;
 	private dialogs!: Dialogs;
 	private betOptions!: BetOptions;
 	private autoplayOptions!: AutoplayOptions;
-	private candyTransition!: SymbolExplosionTransition;
 	public gameAPI!: GameAPI;
 	public audioManager!: AudioManager;
 	private menu: Menu;
@@ -86,10 +89,36 @@ export class Game extends Scene {
 		this.scatterAnticipation = new ScatterAnticipation();
 	}
 
+	/** Create Character1 and Character2 using GAME_SCENE_CHARACTER_* config */
+	private createCharacters(): void {
+		const c1 = GAME_SCENE_CHARACTER_1;
+		const c2 = GAME_SCENE_CHARACTER_2;
+		this.character1 = new Character(this, {
+			x: this.scale.width * c1.X_RATIO,
+			y: this.scale.height * c1.Y_RATIO,
+			scale: c1.SCALE,
+			depth: c1.DEPTH,
+			characterKey: 'character1',
+			animation: 'character1_BZ_idle',
+			loop: true,
+		});
+		this.character1.create();
+		this.character2 = new Character(this, {
+			x: this.scale.width * c2.X_RATIO,
+			y: this.scale.height * c2.Y_RATIO,
+			scale: c2.SCALE,
+			depth: c2.DEPTH,
+			characterKey: 'character2',
+			animation: 'character2_BZ_idle',
+			loop: true,
+		});
+		this.character2.create();
+	}
+
 	private handleResize(): void {
 		try {
 			if (this.physics && this.physics.world) {
-				this.physics.world.setBounds(0, 0, this.scale.width, this.scale.height - 220);
+				this.physics.world.setBounds(0, 0, this.scale.width, this.scale.height - GAME_SCENE_PHYSICS_BOTTOM_OFFSET);
 			}
 		} catch { }
 
@@ -97,10 +126,10 @@ export class Game extends Scene {
 		try { this.bonusBackground?.resize(this); } catch { }
 		try {
 			if (this.character1) {
-				this.character1.setPosition(this.scale.width * 0.42, this.scale.height * 0.27);
+				this.character1.setPosition(this.scale.width * GAME_SCENE_CHARACTER_1.X_RATIO, this.scale.height * GAME_SCENE_CHARACTER_1.Y_RATIO);
 			}
 			if (this.character2) {
-				this.character2.setPosition(this.scale.width * 0.65, this.scale.height * 0.24);
+				this.character2.setPosition(this.scale.width * GAME_SCENE_CHARACTER_2.X_RATIO, this.scale.height * GAME_SCENE_CHARACTER_2.Y_RATIO);
 			}
 		} catch { }
 		try { this.header?.resize(this); } catch { }
@@ -126,11 +155,7 @@ export class Game extends Scene {
 		this.gameStateManager = gameStateManager;
 		console.log(`[Game] Initial isBonus state: ${this.gameStateManager.isBonus}`);
 
-		// Initialize asset configuration
-		this.assetConfig = new AssetConfig(this.networkManager, this.screenModeManager);
-
-		// Initialize GameAPI
-		// Prefer the instance passed from Preloader so we can reuse initialization data.
+		// Prefer the GameAPI instance passed from Preloader so we reuse initialization data
 		if (data.gameAPI) {
 			console.log('[Game] Using GameAPI instance from Preloader');
 			this.gameAPI = data.gameAPI as GameAPI;
@@ -138,7 +163,6 @@ export class Game extends Scene {
 			console.log('[Game] No GameAPI instance passed from Preloader, creating a new one');
 			this.gameAPI = new GameAPI(this.gameData);
 		}
-		this.assetLoader = new AssetLoader(this.assetConfig);
 
 		console.log(`[Game] Received managers from Preloader`);
 	}
@@ -159,6 +183,12 @@ export class Game extends Scene {
 		return 1;
 	}
 
+	/** Base bet for payout table display (excludes amplify multiplier so payouts stay consistent) */
+	public getBaseBetAmount(): number {
+		const base = this.slotController?.getBaseBetAmount?.();
+		return typeof base === 'number' && base > 0 ? base : 1;
+	}
+
 	preload() {
 		// Assets are now loaded in Preloader scene
 		console.log(`[Game] Assets already loaded in Preloader scene`);
@@ -174,9 +204,8 @@ export class Game extends Scene {
 		// before any components try to call `scene.add.spine(...)`.
 		try { ensureSpineFactory(this, '[Game] create'); } catch { }
 
-		// Set physics world bounds (physics is already enabled globally)
 		if (this.physics && this.physics.world) {
-			this.physics.world.setBounds(0, 0, this.scale.width, this.scale.height - 220);
+			this.physics.world.setBounds(0, 0, this.scale.width, this.scale.height - GAME_SCENE_PHYSICS_BOTTOM_OFFSET);
 			console.log('[Game] Physics world bounds set');
 		} else {
 			console.warn('[Game] Physics system not available');
@@ -198,62 +227,20 @@ export class Game extends Scene {
 		});
 
 		// Backend initialization removed - using SlotController autoplay system
-		// Create header using the managers
+		// Create header and background first
 		this.header = new Header(this.networkManager, this.screenModeManager);
 		this.header.create(this);
-
-		// Create background using the managers
 		this.background = new Background(this.networkManager, this.screenModeManager);
 		this.background.create(this);
 
-		// Create characters (positioned on left and right sides)
-		console.log('[Game] Creating Character1 and Character2...');
-		this.character1 = new Character(this, {
-			x: this.scale.width * 0.42,
-			y: this.scale.height * 0.27,
-			scale: 0.1,
-			depth: 100,
-			characterKey: 'character1',
-			animation: 'character1_BZ_idle',
-			loop: true
-		});
-		this.character1.create();
-
-		this.character2 = new Character(this, {
-			x: this.scale.width * 0.65,
-			y: this.scale.height * 0.24,
-			scale: 0.13,
-			depth: 100,
-			characterKey: 'character2',
-			animation: 'character2_BZ_idle',
-			loop: true
-		});
-		this.character2.create();
-		console.log('[Game] Characters created successfully');
-
-		// Create header using the managers
-		this.header = new Header(this.networkManager, this.screenModeManager);
-		this.header.create(this);
+		// Create characters (positioned on left and right)
+		this.createCharacters();
 
 		// Create persistent clock display (stays on screen)
-		// Clock on top-left, DiJoker on top-right
 		this.clockDisplay = new ClockDisplay(this, {
-			offsetX: 5,
-			offsetY: 5,
-			fontSize: 16,
-			fontFamily: 'poppins-regular',
-			color: '#FFFFFF',
-			alpha: 0.5,
-			depth: 30000,
-			scale: 0.7,
-			suffixText: ` | Beelze_Bop${this.gameAPI.getDemoState() ? ' | DEMO' : ''}`,
-			additionalText: 'DiJoker',
-			additionalTextOffsetX: 5,
-			additionalTextOffsetY: 0,
-			additionalTextScale: 0.7,
-			additionalTextColor: '#FFFFFF',
-			additionalTextFontSize: 16,
-			additionalTextFontFamily: 'poppins-regular'
+			...CLOCK_DISPLAY_CONFIG,
+			suffixText: ` | ${GAME_DISPLAY_NAME}${this.gameAPI.getDemoState() ? ' | DEMO' : ''}`,
+			additionalText: CLOCK_DISPLAY_NAME,
 		});
 		this.clockDisplay.create();
 
@@ -274,10 +261,7 @@ export class Game extends Scene {
 		// Create WinTracker (used to display per-symbol wins)
 		this.winTracker = new WinTracker();
 		this.winTracker.create(this);
-		// ADJUST HERE: WinTracker position and icon size
-		// offsetY: negative values move it UP, positive values move it DOWN (default: -45)
-		// iconScale: size of symbol icons (default: 0.3, current: 0.05)
-		this.winTracker.setLayout({ iconScale: 0.02, offsetY: -115 });
+		this.winTracker.setLayout(WIN_TRACKER_LAYOUT);
 		console.log(`[Game] Creating symbols...`);
 		this.symbols.create(this);
 
@@ -385,33 +369,6 @@ export class Game extends Scene {
 			console.warn('[Game] Failed to create FreeRoundManager from initialization data:', e);
 		}
 
-		// Create symbol explosion transition component and play at scene start (DISABLED for dimmer transition)
-		// this.candyTransition = new SymbolExplosionTransition(this);
-
-		// let allowedSymbols: number[] | undefined;
-		// try {
-		//     const grid: any = (this.symbols as any)?.currentSymbolData;
-		//     if (Array.isArray(grid)) {
-		//         const set = new Set<number>();
-		//         for (const col of grid) {
-		//             if (!Array.isArray(col)) continue;
-		//             for (const val of col) {
-		//                 const num = Number(val);
-		//                 if (!isNaN(num)) {
-		//                     set.add(num);
-		//                 }
-		//             }
-		//         }
-		//         if (set.size > 0) {
-		//             allowedSymbols = Array.from(set);
-		//         }
-		//     }
-		// } catch {
-		//     // If anything goes wrong, fall back to using all available symbol spines
-		// }
-
-		// this.candyTransition.play(undefined, { allowedSymbols });
-
 		// Create scatter anticipation component inside background container to avoid symbol mask and stay behind symbols
 		this.scatterAnticipation.create(this, this.background.getContainer());
 		this.scatterAnticipation.hide();
@@ -440,7 +397,7 @@ export class Game extends Scene {
 		this.tweens.add({
 			targets: fadeOverlay,
 			alpha: 0,
-			duration: 1000,
+			duration: GAME_SCENE_FADE_IN_DURATION_MS,
 			ease: 'Power2',
 			onComplete: () => {
 				console.log('[Game] Fade in from black complete');
@@ -448,39 +405,6 @@ export class Game extends Scene {
 				fadeOverlay.destroy();
 			}
 		});
-
-		// Trigger layered effects when game starts
-		console.log(`[Game] Triggering layered effects...`);
-
-
-		// Show congratulations dialog (on top)
-		//this.dialogs.showPaintEffect(this);
-
-		// Show congratulations dialog (on top)
-		//this.dialogs.showCongrats(this);
-
-		// Show congratulations dialog (on top)
-		//this.dialogs.showFreeSpinDialog(this);
-
-		// Show large win dialog (on top)
-		//this.dialogs.showLargeWin(this);
-
-		// Show medium win dialog (on top)
-		//this.dialogs.showMediumWin(this);
-
-		// Bet options will be shown when + or - buttons are clicked
-
-		// Show small win dialog (on top)
-		//this.dialogs.showSmallWin(this, { winAmount: 123456789.00 });
-
-		// Show medium win dialog (on top)
-		//this.dialogs.showMediumWin(this, { winAmount: 2500000.50 });
-
-		// Show large win dialog (on top)
-		//this.dialogs.showLargeWin(this, { winAmount: 5000000.75 });
-
-		// Show super win dialog (on top)
-		// this.dialogs.showSuperWin(this, { winAmount: 10000000.00 });
 
 		EventBus.on('spin', () => {
 			this.spin();
@@ -1122,17 +1046,24 @@ export class Game extends Scene {
 						const currentHeaderWin = this.header && typeof this.header.getCurrentWinnings === 'function'
 							? Number(this.header.getCurrentWinnings()) || 0
 							: 0;
+						const triggerSpinWin = this.getTriggerSpinWinForBonusStart();
 						if (this.bonusHeader) {
 							// Seed the bonus header with the current total shown on the main header
-							if (typeof (this.bonusHeader as any).seedCumulativeWin === 'function') {
-								(this.bonusHeader as any).seedCumulativeWin(currentHeaderWin);
-								console.log(`[Game] Seeded BonusHeader with current header winnings: $${currentHeaderWin}`);
+							if (typeof (this.bonusHeader as any).seedFromFirstFreeSpinItem === 'function') {
+								const spinData = this.gameAPI?.getCurrentSpinData?.() || (this.symbols as any)?.currentSpinData;
+								(this.bonusHeader as any).seedFromFirstFreeSpinItem(spinData);
+								console.log('[Game] Seeded BonusHeader from first free spin item');
+							} else if (typeof (this.bonusHeader as any).seedCumulativeWin === 'function') {
+								const seedWin = Math.max(0, Math.max(currentHeaderWin, triggerSpinWin));
+								(this.bonusHeader as any).seedCumulativeWin(seedWin);
+								console.log(`[Game] Seeded BonusHeader with base win: $${seedWin} (header=$${currentHeaderWin}, spinData=$${triggerSpinWin})`);
 
 								// In bonus mode we only show per-tumble "YOU WON" values in the bonus header.
 								// The seeded cumulative value is tracked internally; no immediate header UI update here.
 							} else if (typeof this.bonusHeader.updateWinningsDisplay === 'function') {
-								this.bonusHeader.updateWinningsDisplay(currentHeaderWin);
-								console.log(`[Game] Updated BonusHeader winnings to: $${currentHeaderWin}`);
+								const seedWin = Math.max(0, Math.max(currentHeaderWin, triggerSpinWin));
+								this.bonusHeader.updateWinningsDisplay(seedWin);
+								console.log(`[Game] Updated BonusHeader winnings to: $${seedWin}`);
 							}
 						}
 					} catch (e) {
@@ -1235,6 +1166,34 @@ export class Game extends Scene {
 				this.bonusHeader.getContainer().setVisible(true);
 				console.log('[Game] Bonus header shown');
 				console.log('[Game] Bonus header container visible:', this.bonusHeader.getContainer().visible);
+				// If we already have a cumulative total (e.g., buy feature trigger win), show it immediately.
+				// Fallback: if cumulative is still 0, seed once from header/spinData and show.
+				try {
+					const bonusHeaderAny: any = this.bonusHeader as any;
+					const currentTotal = typeof bonusHeaderAny.getCumulativeBonusWin === 'function'
+						? Number(bonusHeaderAny.getCumulativeBonusWin()) || 0
+						: 0;
+					if (currentTotal <= 0) {
+						const headerWin = this.header && typeof this.header.getCurrentWinnings === 'function'
+							? Number(this.header.getCurrentWinnings()) || 0
+							: 0;
+						const triggerWin = this.getTriggerSpinWinForBonusStart();
+						const spinData = this.gameAPI?.getCurrentSpinData?.() || (this.symbols as any)?.currentSpinData;
+						if (typeof bonusHeaderAny.seedFromFirstFreeSpinItem === 'function') {
+							bonusHeaderAny.seedFromFirstFreeSpinItem(spinData);
+							console.log('[Game] showBonusHeader fallback seed from first free spin item');
+						} else {
+							const seedWin = Math.max(0, Math.max(headerWin, triggerWin));
+							if (seedWin > 0 && typeof bonusHeaderAny.seedCumulativeWin === 'function') {
+								bonusHeaderAny.seedCumulativeWin(seedWin);
+								console.log(`[Game] showBonusHeader fallback seed: $${seedWin} (header=$${headerWin}, spinData=$${triggerWin})`);
+							}
+						}
+					}
+					if (typeof bonusHeaderAny.showCumulativeTotalIfReady === 'function') {
+						bonusHeaderAny.showCumulativeTotalIfReady();
+					}
+				} catch { }
 			} else {
 				console.error('[Game] BonusHeader is null!');
 			}
@@ -1367,6 +1326,35 @@ export class Game extends Scene {
 
 	}
 
+	private getTriggerSpinWinForBonusStart(): number {
+		try {
+			const spinData = this.gameAPI?.getCurrentSpinData?.() || (this.symbols as any)?.currentSpinData;
+			const slot: any = spinData?.slot;
+			if (!slot) return 0;
+
+			const explicitTotal = Number(slot.totalWin ?? spinData?.totalWin ?? 0);
+
+			let paylineWin = 0;
+			if (Array.isArray(slot.paylines)) {
+				for (const payline of slot.paylines) {
+					paylineWin += Number(payline?.win ?? 0) || 0;
+				}
+			}
+
+			let tumbleWin = 0;
+			if (Array.isArray(slot.tumbles)) {
+				for (const tumble of slot.tumbles) {
+					tumbleWin += Number(tumble?.win ?? 0) || 0;
+				}
+			}
+
+			const computed = paylineWin + tumbleWin;
+			return computed > 0 ? computed : explicitTotal;
+		} catch {
+			return 0;
+		}
+	}
+
 	changeScene() {
 		// Scene change logic if needed
 	}
@@ -1388,41 +1376,4 @@ export class Game extends Scene {
 		this.gameStateManager.toggleTurbo();
 	}
 
-	autoplay() {
-		// Autoplay logic handled by SlotController
-	}
-
-	info() {
-		console.log('Game Info');
-	}
-
-	betAdd() {
-		// Bet increase logic
-	}
-
-	betMinus() {
-		// Bet decrease logic
-	}
-
-	toggleSettings() {
-		// Settings toggle logic
-	}
-
-	setVolume(_level: number) {
-		// Volume setting logic
-	}
-
-	setSfx(_level: number) {
-		// SFX setting logic
-	}
-
-	update(time: number, delta: number) {
-		// Game state manager handles its own updates through event listeners
-	}
-
-	shutdown() {
-		this.events.once('shutdown', () => {
-			// Clean up any game-specific resources if needed
-		});
-	}
 }

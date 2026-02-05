@@ -28,6 +28,19 @@ export interface CellPosition {
   row: number;
 }
 
+/**
+ * Mock data shape used for symbol/tumble flow (replaces tmp_backend Data).
+ */
+export interface SpinMockData {
+  symbols: number[][];
+  balance?: number;
+  bet?: number;
+  freeSpins?: number;
+  delayBetweenSpins?: number;
+  scatterIndex?: number;
+  wins?: { allMatching?: Map<number, Array<{ x: number; y: number }>> };
+}
+
 // ============================================================================
 // SYMBOL TYPES
 // ============================================================================

@@ -1519,7 +1519,7 @@ export class Dialogs {
 						scene.events.emit('setBonusMode', false);
 						scene.events.emit('hideBonusBackground');
 						scene.events.emit('hideBonusHeader');
-						// Reset symbols/winlines state for base game
+						// Reset symbols/win state for base game
 						scene.events.emit('resetSymbolsForBase');
 
 						// Ensure win sequence finalization when starting normal transition

@@ -6,6 +6,7 @@ import { GameData, setSpeed } from "../GameData";
 import { gameEventManager, GameEventType } from '../../../event/EventManager';
 import { gameStateManager } from '../../../managers/GameStateManager';
 import { TurboConfig } from '../../../config/TurboConfig';
+import { DELAY_BETWEEN_SPINS } from '../../../config/GameConfig';
 import { GameAPI } from '../../../backend/GameAPI';
 import { SpinData, SpinDataUtils } from '../../../backend/SpinData';
 import { Symbols } from '../symbols/index';
@@ -2934,9 +2935,8 @@ export class SlotController {
 			console.log(`  dropReelsDelay: ${originalDelay} -> ${gameData.dropReelsDelay}`);
 			console.log(`  dropReelsDuration: ${originalDuration} -> ${gameData.dropReelsDuration}`);
 		} else {
-			// Reset to normal speed by calling setSpeed with the original delay
-			const originalDelay = 2500; // This should match Data.DELAY_BETWEEN_SPINS
-			setSpeed(gameData, originalDelay);
+			// Reset to normal speed by calling setSpeed with GameConfig delay
+			setSpeed(gameData, DELAY_BETWEEN_SPINS);
 			(gameData as any).compressionDelayMultiplier = 1;
 			console.log('[SlotController] Normal speed restored for animations');
 		}
@@ -4398,10 +4398,7 @@ export class SlotController {
 				console.log(`  dropReelsDuration: ${sceneGameData.dropReelsDuration}`);
 			} else {
 				console.log('[SlotController] Resetting scene GameData to normal speed');
-				
-				// Reset to normal speed by calling setSpeed with the original delay
-				const originalDelay = 2500; // This should match Data.DELAY_BETWEEN_SPINS
-				setSpeed(sceneGameData, originalDelay);
+				setSpeed(sceneGameData, DELAY_BETWEEN_SPINS);
 				(sceneGameData as any).compressionDelayMultiplier = 1;
 				
 				console.log(`[SlotController] Scene GameData reset to normal speed:`);

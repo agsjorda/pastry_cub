@@ -10,9 +10,8 @@ import { FullScreenManager } from '../../managers/FullScreenManager';
 import { ensureSpineFactory } from '../../utils/SpineGuard';
 import { StudioLoadingScreen } from '../components/StudioLoadingScreen';
 import { ClockDisplay } from '../components/ClockDisplay';
-import { VersionManager } from '../../managers/VersionManager';
-import { Character } from '../components/Character';
-import { playRadialDimmerTransition } from '../utils/playRadialDimmerTransition';
+import { CLOCK_DISPLAY_NAME, GAME_DISPLAY_NAME, CLOCK_DISPLAY_CONFIG, PRELOADER_CONFIG } from '../../config/GameConfig';
+import { playRadialDimmerTransition } from '../../utils/playRadialDimmerTransition';
 import { CurrencyManager } from '../components/CurrencyManager';
 
 export class Preloader extends Scene
@@ -24,26 +23,11 @@ export class Preloader extends Scene
 	private gameAPI!: GameAPI;
 	private studio?: StudioLoadingScreen;
 	private clockDisplay?: ClockDisplay;
-	private versionDisplay?: VersionManager;
-	private character1?: Character;
-	private character2?: Character;
-	private preloaderVerticalOffsetModifier: number = 10;
+	private preloaderVerticalOffsetModifier: number = PRELOADER_CONFIG.VERTICAL_OFFSET_MODIFIER;
 	private bootProgressHandler?: (progress: number) => void;
 
-	// Loading bar graphics
-	private progressBarBg?: Phaser.GameObjects.Graphics;
-	private progressBarFill?: Phaser.GameObjects.Graphics;
-	private progressText?: Phaser.GameObjects.Text;
-	private progressBarX?: number;
-	private progressBarY?: number;
-	private progressBarWidth?: number;
-	private progressBarHeight?: number;
-	private progressBarPadding: number = 3;
-
-	// UI elements we need after load
 	private buttonSpin?: Phaser.GameObjects.Image;
 	private buttonBg?: Phaser.GameObjects.Image;
-	private pressToPlayText?: Phaser.GameObjects.Text;
 	private taglineText?: Phaser.GameObjects.Text;
 	private websiteText?: Phaser.GameObjects.Text;
 	private maxWinText?: Phaser.GameObjects.Text;
@@ -83,215 +67,12 @@ export class Preloader extends Scene
 		
 		console.log(`[Preloader] Applying asset scale: ${assetScale}x`);
 		
-		// Background color for studio loading (#10161D to match studio screen)
-		this.cameras.main.setBackgroundColor(0x10161D);
-
-		// Always show loading background, scaled to cover the entire screen
-		// The background image is loaded as 'loading_background' from public/assets/portrait/high/background/LoadingScreen_BZ.png
-		// (see AssetConfig.ts getLoadingAssets)
-		const background = this.add.image(
-			this.scale.width * 0.5, 
-			this.scale.height * 0.5, 
-			"loading_background"
-		).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(0);
-		
-		const scaleX = this.scale.width / background.width;
-		const scaleY = this.scale.height / background.height;
-		const scale = Math.max(scaleX, scaleY);
-		background.setScale(scale);
-		
-		console.log(`[Preloader] Background original size: ${background.width}x${background.height}`);
-		console.log(`[Preloader] Canvas size: ${this.scale.width}x${this.scale.height}`);
-		console.log(`[Preloader] Calculated scale: ${scale} (scaleX: ${scaleX}, scaleY: ${scaleY})`);
-		console.log(`[Preloader] Background dimensions: ${background.width}x${background.height}, canvas: ${this.scale.width}x${this.scale.height}`);
-		console.log(`[Preloader] Background display size: ${this.scale.width}x${this.scale.height}`);
-		console.log(`[Preloader] Background position: (${this.scale.width * 0.5}, ${this.scale.height * 0.5})`);
-
-		// Persistent clock display in the top bar - clock on top-left, DiJoker on top-right
-		this.clockDisplay = new ClockDisplay(this, {
-			offsetX: 5,
-			offsetY: 5,
-			fontSize: 16,
-			fontFamily: 'poppins-regular',
-			color: '#FFFFFF',
-			alpha: 0.5,
-			depth: 30000,
-			scale: 0.7,
-			suffixText: ` | Beelze_Bop${this.gameAPI.getDemoState() ? ' | DEMO' : ''}`,
-			additionalText: 'DiJoker',
-			additionalTextOffsetX: 5,
-			additionalTextOffsetY: 0,
-			additionalTextScale: 0.7,
-			additionalTextColor: '#FFFFFF',
-			additionalTextFontSize: 16,
-			additionalTextFontFamily: 'poppins-regular'
-		});
-		this.clockDisplay.create();
-
-		// Version display in bottom right (same formatting as ClockDisplay)
-		this.versionDisplay = new VersionManager(this, {
-			fontSize: 16,
-			fontFamily: 'poppins-regular',
-			color: '#FFFFFF',
-			alpha: 0.5,
-			depth: 30000,
-			scale: 0.7,
-		});
-		this.versionDisplay.create();
-
-		// Loading frame + tagline + URL and max-win text (aligned to StudioLoadingScreen positions)
-		// Use the same offsets as StudioLoadingScreen defaults so both layers line up visually
-		const loadingFrameOffsetFromCenter = 345;
-		const loadingFrame = this.add.image(
-			this.scale.width * 0.5,
-			this.scale.height * 0.5 + loadingFrameOffsetFromCenter,
-			"loading_frame_2"
-		).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(10);
-
-		const frameScale = (Math.max(this.scale.width / loadingFrame.width, this.scale.height / loadingFrame.height)) * 0.04;
-		loadingFrame.setScale(frameScale);
-
-		// "PLAY LOUD. WIN WILD. DIJOKER STYLE"
-		// Matches StudioLoadingScreen default textOffsetY
-		const textOffsetFromCenter = 375;
-		this.taglineText = this.add.text(
-			this.scale.width * 0.5 - 5,
-			this.scale.height * 0.5 + textOffsetFromCenter,
-			'PLAY LOUD. WIN WILD. DIJOKER STYLE',
-			{
-				fontFamily: 'poppins-regular',
-				fontSize: '14px',
-				color: '#FFFFFF',
-				fontStyle: 'normal',
-				align: 'center',
-			}
-		)
-		.setOrigin(0.5, 0.5)
-		.setScrollFactor(0)
-		.setAlpha(1)
-		.setDepth(10);
-
-		// "www.dijoker.com"
-		// Matches StudioLoadingScreen default text2OffsetY
-		const websiteOffsetFromCenter = 400;
-		this.websiteText = this.add.text(
-			this.scale.width * 0.5,
-			this.scale.height * 0.5 + websiteOffsetFromCenter,
-			'www.dijoker.com',
-			{
-				fontFamily: 'poppins-regular',
-				fontSize: '14px',
-				color: '#FFFFFF',
-				fontStyle: 'normal',
-				align: 'center',
-			}
-		)
-		.setOrigin(0.5, 0.5)
-		.setScrollFactor(0)
-		.setAlpha(1)
-		.setDepth(10);
-
-		// "Win up to 21,000x" breathing text (reuses preloaded poppins fonts)
-		const winTextY = 145 + this.preloaderVerticalOffsetModifier;
-		this.maxWinText = this.add.text(
-			this.scale.width * 0.5,
-			this.scale.height * 0.5 + winTextY,
-			'Win up to 21,000x',
-			{
-				fontFamily: 'poppins-bold',
-				fontSize: '32px',
-				color: '#FFFFFF',
-				align: 'center',
-			}
-		)
-		.setOrigin(0.5, 0.5)
-		.setScrollFactor(0)
-		.setAlpha(1)
-		.setDepth(10);
-
-		this.tweens.add({
-			targets: this.maxWinText,
-			scale: { from: 0.90, to: 0.95 },
-			duration: 800,
-			ease: 'Sine.easeInOut',
-			yoyo: true,
-			repeat: -1,
-			hold: 0,
-			delay: 0,
-		});
-
-		this.maxWinText
-			.setStroke('#379557', 4)
-			.setShadow(0, 2, '#000000', 4, true, true);
-
+		this.cameras.main.setBackgroundColor(PRELOADER_CONFIG.BACKGROUND_COLOR);
+		this.setupLoadingBackground();
+		this.setupClock();
+		this.setupLoadingFrameAndText();
 		if (screenConfig.isPortrait) {
-			// Studio loading screen with the same frame/text positioning as Preloader
-			this.studio = new StudioLoadingScreen(this, {
-				loadingFrameOffsetX: 0,
-				loadingFrameOffsetY: 345,
-				loadingFrameScaleModifier: 0.04,
-				text: 'PLAY LOUD. WIN WILD. DIJOKER STYLE',
-				textOffsetX: -5,
-				textOffsetY: 375,
-				textScale: 1,
-				textColor: '#FFFFFF',
-				text2: 'www.dijoker.com',
-				text2OffsetX: 0,
-				text2OffsetY: 400,
-				text2Scale: 1,
-				text2Color: '#FFFFFF',
-			});
-			this.studio.show();
-
-			// Hook for any post-fade actions if needed later
-			this.events.once('studio-fade-complete', () => {
-				// no-op for now
-			});
-
-			const buttonY = this.scale.height * 0.77;
-			
-			// Scale buttons based on quality (low quality assets need 2x scaling)
-			this.buttonBg = this.add.image(
-				this.scale.width * 0.5, 
-				buttonY, 
-				"button_bg"
-			).setOrigin(0.5, 0.5).setScale(assetScale).setDepth(10);
-
-			this.buttonSpin = this.add.image(
-				this.scale.width * 0.5, 
-				buttonY, 
-				"button_spin"
-			).setOrigin(0.5, 0.5).setScale(assetScale).setDepth(10);
-
-			// Grey out and disable the spin button and background until load completes
-			this.buttonSpin.setTint(0x777777).setAlpha(0.9);
-			this.buttonBg.setTint(0x777777).setAlpha(0.9);
-			this.buttonSpin.disableInteractive();
-
-			console.log(`[Preloader] Button scaling: ${assetScale}x`);
-
-			// Sugar Wonderland logo removed - logo now displayed on loading background image
-
-			this.tweens.add({
-				targets: this.buttonSpin,
-				rotation: Math.PI * 2,
-				duration: 5000,
-				repeat: -1,
-			});
-
-			// // "Press Play To Continue" text (initially hidden), positioned above the spin button
-			// const ctaX = this.scale.width * 0.5;
-			// const ctaY = buttonY - Math.max(40, 48 * assetScale);
-			// this.pressToPlayText = this.add.text(ctaX, ctaY, 'Press Play To Continue', {
-			// 	fontFamily: 'poppins-regular',
-			// 	fontSize: `${Math.round(22 * assetScale)}px`,
-			// 	color: '#FFFFFF',
-			// 	align: 'center'
-			// })
-			// .setOrigin(0.5, 1)
-			// .setAlpha(0)
-			// .setShadow(0, 3, '#000000', 6, true, true);
-
+			this.setupPortraitUI(assetScale);
 		}
 
 		// Notify host page loader (if present) that Phaser boot loader can hide
@@ -417,55 +198,16 @@ export class Preloader extends Scene
             console.error('[Preloader] Failed to initialize GameAPI or slot session:', error);
         }
 
-		// ========================================
-		// Add Character1 Spine Animation
-		// ========================================
-		// Character1 and Character2 are displayed in front of the loading background during the preload screen
-		// Asset location: public/assets/characters/Character1_BZ.json, .atlas, .webp and Character2_BZ.json, .atlas, .webp
-		// Loaded in: Boot scene via AssetConfig.getLoadingAssets()
-		// The characters play their idle animations in a loop while assets load
-		console.log('[Preloader] About to create character1 and character2...');
-		console.log('[Preloader] add.spine available:', typeof (this.add as any).spine);
-		console.log('[Preloader] spine plugin:', !!(this as any).spine);
-        
-		// Give a small delay to ensure assets are fully loaded from Boot scene
-		this.time.delayedCall(100, () => {
-			// Create Character1 on the left side of the screen (25% from left, 45% from top)
-			this.character1 = new Character(this, {
-				characterKey: 'character1',
-				x: this.scale.width * 0.23,
-				y: this.scale.height * 0.61,
-				scale: 0.2,
-				depth: 1, // In front of background, behind UI
-				animation: 'character1_BZ_idle',
-				loop: true
-			});
-			this.character1.create();
-
-			// Create Character2 on the right side of the screen (75% from left, 45% from top)
-			this.character2 = new Character(this, {
-				characterKey: 'character2',
-				x: this.scale.width * 0.75,
-				y: this.scale.height * 0.52,
-				scale: 0.3,
-				depth: 1, // In front of background, behind UI
-				animation: 'character2_BZ_idle',
-				loop: true
-			});
-			this.character2.create();
-		});
-
-        // Create fullscreen toggle now that assets are loaded (using shared manager)
+		// Create fullscreen toggle now that assets are loaded (using shared manager)
         const assetScale = this.networkManager.getAssetScale();
         this.fullscreenBtn = FullScreenManager.addToggle(this, {
-            margin: 16 * assetScale,
-            iconScale: 1.5 * assetScale,
+            margin: PRELOADER_CONFIG.FULLSCREEN_MARGIN_BASE * assetScale,
+            iconScale: PRELOADER_CONFIG.FULLSCREEN_ICON_SCALE_BASE * assetScale,
             depth: 10000,
             maximizeKey: 'maximize',
             minimizeKey: 'minimize'
         });
 
-        // Enable the spin button for user to continue
         if (this.buttonSpin) {
             this.buttonSpin.clearTint();
             this.buttonSpin.setAlpha(1);
@@ -476,28 +218,7 @@ export class Preloader extends Scene
             this.buttonBg.setAlpha(1);
         }
 
-        // Show call-to-action text
-        if (this.pressToPlayText) {
-            this.pressToPlayText.setAlpha(1);
-            this.tweens.add({
-                targets: this.pressToPlayText,
-                alpha: 0.3,
-                duration: 800,
-                yoyo: true,
-                repeat: -1
-            });
-        }
-
-		// Prepare fade overlay (no longer used, replaced by RadialDimmerTransition)
-		// const fadeOverlay = this.add.rectangle(
-		//     this.scale.width * 0.5,
-		//     this.scale.height * 0.5,
-		//     this.scale.width,
-		//     this.scale.height,
-		//     0x000000
-		// ).setOrigin(0.5, 0.5).setScrollFactor(0).setAlpha(0);
-
-        // Start game on click
+		// Start game on click
         this.buttonSpin?.once('pointerdown', () => {
             playRadialDimmerTransition(this, () => {
                 console.log('[Preloader] Starting Game scene after radial dimmer');
@@ -514,33 +235,129 @@ export class Preloader extends Scene
 		// If the user clicks early and this scene stops, Game scene will fall back to loading audio again.
 		this.startBackgroundAudioLoad();
 
-		// Ensure web fonts are applied after they are ready
-		const fontsObj: any = (document as any).fonts;
-		if (fontsObj && typeof fontsObj.ready?.then === 'function') {
-			fontsObj.ready.then(() => {
-				this.progressText?.setFontFamily('poppins-regular');
-				this.pressToPlayText?.setFontFamily('poppins-regular');
-				this.taglineText?.setFontFamily('poppins-regular');
-				this.websiteText?.setFontFamily('poppins-regular');
-				this.maxWinText?.setFontFamily('poppins-bold');
-				this.versionDisplay?.setFontFamily('poppins-regular');
-			}).catch(() => {
-				// Fallback: set families anyway
-				this.progressText?.setFontFamily('poppins-regular');
-				this.pressToPlayText?.setFontFamily('poppins-regular');
-				this.taglineText?.setFontFamily('poppins-regular');
-				this.websiteText?.setFontFamily('poppins-regular');
-				this.maxWinText?.setFontFamily('poppins-bold');
-				this.versionDisplay?.setFontFamily('poppins-regular');
-			});
-		} else {
-			// Browser without document.fonts support
-			this.progressText?.setFontFamily('poppins-regular');
-			this.pressToPlayText?.setFontFamily('poppins-regular');
+		this.applyPreloaderFonts();
+	}
+
+	private setupLoadingBackground(): void {
+		const background = this.add.image(
+			this.scale.width * 0.5,
+			this.scale.height * 0.5,
+			'loading_background'
+		).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(0);
+		const scale = Math.max(this.scale.width / background.width, this.scale.height / background.height);
+		background.setScale(scale);
+		console.log(`[Preloader] Background scale: ${scale}, canvas: ${this.scale.width}x${this.scale.height}`);
+
+		// Header logo at top of loading screen
+		if (this.textures.exists('header_logo')) {
+			const logoX = this.scale.width * 0.5;
+			const logoY = this.scale.height * 0.12;
+			const headerLogo = this.add.image(logoX, logoY, 'header_logo')
+				.setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(5);
+			const maxWidth = this.scale.width * 0.85;
+			if (headerLogo.width > maxWidth) {
+				headerLogo.setScale(maxWidth / headerLogo.width);
+			}
+		}
+	}
+
+	private setupClock(): void {
+		this.clockDisplay = new ClockDisplay(this, {
+			...CLOCK_DISPLAY_CONFIG,
+			suffixText: ` | ${GAME_DISPLAY_NAME}${this.gameAPI.getDemoState() ? ' | DEMO' : ''}`,
+			additionalText: CLOCK_DISPLAY_NAME,
+		});
+		this.clockDisplay.create();
+	}
+
+	private setupLoadingFrameAndText(): void {
+		const preload = PRELOADER_CONFIG;
+		const loadingFrame = this.add.image(
+			this.scale.width * 0.5,
+			this.scale.height * 0.5 + preload.LOADING_FRAME_OFFSET_Y,
+			'loading_frame_2'
+		).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(10);
+		const frameScale = (Math.max(this.scale.width / loadingFrame.width, this.scale.height / loadingFrame.height)) * preload.LOADING_FRAME_SCALE_MODIFIER;
+		loadingFrame.setScale(frameScale);
+
+		const { TAGLINE, WEBSITE, MAX_WIN } = preload;
+		const centerX = this.scale.width * 0.5;
+		const centerY = this.scale.height * 0.5;
+		const textStyle = { fontFamily: 'poppins-regular', color: '#FFFFFF', fontStyle: 'normal' as const, align: 'center' as const };
+
+		this.taglineText = this.add.text(centerX + TAGLINE.OFFSET_X, centerY + TAGLINE.OFFSET_Y, TAGLINE.TEXT, { ...textStyle, fontSize: `${TAGLINE.FONT_SIZE_PX}px` })
+			.setOrigin(0.5, 0.5).setScrollFactor(0).setAlpha(1).setDepth(10);
+		this.websiteText = this.add.text(centerX, centerY + WEBSITE.OFFSET_Y, WEBSITE.TEXT, { ...textStyle, fontSize: `${WEBSITE.FONT_SIZE_PX}px` })
+			.setOrigin(0.5, 0.5).setScrollFactor(0).setAlpha(1).setDepth(10);
+
+		const winTextY = MAX_WIN.OFFSET_Y_FROM_CENTER + this.preloaderVerticalOffsetModifier;
+		this.maxWinText = this.add.text(centerX, centerY + winTextY, MAX_WIN.TEXT, {
+			fontFamily: 'poppins-bold',
+			fontSize: `${MAX_WIN.FONT_SIZE_PX}px`,
+			color: '#FFFFFF',
+			align: 'center',
+		}).setOrigin(0.5, 0.5).setScrollFactor(0).setAlpha(1).setDepth(10);
+		this.tweens.add({
+			targets: this.maxWinText,
+			scale: { from: MAX_WIN.BREATHING_SCALE_FROM, to: MAX_WIN.BREATHING_SCALE_TO },
+			duration: MAX_WIN.BREATHING_DURATION_MS,
+			ease: 'Sine.easeInOut',
+			yoyo: true,
+			repeat: -1,
+			hold: 0,
+			delay: 0,
+		});
+		this.maxWinText.setStroke('#379557', 4).setShadow(0, 2, '#000000', 4, true, true);
+	}
+
+	private setupPortraitUI(assetScale: number): void {
+		const preload = PRELOADER_CONFIG;
+		this.studio = new StudioLoadingScreen(this, {
+			loadingFrameOffsetX: 0,
+			loadingFrameOffsetY: preload.LOADING_FRAME_OFFSET_Y,
+			loadingFrameScaleModifier: preload.LOADING_FRAME_SCALE_MODIFIER,
+			text: preload.TAGLINE.TEXT,
+			textOffsetX: preload.TAGLINE.OFFSET_X,
+			textOffsetY: preload.TAGLINE.OFFSET_Y,
+			textScale: 1,
+			textColor: '#FFFFFF',
+			text2: preload.WEBSITE.TEXT,
+			text2OffsetX: 0,
+			text2OffsetY: preload.WEBSITE.OFFSET_Y,
+			text2Scale: 1,
+			text2Color: '#FFFFFF',
+		});
+		this.studio.show();
+		this.events.once('studio-fade-complete', () => {});
+
+		const buttonY = this.scale.height * preload.BUTTON_Y_RATIO;
+		const centerX = this.scale.width * 0.5;
+		this.buttonBg = this.add.image(centerX, buttonY, 'button_bg').setOrigin(0.5, 0.5).setScale(assetScale).setDepth(10);
+		this.buttonSpin = this.add.image(centerX, buttonY, 'button_spin').setOrigin(0.5, 0.5).setScale(assetScale).setDepth(10);
+		this.buttonSpin.setTint(0x777777).setAlpha(0.9);
+		this.buttonBg.setTint(0x777777).setAlpha(0.9);
+		this.buttonSpin.disableInteractive();
+		console.log(`[Preloader] Button scaling: ${assetScale}x`);
+		this.tweens.add({
+			targets: this.buttonSpin,
+			rotation: Math.PI * 2,
+			duration: preload.SPIN_BUTTON_ROTATION_DURATION_MS,
+			repeat: -1,
+		});
+	}
+
+	/** Apply Poppins font families to all preloader text (once fonts are ready or as fallback). */
+	private applyPreloaderFonts(): void {
+		const apply = () => {
 			this.taglineText?.setFontFamily('poppins-regular');
 			this.websiteText?.setFontFamily('poppins-regular');
 			this.maxWinText?.setFontFamily('poppins-bold');
-			this.versionDisplay?.setFontFamily('poppins-regular');
+		};
+		const fontsObj: any = (document as any).fonts;
+		if (fontsObj && typeof fontsObj.ready?.then === 'function') {
+			fontsObj.ready.then(apply).catch(apply);
+		} else {
+			apply();
 		}
-    }
+	}
 }

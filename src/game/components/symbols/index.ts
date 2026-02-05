@@ -21,13 +21,11 @@ export { SymbolOverlay } from './SymbolOverlay';
 export { FreeSpinController } from './FreeSpinController';
 export { MultiplierSymbols } from './MultiplierSymbols';
 
-// Constants (all magic numbers centralized)
-export * from './constants';
-
 // Types (for TypeScript consumers)
 export type {
   GridPosition,
   CellPosition,
+  SpinMockData,
   SymbolObject,
   SpineAnimationState,
   SpineTrackEntry,

@@ -17,16 +17,37 @@
  * import { SymbolGrid, MultiplierSymbols } from './symbols';
  */
 
-import { Data } from '../../../tmp_backend/Data';
 import { Game } from '../../scenes/Game';
 import { GameData, setSpeed } from '../GameData';
 import { ScatterAnimationManager } from '../../../managers/ScatterAnimationManager';
-import { SymbolDetector, Grid, Wins } from '../../../tmp_backend/SymbolDetector';
+import { getScatterGrids } from '../../../utils/scatterGrid';
 import { gameEventManager, GameEventType } from '../../../event/EventManager';
 import { gameStateManager } from '../../../managers/GameStateManager';
 import { TurboConfig } from '../../../config/TurboConfig';
-import { SLOT_ROWS, SLOT_COLUMNS, DELAY_BETWEEN_SPINS, MULTIPLIER_SYMBOLS } from '../../../config/GameConfig';
+import {
+  SLOT_ROWS,
+  SLOT_COLUMNS,
+  DELAY_BETWEEN_SPINS,
+  MULTIPLIER_SYMBOLS,
+  MIN_SCATTER_FOR_BONUS,
+  MIN_SCATTER_FOR_RETRIGGER,
+  SCATTER_SYMBOL_ID,
+  INITIAL_SYMBOLS,
+  SYMBOL_CONFIG,
+  SPINE_SYMBOL_SCALES,
+  DEFAULT_SPINE_SCALE,
+  SPINE_SCALE_ADJUSTMENT,
+  DEPTH_WINNING_SYMBOL,
+  SCATTER_ANIMATION_SCALE,
+  SCATTER_GATHER_SCALE,
+  SCATTER_RETRIGGER_SCALE,
+  SCATTER_GATHER_DURATION_MS,
+  SCATTER_SHRINK_DURATION_MS,
+  SCATTER_MOVE_DURATION_MS,
+  MULTIPLIER_STAGGER_MS,
+} from '../../../config/GameConfig';
 import { SoundEffectType } from '../../../managers/AudioManager';
+import { normalizeAreaToGameConfig } from '../../../utils/GridTransform';
 
 // Import new modular components
 import { SymbolGrid } from './SymbolGrid';
@@ -38,29 +59,11 @@ import { MultiplierSymbols } from './MultiplierSymbols';
 import type {
   SymbolObject,
   GridPosition,
+  SpinMockData,
   PendingFreeSpinsData,
   PendingScatterRetrigger,
   TumbleData,
 } from './types';
-import {
-  FILLER_COUNT,
-  SPINE_SYMBOL_SCALES,
-  DEFAULT_SPINE_SCALE,
-  SPINE_SCALE_ADJUSTMENT,
-  SCATTER_TRIGGER_COUNT,
-  SCATTER_RETRIGGER_COUNT,
-  SCATTER_SYMBOL_ID,
-  WIN_DIALOG_THRESHOLD_MULTIPLIER,
-  INITIAL_SYMBOLS,
-  DEPTH_WINNING_SYMBOL,
-  SCATTER_ANIMATION_SCALE,
-  SCATTER_GATHER_SCALE,
-  SCATTER_RETRIGGER_SCALE,
-  SCATTER_GATHER_DURATION_MS,
-  SCATTER_SHRINK_DURATION_MS,
-  SCATTER_MOVE_DURATION_MS,
-  MULTIPLIER_STAGGER_MS,
-} from './constants';
 
 /**
  * Main Symbols class - orchestrates the symbol grid system
@@ -80,7 +83,7 @@ export class Symbols {
   // STATIC PROPERTIES (Backward Compatibility)
   // ============================================================================
 
-  public static FILLER_COUNT: number = FILLER_COUNT;
+  public static FILLER_COUNT: number = SYMBOL_CONFIG.FILLER_COUNT;
   private static readonly MERGE_SYMBOL0_SCALE: number = 0.5;
 
   // ============================================================================
@@ -100,7 +103,6 @@ export class Symbols {
   public reelCount: number = 0;
   public scene!: Game;
   public scatterAnimationManager: ScatterAnimationManager;
-  public symbolDetector: SymbolDetector;
   public currentSpinData: any = null;
   public isBuyFeatureTransitionComplete: boolean = false;
 
@@ -172,6 +174,8 @@ export class Symbols {
   private dialogListenerSetup: boolean = false;
   private scatterResetHandledForBonusStart: boolean = false;
   private freeSpinItemIndex: number = 0;
+  // Cached total win calculated before freespin dialog is shown (buy feature / scatter trigger)
+  private cachedTotalWin: number = 0;
   private skipReelDropsActive: boolean = false;
   private skipReelDropsPending: boolean = false;
   private skipInputEnabled: boolean = false;
@@ -197,7 +201,6 @@ export class Symbols {
 
   constructor() {
     this.scatterAnimationManager = ScatterAnimationManager.getInstance();
-    this.symbolDetector = new SymbolDetector();
   }
 
   // ============================================================================
@@ -989,7 +992,7 @@ export class Symbols {
     this.overlayModule.hideOverlay();
   }
 
-  public moveWinningSymbolsToFront(data: Data): void {
+  public moveWinningSymbolsToFront(data: SpinMockData): void {
     if (!data.wins?.allMatching?.size) return;
 
     for (const grids of data.wins.allMatching.values()) {
@@ -1006,7 +1009,7 @@ export class Symbols {
     this.grid.resetSymbolDepths();
   }
 
-  public moveScatterSymbolsToFront(data: Data, scatterGrids: GridPosition[]): void {
+  public moveScatterSymbolsToFront(data: SpinMockData, scatterGrids: GridPosition[]): void {
     for (const grid of scatterGrids) {
       const symbol = this.grid.getSymbol(grid.x, grid.y);
       if (symbol) {
@@ -1017,6 +1020,11 @@ export class Symbols {
 
   public startScatterAnimationSequence(mockData: any): void {
     console.log('[Symbols] Starting scatter animation sequence');
+    // Cache total win from the trigger spin data so TotalW_BZ uses the buy-feature freeSpin data
+    if (this.cachedTotalWin <= 0) {
+      this.cachedTotalWin = this.calculateTotalWinFromSpinData();
+      console.log(`[Symbols] Cached total win before freespin dialog: ${this.cachedTotalWin}`);
+    }
     this.hideWinningOverlay();
     const scatterRevealDelay = gameStateManager.isBuyFeatureSpin ? 0 : 300;
     this.scatterAnimationManager?.setConfig({ scatterRevealDelay });
@@ -1057,6 +1065,17 @@ export class Symbols {
       return;
     }
 
+    // Always use grid size from GameConfig so the grid never changes to 6x5 or other sizes
+    spinData.slot.area = normalizeAreaToGameConfig(spinData.slot.area);
+    const items = spinData?.slot?.freeSpin?.items ?? spinData?.slot?.freespin?.items;
+    if (Array.isArray(items)) {
+      for (const item of items) {
+        if (item && Array.isArray(item.area)) {
+          item.area = normalizeAreaToGameConfig(item.area);
+        }
+      }
+    }
+
     this.currentSpinData = spinData;
     this.hadWinsInCurrentItem = false;
 
@@ -1073,7 +1092,7 @@ export class Symbols {
 
     this.restoreSymbolVisibility();
 
-    // Process symbols
+    // Process symbols (now always 7x7 from GameConfig)
     const symbols = spinData.slot.area;
     await this.processSpinDataSymbols(symbols, spinData);
   }
@@ -1574,16 +1593,25 @@ export class Symbols {
           this.freeSpinItemIndex++;
           return item;
         }
+      } catch { }      // Prefer matching by remaining spins when available (current spin = remaining + 1)
+      try {
+        const rem = this.freeSpinAutoplaySpinsRemaining;
+        if (typeof rem === 'number' && rem > 0) {
+          const targetB = items.find((item: any) => Number(item?.spinsLeft) === rem + 1);
+          if (targetB) return targetB;
+          const targetA = items.find((item: any) => Number(item?.spinsLeft) === rem);
+          if (targetA) return targetA;
+        }
       } catch { }
 
-      // Fallbacks: single item or lowest spinsLeft (latest spin)
+      // Fallbacks: single item or highest spinsLeft (earliest spin)
       if (items.length === 1) return items[0];
       const withSpinsLeft = items
         .filter((item: any) => typeof item?.spinsLeft === 'number' && item.spinsLeft > 0)
-        .sort((a: any, b: any) => a.spinsLeft - b.spinsLeft);
+        .sort((a: any, b: any) => b.spinsLeft - a.spinsLeft);
       if (withSpinsLeft.length) return withSpinsLeft[0];
 
-      return items[items.length - 1];
+      return items[0];
     } catch {
       return null;
     }
@@ -1623,29 +1651,27 @@ export class Symbols {
       ? slotTumbles
       : (Array.isArray(bonusTumbles) ? bonusTumbles : []);
 
-    // Create a mock Data object to use with existing functions
-    const mockData = new Data();
-    mockData.symbols = symbolsToUse;
-    mockData.balance = 0;
-    mockData.bet = parseFloat(spinData.bet);
-    mockData.freeSpins = (
-      (spinData?.slot?.freeSpin?.items && Array.isArray(spinData.slot.freeSpin.items))
-        ? spinData.slot.freeSpin.items.length
-        : (spinData?.slot?.freespin?.count || 0)
-    );
-
-    // Set proper timing for animations
+    // Mock data for existing functions (replaces tmp_backend Data)
     const baseDelay = DELAY_BETWEEN_SPINS;
     const adjustedDelay = gameStateManager.isTurbo ?
       baseDelay * TurboConfig.TURBO_SPEED_MULTIPLIER : baseDelay;
+    const mockData: SpinMockData = {
+      symbols: symbolsToUse,
+      balance: 0,
+      bet: parseFloat(spinData.bet),
+      freeSpins: (
+        (spinData?.slot?.freeSpin?.items && Array.isArray(spinData.slot.freeSpin.items))
+          ? spinData.slot.freeSpin.items.length
+          : (spinData?.slot?.freespin?.count || 0)
+      ),
+      delayBetweenSpins: adjustedDelay,
+    };
 
     console.log('[Symbols] Setting animation timing:', {
       baseDelay,
       isTurbo: gameStateManager.isTurbo,
       adjustedDelay
     });
-
-    mockData.delayBetweenSpins = adjustedDelay;
     setSpeed(this.scene.gameData, adjustedDelay);
 
     gameStateManager.isReelSpinning = true;
@@ -1677,15 +1703,13 @@ export class Symbols {
 
     // Check for scatter symbols
     console.log('[Symbols] Checking for scatter symbols...');
-    const scatterData = new Data();
-    // SymbolDetector expects row-major (top-to-bottom), so use currentSymbolData.
-    scatterData.symbols = this.currentSymbolData ?? symbolsToUse;
-    const scatterGrids = this.symbolDetector.getScatterGrids(scatterData);
+    const gridForScatter = this.currentSymbolData ?? symbolsToUse;
+    const scatterGrids = getScatterGrids(gridForScatter, SCATTER_SYMBOL_ID);
     console.log('[Symbols] ScatterGrids found:', scatterGrids.length);
 
     const scatterCount = scatterGrids.length;
-    const isRetrigger = gameStateManager.isBonus && scatterCount >= SCATTER_RETRIGGER_COUNT;
-    const isTrigger = !gameStateManager.isBonus && scatterCount >= SCATTER_TRIGGER_COUNT;
+    const isRetrigger = gameStateManager.isBonus && scatterCount >= MIN_SCATTER_FOR_RETRIGGER;
+    const isTrigger = !gameStateManager.isBonus && scatterCount >= MIN_SCATTER_FOR_BONUS;
     if (isRetrigger || isTrigger) {
       gameStateManager.isScatter = true;
 
@@ -1726,7 +1750,7 @@ export class Symbols {
     gameEventManager.emit(GameEventType.WIN_STOP);
   }
 
-  public async animateScatterSymbols(data: Data, scatterGrids: GridPosition[]): Promise<void> {
+  public async animateScatterSymbols(data: SpinMockData, scatterGrids: GridPosition[]): Promise<void> {
     if (!scatterGrids.length) {
       console.log('[Symbols] No scatter symbols to animate');
       return;
@@ -2859,7 +2883,7 @@ export class Symbols {
   }
 
   // Helper methods for symbol processing
-  private createNewSymbols(data: Data): void {
+  private createNewSymbols(data: SpinMockData): void {
     // Clear old new symbols
     this.disposeSymbols(this.newSymbols);
 
@@ -2914,7 +2938,7 @@ export class Symbols {
     this.newSymbols = newSymbolsArray;
   }
 
-  private async dropReels(data: Data): Promise<void> {
+  private async dropReels(data: SpinMockData): Promise<void> {
     this.reelDropInProgress = true;
 
     const numRows = (this.symbols && this.symbols[0] && this.symbols[0].length)
@@ -4628,7 +4652,7 @@ export class Symbols {
 
       if (gameStateManager.isBonus) {
         // Bonus mode: check for retrigger (3+ scatters)
-        if (count >= SCATTER_RETRIGGER_COUNT) {
+        if (count >= MIN_SCATTER_FOR_RETRIGGER) {
           console.log(`[Symbols] Scatter detected during tumble in bonus: ${count} scatter(s)`);
           // Defer retrigger to run after all wins/tumbles/multipliers complete (WIN_STOP)
           if (!(self as any).pendingScatterRetrigger) {
@@ -4637,7 +4661,7 @@ export class Symbols {
         }
       } else {
         // Normal mode: check for scatter trigger (4+ scatters)
-        if (count >= SCATTER_TRIGGER_COUNT && !gameStateManager.isScatter) {
+        if (count >= MIN_SCATTER_FOR_BONUS && !gameStateManager.isScatter) {
           console.log(`[Symbols] Scatter detected during tumble in normal mode: ${count} scatter(s)`);
           // Mark scatter as detected - the final scatter check after all tumbles will handle the animation
           gameStateManager.isScatter = true;
@@ -4932,3 +4956,4 @@ export class Symbols {
     } catch { }
   }
 }
+

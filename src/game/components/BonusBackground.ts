@@ -120,7 +120,7 @@ export class BonusBackground {
 		}
 
 		// Bonus cover overlay (centered)
-		// Add directly to scene with depth 850 (above symbols 0-600, winlines 800, but below controller 900)
+		// Add directly to scene with depth 850 (above symbols 0-600, win animations 800, but below controller 900)
 		this.bonusBgCover = scene.add.image(
 			scene.scale.width * 0.5,
 			scene.scale.height * 0.776,
@@ -167,7 +167,7 @@ export class BonusBackground {
 		}
 
 		// Bonus cover overlay
-		// Add directly to scene with depth 850 (above symbols 0-600, winlines 800, but below controller 900)
+		// Add directly to scene with depth 850 (above symbols 0-600, win animations 800, but below controller 900)
 		this.bonusBgCover = scene.add.image(
 			scene.scale.width * 0.5,
 			scene.scale.height * 0.5,

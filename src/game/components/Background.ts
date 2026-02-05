@@ -90,7 +90,7 @@ export class Background {
 		this.bgContainer.add(this.bgDefault);
 
 		// normal-bg-cover: foreground overlay (controller area). Keep it out of the container
-		// so its depth can reliably sit above symbols/winlines if needed.
+		// so its depth can reliably sit above symbols/win animations if needed.
 		this.normalBgCover = scene.add.image(
 			scene.scale.width * 0.5,
 			scene.scale.height * 0.776,

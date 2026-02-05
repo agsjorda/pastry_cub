@@ -3,6 +3,7 @@ import { GameData } from "../game/components/GameData";
 import { gameStateManager } from "../managers/GameStateManager";
 import { SoundEffectType } from "../managers/AudioManager";
 import { SLOT_COLUMNS, SLOT_ROWS } from "../config/GameConfig";
+import { normalizeAreaToGameConfig } from "../utils/GridTransform";
 
 /**
  * Function to parse URL query parameters
@@ -287,6 +288,17 @@ export class GameAPI {
                 cloned.playerId = 'demo-player';
             }
             if (cloned.slot) {
+                if (Array.isArray(cloned.slot.area)) {
+                    cloned.slot.area = normalizeAreaToGameConfig(cloned.slot.area);
+                }
+                const items = cloned.slot.freeSpin?.items ?? cloned.slot.freespin?.items;
+                if (Array.isArray(items)) {
+                    for (const item of items) {
+                        if (item && Array.isArray(item.area)) {
+                            item.area = normalizeAreaToGameConfig(item.area);
+                        }
+                    }
+                }
                 if (!Array.isArray(cloned.slot.paylines)) {
                     cloned.slot.paylines = [];
                 }
@@ -301,7 +313,7 @@ export class GameAPI {
     }
 
     private createMockFirstManualScatterSpinData(bet: number): SpinData {
-        // NOTE: In this project, slot.area is [column][row] and the grid is 6 columns x 5 rows.
+        // NOTE: In this project, slot.area is [column][row] and the grid is 7 columns x 7 rows.
         const cols = Number(SLOT_COLUMNS || 6);
         const rows = Number(SLOT_ROWS || 5);
 
@@ -356,7 +368,7 @@ export class GameAPI {
         }
 
         const slotObj: any = {
-            area: currentItem.area,
+            area: normalizeAreaToGameConfig(currentItem.area),
             paylines: currentItem.payline,
             freespin: {
                 count: baseSpin.slot?.freespin?.count ?? baseSpin.slot?.freeSpin?.count,

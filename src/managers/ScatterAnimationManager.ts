@@ -1,9 +1,16 @@
 import { Scene } from 'phaser';
-import { Data } from '../tmp_backend/Data';
 import { SpinData } from '../backend/SpinData';
 import { gameEventManager, GameEventType } from '../event/EventManager';
 import { gameStateManager } from './GameStateManager';
 import { TurboConfig } from '../config/TurboConfig';
+import { SCATTER_SYMBOL_ID } from '../config/GameConfig';
+
+/** Data shape for scatter animation (replaces tmp_backend Data) */
+export interface ScatterData {
+  symbols: number[][];
+  freeSpins?: number;
+  scatterIndex?: number;
+}
 
 export interface ScatterAnimationConfig {
   scatterRevealDelay: number;
@@ -64,7 +71,7 @@ export class ScatterAnimationManager {
 
   // Wheel event listeners removed (spinner removed)
 
-  public async playScatterAnimation(data: Data): Promise<void> {
+  public async playScatterAnimation(data: ScatterData): Promise<void> {
     if (this.isAnimating || !this.scene || !this.symbolsContainer) {
       console.warn('[ScatterAnimationManager] Cannot play animation - not ready or already animating');
       return;
@@ -202,7 +209,7 @@ export class ScatterAnimationManager {
     });
   }
 
-  private determineFreeSpins(data: Data): void {
+  private determineFreeSpins(data: ScatterData): void {
     // Determine free spins from SpinData using first item's spinsLeft
     const freeSpinsFromSpin = this.getFreeSpinsFromSpinData();
     if (freeSpinsFromSpin > 0) {
@@ -239,7 +246,7 @@ export class ScatterAnimationManager {
   /**
    * Estimate scatter index from the current grid (scatterCount - 4, clamped to >= 0)
    */
-  private estimateScatterIndexFromGrid(data: Data): number {
+  private estimateScatterIndexFromGrid(data: ScatterData): number {
     const scatterCount = this.getScatterGridsFromData(data).length;
     const index = Math.max(0, scatterCount - 4);
     return index;
@@ -248,11 +255,11 @@ export class ScatterAnimationManager {
   /**
    * Get scatter grids from the data to calculate scatter index
    */
-  private getScatterGridsFromData(data: Data): any[] {
+  private getScatterGridsFromData(data: ScatterData): any[] {
     const scatterGrids: any[] = [];
     for (let y = 0; y < data.symbols.length; y++) {
       for (let x = 0; x < data.symbols[y].length; x++) {
-        if (data.symbols[y][x] === Data.SCATTER[0]) {
+        if (data.symbols[y][x] === SCATTER_SYMBOL_ID) {
           scatterGrids.push({ x, y, symbol: data.symbols[y][x] });
         }
       }
@@ -262,7 +269,7 @@ export class ScatterAnimationManager {
 
   // Spinner wait removed; dialogs shown immediately
 
-  private showFreeSpinsDialog(data: Data, options: { suppressBlackOverlay?: boolean } = {}): void {
+  private showFreeSpinsDialog(data: ScatterData, options: { suppressBlackOverlay?: boolean } = {}): void {
     if (!this.dialogsComponent) {
       console.warn('[ScatterAnimationManager] Dialogs component not available');
       return;

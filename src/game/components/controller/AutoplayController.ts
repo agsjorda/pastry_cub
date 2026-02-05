@@ -236,7 +236,7 @@ export class AutoplayController {
     this.hideStopIcon();
     this.stopAutoplayAnimation();
     
-    // Restore winline timing
+    // Restore win animation timing
     const symbols = this.callbacks.getSymbols();
     if (symbols?.setTurboMode) {
       symbols.setTurboMode(false);
