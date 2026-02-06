@@ -596,7 +596,7 @@ export class SlotController {
 	}
 
 	/**
-	 * Handle autoplay start from AutoplayController
+	 * Handle autoplay start from AutoplayController (called after user confirms autoplay dialog)
 	 */
 	private handleAutoplayStart(): void {
 		console.log('[SlotController] Autoplay started via controller');
@@ -604,6 +604,7 @@ export class SlotController {
 		if (gameData) {
 			gameData.isAutoPlaying = true;
 		}
+		this.updateTurboButtonStateWithLock();
 	}
 
 	/**
@@ -2481,6 +2482,7 @@ export class SlotController {
 			if (this.autoplaySpinsRemainingText && this.primaryControllers) {
 				this.primaryControllers.bringToTop(this.autoplaySpinsRemainingText);
 			}
+			this.updateTurboButtonStateWithLock();
 			// No need to update spin button state here - will be handled when reels finish
 		});
 
@@ -2489,7 +2491,14 @@ export class SlotController {
 			console.log('[SlotController] AUTO_STOP event received');
 			console.log('[SlotController] Current state - isAutoPlaying:', gameStateManager.isAutoPlaying, 'isReelSpinning:', gameStateManager.isReelSpinning);
 			console.log('[SlotController] Autoplay counter:', this.getAutoplaySpinsRemaining());
-			
+
+			// Sync gameData.isAutoPlaying immediately - onAutoplayStopped runs after emit,
+			// so updateSpinButtonState would see stale true and disable the button
+			const gameData = this.getGameData();
+			if (gameData) {
+				gameData.isAutoPlaying = false;
+			}
+
 			// Always reset autoplay UI when AUTO_STOP is received
 			// (AUTO_STOP should only be emitted when autoplay is finished)
 			console.log('[SlotController] Resetting autoplay UI on AUTO_STOP');
@@ -2515,6 +2524,8 @@ export class SlotController {
 			
 			// Re-enable spin button, autoplay button, bet buttons, feature button, and bet background
 			this.updateSpinButtonState();
+			// Deferred retry: pending balance or other async state may clear shortly after AUTO_STOP
+			this.scene.time.delayedCall(150, () => this.updateSpinButtonState());
 			// Don't re-enable auxiliary buttons if buy feature spin lock is active
 			if (!this.isBuyFeatureControlsLocked()) {
 				this.enableAutoplayButton();
@@ -2522,6 +2533,7 @@ export class SlotController {
 				this.enableAmplifyButton();
 				this.enableBetBackgroundInteraction('after autoplay stop');
 			}
+			this.updateTurboButtonStateWithLock();
 			this.enableFeatureButton();
 		// Show and resume spin icon after autoplay stops, hide stop icon
 			if (this.spinIcon) {
@@ -2740,10 +2752,15 @@ export class SlotController {
 	}
 
 	/**
-	 * Enable the turbo button (remove grey tint and enable interaction)
+	 * Enable the turbo button (remove grey tint and enable interaction).
+	 * Never enables during autoplay - keeps turbo disabled until autoplay ends or is canceled.
 	 */
 	public enableTurboButton(): void {
 		if (this.isBuyFeatureControlsLocked()) {
+			this.disableTurboButton();
+			return;
+		}
+		if (gameStateManager.isAutoPlaying || this.getAutoplaySpinsRemaining() > 0) {
 			this.disableTurboButton();
 			return;
 		}
@@ -2773,6 +2790,10 @@ export class SlotController {
 	 */
 	public updateTurboButtonState(): void {
 		if (this.isBuyFeatureControlsLocked()) {
+			this.disableTurboButton();
+			return;
+		}
+		if (gameStateManager.isAutoPlaying || this.getAutoplaySpinsRemaining() > 0) {
 			this.disableTurboButton();
 			return;
 		}
@@ -4209,14 +4230,15 @@ export class SlotController {
 			}
 		} catch {}
 
-		if(gameData.isAutoPlaying){
+		// Autoplay ended when GSM says so and counter is 0; don't let stale gameData block
+		const autoplayEnded = !gameStateManager.isAutoPlaying && this.getAutoplaySpinsRemaining() <= 0;
+		if (gameData.isAutoPlaying && !autoplayEnded) {
 			this.disableSpinButton();
 			return;
 		}
 
-
 		// Simple logic: disable if spinning or autoplay active, enable otherwise
-		if (gameData.isAutoPlaying || gameStateManager.isReelSpinning) {
+		if ((gameData.isAutoPlaying && !autoplayEnded) || gameStateManager.isReelSpinning) {
 			console.log(`[SlotController] Disabling spin button - isReelSpinning: ${gameStateManager.isReelSpinning}, isAutoPlaying: ${gameData.isAutoPlaying}`);
 			this.disableSpinButton();
 		} else {
