@@ -17,6 +17,26 @@ export const WIN_TRACKER_LAYOUT = {
   iconScale: 0.02,
 } as const;
 
+/** Header layout (Header_SceneFrame and Header_WinBar position and scale) */
+export const HEADER_CONFIG = {
+  /** X offset (px) for Header_SceneFrame. Positive = right, negative = left. Use to nudge horizontal center. */
+  SCENE_FRAME_OFFSET_X: 4,
+  /** Y position (px) of the top edge of Header_SceneFrame. 0 = top of screen; positive = frame lower. */
+  SCENE_FRAME_OFFSET_Y: -20,
+  /** Scale multiplier for Header_SceneFrame. 1 = width-fit, < 1 = smaller, > 1 = larger. */
+  SCENE_FRAME_SCALE: 1.12,
+  /** Header_Scene: X scale multiplier (applied on top of frame scale). 1 = same as frame. */
+  HEADER_SCENE_SCALE_X: 1,
+  /** Header_Scene: Y scale multiplier (applied on top of frame scale). 1 = same as frame. */
+  HEADER_SCENE_SCALE_Y: 1,
+  /** Header_Scene: Y position offset (px) added to frame top. Positive = down, negative = up. */
+  HEADER_SCENE_OFFSET_Y: 30,
+  /** Y offset (px) added to Header_WinBar position (below Header_SceneFrame). Positive = down, negative = up. */
+  WIN_BAR_OFFSET_Y: -30,
+  /** Scale multiplier for Header_WinBar. 1 = width-fit, < 1 = smaller, > 1 = larger. */
+  WIN_BAR_SCALE: 1,
+} as const;
+
 // =============================================================================
 // PRELOADER / LOADING SCREEN (structure + branding from GameBranding)
 // =============================================================================
@@ -240,7 +260,7 @@ export const INITIAL_SYMBOLS: number[][] = [
 /** Reel/grid center: centerX = scene.scale.width * GRID_CENTER_X_RATIO + GRID_CENTER_X_OFFSET_PX */
 export const GRID_CENTER_X_RATIO = 0.5;
 export const GRID_CENTER_X_OFFSET_PX = -5;
-export const GRID_CENTER_Y_RATIO = 0.56;
+export const GRID_CENTER_Y_RATIO = 0.52;
 export const GRID_CENTER_Y_OFFSET_PX = -65;
 
 export const GRID_MASK_PADDING = { left: 14, right: 14, top: 40, bottom: 50 } as const;

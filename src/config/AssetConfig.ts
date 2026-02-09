@@ -34,6 +34,7 @@ export class AssetConfig {
 			images: {
 				'BG-Default': `${prefix}/background/NormalGame.webp`,
 				'normal-bg-cover': `${prefix}/background/ControllerNormal_PC.png`,
+				'meter': `${prefix}/background/Meter1.png`,
 				'loading-spinner': `assets/portrait/high/loading/loading-spinner.png`,
 				'shine': `assets/portrait/high/background/shine.png`
 			},
@@ -49,17 +50,14 @@ export class AssetConfig {
 	getBonusBackgroundAssets(): AssetGroup {
 		const prefix = this.getAssetPrefix();
 
+		// Reuse normal game background and controller assets to minimize uploads (no bonus spine)
 		return {
 			images: {
-				'BG-Bonus': `${prefix}/bonus_background/BonusGame_BZ.webp`,
-				'bonus-bg-cover': `${prefix}/bonus_background/ControllerBonus_BZ.png`,
+				'BG-Bonus': `${prefix}/background/NormalGame.webp`,
+				'bonus-bg-cover': `${prefix}/background/ControllerNormal_PC.png`,
+				'meter': `${prefix}/background/Meter1.png`,
 			},
-			spine: {
-				'BonusGame_BZ': {
-					atlas: `${prefix}/bonus_background/BonusGame_BZ.atlas`,
-					json: `${prefix}/bonus_background/BonusGame_BZ.json`
-				}
-			}
+			spine: {}
 		};
 	}
 
@@ -341,15 +339,8 @@ export class AssetConfig {
 	}
 
 	getForegroundAssets(): AssetGroup {
-		const prefix = this.getAssetPrefix();
-		return {
-			spine: {
-				'Old_Filter_Overlay': {
-					atlas: `${prefix}/foreground/Old_Filter_Overlay.atlas`,
-					json: `${prefix}/foreground/Old_Filter_Overlay.json`
-				}
-			}
-		};
+		// Old TV overlay not used for pastry_cub
+		return { spine: {} };
 	}
 
 	/**

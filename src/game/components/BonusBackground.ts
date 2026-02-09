@@ -81,32 +81,17 @@ export class BonusBackground {
 
 	private createPortraitBonusBackground(scene: Scene, assetScale: number): void {
 		console.log("[BonusBackground] Creating portrait bonus background layout");
-		
-		// Main bonus background spine animation - depth relative to container (container is at depth 1)
-		this.bonusBg = (scene.add as any).spine(
-			scene.scale.width * 0.5,
-			scene.scale.height * 0.5,
-			'BonusGame_BZ',
-			'BonusGame_BZ-atlas'
-		);
-		if (this.bonusBg) {
-			this.bonusBg.setOrigin(0.5, 0.5);
-			this.bonusBg.setDepth(0);
-			// Scale to cover screen
+
+		// Static bonus background (reuses NormalGame.webp via BG-Bonus key)
+		if (scene.textures.exists('BG-Bonus')) {
+			this.bonusBg = scene.add.image(
+				scene.scale.width * 0.5,
+				scene.scale.height * 0.5,
+				'BG-Bonus'
+			).setOrigin(0.5, 0.5).setDepth(0);
 			const scaleX = scene.scale.width / (this.bonusBg.width || 1);
 			const scaleY = scene.scale.height / (this.bonusBg.height || 1);
-			const scale = Math.max(scaleX, scaleY);
-			this.bonusBg.setScale(scale);
-			// Play idle animation
-			try {
-				const animState = this.bonusBg.animationState;
-				if (animState && typeof animState.setAnimation === 'function') {
-					animState.setAnimation(0, 'BonusGame_BZ_idle', true);
-					console.log('[BonusBackground] Playing BonusGame_BZ_idle animation');
-				}
-			} catch (e) {
-				console.warn('[BonusBackground] Failed to play bonus bg animation:', e);
-			}
+			this.bonusBg.setScale(Math.max(scaleX, scaleY));
 			this.bonusContainer.add(this.bonusBg);
 		}
 
@@ -127,32 +112,17 @@ export class BonusBackground {
 
 	private createLandscapeBonusBackground(scene: Scene, assetScale: number): void {
 		console.log("[BonusBackground] Creating landscape bonus background layout");
-		
-		// Main bonus background spine animation - depth relative to container (container is at depth 1)
-		this.bonusBg = (scene.add as any).spine(
-			scene.scale.width * 0.5,
-			scene.scale.height * 0.5,
-			'BonusGame_BZ',
-			'BonusGame_BZ-atlas'
-		);
-		if (this.bonusBg) {
-			this.bonusBg.setOrigin(0.5, 0.5);
-			this.bonusBg.setDepth(0);
-			// Scale to cover screen
+
+		// Static bonus background (reuses NormalGame.webp via BG-Bonus key)
+		if (scene.textures.exists('BG-Bonus')) {
+			this.bonusBg = scene.add.image(
+				scene.scale.width * 0.5,
+				scene.scale.height * 0.5,
+				'BG-Bonus'
+			).setOrigin(0.5, 0.5).setDepth(0);
 			const scaleX = scene.scale.width / (this.bonusBg.width || 1);
 			const scaleY = scene.scale.height / (this.bonusBg.height || 1);
-			const scale = Math.max(scaleX, scaleY);
-			this.bonusBg.setScale(scale);
-			// Play idle animation
-			try {
-				const animState = this.bonusBg.animationState;
-				if (animState && typeof animState.setAnimation === 'function') {
-					animState.setAnimation(0, 'BonusGame_BZ_idle', true);
-					console.log('[BonusBackground] Playing BonusGame_BZ_idle animation');
-				}
-			} catch (e) {
-				console.warn('[BonusBackground] Failed to play bonus bg animation:', e);
-			}
+			this.bonusBg.setScale(Math.max(scaleX, scaleY));
 			this.bonusContainer.add(this.bonusBg);
 		}
 

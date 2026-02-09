@@ -220,7 +220,7 @@ export class Game extends Scene {
 		}
 		const fadeOverlay = this.add.rectangle(
 			this.scale.width * 0.5, this.scale.height * 0.5, this.scale.width, this.scale.height, 0x000000
-		).setOrigin(0.5, 0.5).setScrollFactor(0).setAlpha(1);
+		).setOrigin(0.5, 0.5).setScrollFactor(0).setAlpha(1).setDepth(99999);
 		this.scale.on('resize', this.handleResize, this);
 		this.events.once('shutdown', () => this.scale.off('resize', this.handleResize, this));
 		return fadeOverlay;
@@ -251,7 +251,7 @@ export class Game extends Scene {
 		console.log('[Game] Creating bonus header...');
 		this.bonusHeader = new BonusHeader(this.networkManager, this.screenModeManager);
 		this.bonusHeader.create(this);
-		this.bonusHeader.getContainer().setVisible(false);
+		this.bonusHeader.setVisible(false);
 	}
 
 	private createSymbolsAndWinTracker(): void {
@@ -788,13 +788,13 @@ export class Game extends Scene {
 
 			// Hide normal header
 			if (this.header) {
-				this.header.getContainer().setVisible(false);
+				this.header.setVisible(false);
 				console.log('[Game] Normal header hidden');
 			}
 
 			// Show bonus header
 			if (this.bonusHeader) {
-				this.bonusHeader.getContainer().setVisible(true);
+				this.bonusHeader.setVisible(true);
 				console.log('[Game] Bonus header shown');
 				console.log('[Game] Bonus header container visible:', this.bonusHeader.getContainer().visible);
 				// If we already have a cumulative total (e.g., buy feature trigger win), show it immediately.
@@ -852,13 +852,13 @@ export class Game extends Scene {
 
 			// Show normal header
 			if (this.header) {
-				this.header.getContainer().setVisible(true);
+				this.header.setVisible(true);
 				console.log('[Game] Normal header shown');
 			}
 
 			// Hide bonus header
 			if (this.bonusHeader) {
-				this.bonusHeader.getContainer().setVisible(false);
+				this.bonusHeader.setVisible(false);
 				console.log('[Game] Bonus header hidden');
 			}
 		});

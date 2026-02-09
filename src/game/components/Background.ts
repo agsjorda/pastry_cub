@@ -62,7 +62,6 @@ export class Background {
 	public conveyorOverlapScaleX: number = 1.15;
 	private boundPlayConveyor = () => this.playConveyorAnimation();
 	private boundStopConveyor = () => this.stopConveyorAnimation();
-	private oldFilterOverlay: any = null; // Foreground overlay spine
 
 	constructor(networkManager: NetworkManager, screenModeManager: ScreenModeManager) {
 		this.networkManager = networkManager;
@@ -122,8 +121,6 @@ export class Background {
 		this.createNormalGameSpine(scene, assetScale);
 		// Conveyor background behind symbols - animates during spin
 		this.createConveyorSpine(scene, assetScale);
-		// Foreground overlay (Old Filter) sits above playfield
-		this.createForegroundOverlay(scene, assetScale);
 	}
 
 	/**
@@ -363,7 +360,7 @@ export class Background {
 			// this.coverHeightPercentOfScene = 0.45; //adjust normal bg cover height
 			const pct = Phaser.Math.Clamp(this.coverHeightPercentOfScene, 0, 1);
 			const scaleX = this.normalBgCover.width ? (width / this.normalBgCover.width * 1.2) : 1;
-			const scaleY = this.normalBgCover.height ? ((height * pct) / this.normalBgCover.height * 1.25) : 1;
+			const scaleY = this.normalBgCover.height ? ((height * pct) / this.normalBgCover.height * 1.15) : 1;
 			this.normalBgCover.setScale(scaleX, scaleY);
 
 			const coverHalfHeight = this.normalBgCover.displayHeight * 1;
@@ -371,83 +368,9 @@ export class Background {
 			// With origin (0.5, 0.5), bottom edge is at (y + displayHeight/2).
 			// So to align the bottom edge to the bottom of the scene: y = height - displayHeight/2.
 			const y = height - coverHalfHeight - this.coverBottomOffsetPx;
-			this.normalBgCover.setPosition(width * 0.5, y * 1.72);
+			this.normalBgCover.setPosition(width * 0.5, y * 1.56);
 		}
 
-		if (this.oldFilterOverlay) {
-			this.fitSpineCover(scene, this.oldFilterOverlay, width, height);
-			this.oldFilterOverlay.setDepth(9000);
-		}
-	}
-
-	private createForegroundOverlay(scene: Scene, assetScale: number): void {
-		try {
-			if (!ensureSpineFactory(scene, '[Background] createForegroundOverlay')) {
-				console.warn('[Background] Spine factory not available for foreground overlay; will retry shortly');
-				scene.time.delayedCall(250, () => this.createForegroundOverlay(scene, assetScale));
-				return;
-			}
-
-			if (!scene.cache.json.has('Old_Filter_Overlay')) {
-				console.warn('[Background] Old_Filter_Overlay spine assets not loaded yet, will retry later');
-				scene.time.delayedCall(1000, () => {
-					this.createForegroundOverlay(scene, assetScale);
-				});
-				return;
-			}
-
-			const centerX = scene.scale.width * 0.5;
-			const centerY = scene.scale.height * 0.5;
-
-			this.oldFilterOverlay = scene.add.spine(
-				centerX,
-				centerY,
-				'Old_Filter_Overlay',
-				'Old_Filter_Overlay-atlas'
-			);
-			this.oldFilterOverlay.setOrigin(0.5, 0.5);
-			this.oldFilterOverlay.setDepth(9000);
-			try {
-				const state: any = this.oldFilterOverlay.animationState;
-				if (state && typeof state.setAnimation === 'function') {
-					state.setAnimation(0, 'Old_Filter_Overlay', true);
-					state.timeScale = 0.2; // Adjust speed overlay animation speed
-					console.log('[Background] Playing Old_Filter_Overlay animation');
-				}
-			} catch (e) {
-				console.warn('[Background] Failed to start Old_Filter_Overlay animation:', e);
-			}
-
-			scene.time.delayedCall(50, () => {
-				this.layout(scene);
-			});
-		} catch (error) {
-			console.error('[Background] Error creating foreground overlay:', error);
-		}
-	}
-
-	private fitSpineCover(scene: Scene, spineObj: any, targetWidth: number, targetHeight: number): void {
-		try {
-			if (!spineObj || typeof spineObj.getBounds !== 'function') return;
-			spineObj.setScale(1, 1);
-			const baseBounds = spineObj.getBounds();
-			const baseWidth = Number(baseBounds?.width ?? 0);
-			const baseHeight = Number(baseBounds?.height ?? 0);
-			if (!Number.isFinite(baseWidth) || baseWidth <= 0) return;
-			if (!Number.isFinite(baseHeight) || baseHeight <= 0) return;
-
-			const scaleFactor = Math.max(targetWidth / baseWidth, targetHeight / baseHeight);
-			if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) return;
-			spineObj.setScale(scaleFactor, scaleFactor);
-
-			const boundsAfterScale = spineObj.getBounds();
-			const dx = (targetWidth * 0.5) - Number(boundsAfterScale?.centerX ?? targetWidth * 0.5);
-			const dy = (targetHeight * 0.5) - Number(boundsAfterScale?.centerY ?? targetHeight * 0.5);
-			if (Number.isFinite(dx)) spineObj.x += dx;
-			if (Number.isFinite(dy)) spineObj.y += dy;
-		} catch (e) {
-			console.warn('[Background] fitSpineCover failed:', e);
-		}
 	}
 
 	// Shine effect creation
@@ -590,14 +513,6 @@ export class Background {
 		}
 		this.conveyorSpines = [];
 		this.conveyorScene = null;
-		if (this.oldFilterOverlay) {
-			try {
-				this.oldFilterOverlay.destroy();
-			} catch (e) {
-				console.warn('[Background] Error destroying foreground overlay:', e);
-			}
-			this.oldFilterOverlay = null;
-		}
 	}
 
 	/**
@@ -612,7 +527,7 @@ export class Background {
 				console.log(`[Background] NormalGame_BZ Spine visibility set to: ${!isBonus} (isBonus: ${isBonus})`);
 			}
 			for (const spine of this.conveyorSpines) {
-				if (spine) spine.setVisible(!isBonus);
+				if (spine) spine.setVisible(true); // Conveyor visible in both normal and bonus game
 			}
 
 			if (this.normalBgCover) {
