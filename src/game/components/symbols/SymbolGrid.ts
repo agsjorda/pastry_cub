@@ -35,8 +35,13 @@ import {
  * Manages the symbol grid for the slot game
  */
 export class SymbolGrid {
+  /** Set true to show a red border around the reel container (debug) */
+  public static SHOW_REEL_BORDER: boolean = false;
+
   /** Reference to the game scene */
   private scene: Game;
+
+  private reelBorderGraphics: Phaser.GameObjects.Graphics | null = null;
   
   /** Main symbol grid [col][row] - column-major for rendering */
   private symbols: (SymbolObject | null)[][] = [];
@@ -116,6 +121,12 @@ export class SymbolGrid {
       maskShape.setVisible(false);
     }
 
+    this.reelBorderGraphics = this.scene.add.graphics();
+    this.reelBorderGraphics.lineStyle(2, 0xff0000, 1);
+    this.reelBorderGraphics.strokeRect(maskX, maskY, maskW, maskH);
+    this.reelBorderGraphics.setDepth(10000);
+    this.reelBorderGraphics.setVisible(SymbolGrid.SHOW_REEL_BORDER);
+
     console.log(`[SymbolGrid] Mask created with padding - Left: ${GRID_MASK_PADDING.left}, Right: ${GRID_MASK_PADDING.right}, Top: ${GRID_MASK_PADDING.top}, Bottom: ${GRID_MASK_PADDING.bottom}, Gradient: ${GRID_MASK_GRADIENT_FADE_HEIGHT}px`);
   }
 
@@ -127,15 +138,17 @@ export class SymbolGrid {
     const fade = Math.min(GRID_MASK_GRADIENT_FADE_HEIGHT, Math.floor(maskH * 0.2));
     if (!this.scene.textures.exists(key)) {
       const texture = this.scene.textures.createCanvas(key, maskW, maskH);
-      const ctx = texture.getContext();
-      const gradient = ctx.createLinearGradient(0, 0, 0, maskH);
-      gradient.addColorStop(0, 'rgba(255,255,255,0)');
-      gradient.addColorStop(fade / maskH, 'rgba(255,255,255,1)');
-      gradient.addColorStop(1 - fade / maskH, 'rgba(255,255,255,1)');
-      gradient.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, maskW, maskH);
-      texture.refresh();
+      if (texture) {
+        const ctx = texture.getContext();
+        const gradient = ctx.createLinearGradient(0, 0, 0, maskH);
+        gradient.addColorStop(0, 'rgba(255,255,255,0)');
+        gradient.addColorStop(fade / maskH, 'rgba(255,255,255,1)');
+        gradient.addColorStop(1 - fade / maskH, 'rgba(255,255,255,1)');
+        gradient.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, maskW, maskH);
+        texture.refresh();
+      }
     }
     const maskImage = this.scene.add.image(maskX, maskY, key).setOrigin(0, 0);
     const bitmapMask = new (Phaser.Display.Masks as any).BitmapMask(this.scene, maskImage);
@@ -240,6 +253,14 @@ export class SymbolGrid {
    */
   public isInitialized(): boolean {
     return this.symbols.length > 0 && (this.symbols[0]?.length ?? 0) > 0;
+  }
+
+  /** Show or hide the red debug border around the reel container */
+  public setReelBorderVisible(visible: boolean): void {
+    SymbolGrid.SHOW_REEL_BORDER = visible;
+    if (this.reelBorderGraphics) {
+      this.reelBorderGraphics.setVisible(visible);
+    }
   }
 
   // ============================================================================

@@ -32,15 +32,16 @@ export class AssetConfig {
 
 		return {
 			images: {
-				'BG-Default': `${prefix}/background/NormalGame_BZ.webp`,
-				'normal-bg-cover': `assets/portrait/high/background/ControllerNormal_BZ.png`,
+				'BG-Default': `${prefix}/background/NormalGame.webp`,
+				'normal-bg-cover': `${prefix}/background/ControllerNormal_PC.png`,
+				'meter': `${prefix}/background/Meter1.png`,
 				'loading-spinner': `assets/portrait/high/loading/loading-spinner.png`,
 				'shine': `assets/portrait/high/background/shine.png`
 			},
 			spine: {
-				'NormalGame_BZ': {
-					atlas: `assets/portrait/high/background/NormalGame_BZ.atlas`,
-					json: `assets/portrait/high/background/NormalGame_BZ.json`
+				'BG_Conveyor_PC': {
+					atlas: `${prefix}/conveyor/BG_Conveyor_PC.atlas`,
+					json: `${prefix}/conveyor/BG_Conveyor_PC.json`
 				}
 			}
 		};
@@ -49,17 +50,14 @@ export class AssetConfig {
 	getBonusBackgroundAssets(): AssetGroup {
 		const prefix = this.getAssetPrefix();
 
+		// Reuse normal game background and controller assets to minimize uploads (no bonus spine)
 		return {
 			images: {
-				'BG-Bonus': `${prefix}/bonus_background/BonusGame_BZ.webp`,
-				'bonus-bg-cover': `${prefix}/bonus_background/ControllerBonus_BZ.png`,
+				'BG-Bonus': `${prefix}/background/NormalGame.webp`,
+				'bonus-bg-cover': `${prefix}/background/ControllerNormal_PC.png`,
+				'meter': `${prefix}/background/Meter1.png`,
 			},
-			spine: {
-				'BonusGame_BZ': {
-					atlas: `${prefix}/bonus_background/BonusGame_BZ.atlas`,
-					json: `${prefix}/bonus_background/BonusGame_BZ.json`
-				}
-			}
+			spine: {}
 		};
 	}
 
@@ -68,13 +66,11 @@ export class AssetConfig {
 
 		return {
 			images: {
-				// Removed sugar wonderland logo ('header-logo')
-				// Add more header images here
+				'Header_Scene': `${prefix}/header/Header_Scene.webp`,
+				'Header_SceneFrame': `${prefix}/header/Header_SceneFrame.webp`,
+				'Header_WinBar': `${prefix}/header/Header_WinBar.webp`
 			},
-			spine: {
-				// Removed cat and win-bar assets from header
-				// Add more Spine animations here
-			}
+			spine: {}
 		};
 	}
 
@@ -82,7 +78,11 @@ export class AssetConfig {
 		const prefix = this.getAssetPrefix();
 
 		return {
-			images: {},
+			images: {
+				'Header_Scene': `${prefix}/header/Header_Scene.webp`,
+				'Header_SceneFrame': `${prefix}/header/Header_SceneFrame.webp`,
+				'Header_WinBar': `${prefix}/header/Header_WinBar.webp`
+			},
 			spine: {}
 		};
 	}
@@ -109,8 +109,8 @@ export class AssetConfig {
 			spine: {
 				// Studio loading spine (DI JOKER) – only available in portrait/high
 				'di_joker': {
-					atlas: `assets/portrait/high/dijoker_loading/DI JOKER.atlas`,
-					json: `assets/portrait/high/dijoker_loading/DI JOKER.json`
+					atlas: `${prefix}/dijoker_loading/DI JOKER.atlas`,
+					json: `${prefix}/dijoker_loading/DI JOKER.json`
 				},
 				// Character1 for preloader screen
 				'character1': {
@@ -136,57 +136,37 @@ export class AssetConfig {
 		const symbolImages: { [key: string]: string } = {};
 		const symbolSpine: { [key: string]: { atlas: string; json: string } } = {};
 
-		// BZ symbol Spine animations for Symbol0–Symbol10
-		// These are provided in a fixed path under assets/symbols/high/beezle_bop_symbols/
-		for (let i = 0; i <= 10; i++) {
+		// Symbol Spine: 0-7 (scatter + regular), 10 (multiplier base). Symbols 8-9, 11-22 use Symbol10 as fallback.
+		const pcPath = 'assets/symbols/high/pastry_cub_symbols';
+		for (const i of [0, 1, 2, 3, 4, 5, 6, 7, 10]) {
 			const spineKey = `symbol_${i}_sugar_spine`;
-			const atlas = `assets/symbols/high/beezle_bop_symbols/Symbol${i}_${suffix}.atlas`;
-			const json = `assets/symbols/high/beezle_bop_symbols/Symbol${i}_${suffix}.json`;
-			symbolSpine[spineKey] = { atlas: atlas, json: json };
+			symbolSpine[spineKey] = { atlas: `${pcPath}/Symbol${i}_${suffix}.atlas`, json: `${pcPath}/Symbol${i}_${suffix}.json` };
 		}
 
-		// symbols for helper
-		for (let i = 0; i <= 9; i++) {
-			const spritePath = `assets/symbols/high/beezle_bop_symbols/statics/symbol${i}.png`;
-			const helperKey = `symbol${i}`;
-			const fallbackKey = `symbol_${i}`;
-			// const atlas = `assets/symbols/high/beezle_bop_symbols/statics/Symbol${i}_${suffix}.atlas`;
-			// const json = `assets/symbols/high/beezle_bop_symbols/statics/Symbol${i}_${suffix}.json`;
-			symbolImages[helperKey] = spritePath;
-			symbolImages[fallbackKey] = spritePath;
+		// symbols for helper (HelpScreen, etc.): 0-7 only
+		for (let i = 0; i <= 7; i++) {
+			const spritePath = `${pcPath}/statics/symbol${i}.png`;
+			symbolImages[`symbol${i}`] = spritePath;
+			symbolImages[`symbol_${i}`] = spritePath;
 		}
 
-		// Multiplier overlays (PNG numbers shown in front of the multiplier symbol)
-		// Mapping:
-		// 10->2, 11->3, 12->4, 13->5, 14->6, 15->8, 16->10,
-		// 17->12, 18->15, 19->20, 20->25, 21->50, 22->100
+		// Multiplier overlays: symbol ID -> overlay label (matches GameConfig.MULTIPLIER_VALUES)
 		const overlayMap: { [value: number]: string } = {
-			10: '2',
-			11: '3',
-			12: '4',
-			13: '5',
-			14: '6',
-			15: '8',
-			16: '10',
-			17: '12',
-			18: '15',
-			19: '20',
-			20: '25',
-			21: '50',
-			22: '100'
+			8: '2', 9: '3', 10: '4', 11: '5', 12: '6', 13: '8', 14: '10', 15: '12',
+			16: '15', 17: '20', 18: '25', 19: '50', 20: '100', 21: '250', 22: '500'
 		};
 		Object.entries(overlayMap).forEach(([valueStr, label]) => {
 			const value = Number(valueStr);
 			const key = `multiplier_overlay_${value}`;
-			const path = `assets/symbols/high/beezle_bop_symbols/multiplier_symbols/${label}.webp`;
+			const path = `assets/symbols/high/pastry_cub_symbols/multiplier_symbols/${label}.webp`;
 			symbolImages[key] = path;
 			console.log(`[AssetConfig] Multiplier overlay ${value}: ${path}`);
 		});
 		
 		// Symbol removal explosion VFX
 		symbolSpine['Explosion_BZ_VFX'] = {
-			atlas: `assets/symbols/high/beezle_bop_symbols/Explosion_BZ_VFX.atlas`,
-			json: `assets/symbols/high/beezle_bop_symbols/Explosion_BZ_VFX.json`
+			atlas: `assets/symbols/high/pastry_cub_symbols/Explosion_BZ_VFX.atlas`,
+			json: `assets/symbols/high/pastry_cub_symbols/Explosion_BZ_VFX.json`
 		};
 		console.log('[AssetConfig] Explosion VFX spine: Explosion_BZ_VFX');
 
@@ -359,15 +339,8 @@ export class AssetConfig {
 	}
 
 	getForegroundAssets(): AssetGroup {
-		const prefix = this.getAssetPrefix();
-		return {
-			spine: {
-				'Old_Filter_Overlay': {
-					atlas: `${prefix}/foreground/Old_Filter_Overlay.atlas`,
-					json: `${prefix}/foreground/Old_Filter_Overlay.json`
-				}
-			}
-		};
+		// Old TV overlay not used for pastry_cub
+		return { spine: {} };
 	}
 
 	/**

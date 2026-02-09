@@ -3,6 +3,13 @@ import { NetworkManager } from "../../managers/NetworkManager";
 import { ScreenModeManager } from "../../managers/ScreenModeManager";
 import { gameStateManager } from "../../managers/GameStateManager";
 import { ensureSpineFactory } from "../../utils/SpineGuard";
+import { gameEventManager, GameEventType } from "../../event/EventManager";
+import {
+	GRID_CENTER_Y_RATIO,
+	GRID_CENTER_Y_OFFSET_PX,
+	TIMING_CONFIG,
+	CONVEYOR_ANIMATION_TIME_SCALE,
+} from "../../config/GameConfig";
 
 export class Background {
 	private bgContainer!: Phaser.GameObjects.Container;
@@ -27,9 +34,9 @@ export class Background {
 	// NOTE: BG-Default is hidden when the Spine background is enabled.
 	// If you don't see any change when adjusting this, set `preferSpineBackground = false` below.
 	private bgDefaultScaleMultiplier: number = 1;
-	// ADJUST HERE: set false to use BG-Default instead of the Spine background.
+	// ADJUST HERE: set false to use BG-Default (NormalGame.webp) instead of the Spine background.
 	// When true, Spine is shown and BG-Default becomes a fallback (hidden).
-	private preferSpineBackground: boolean = true;
+	private preferSpineBackground: boolean = false; // Use static NormalGame.webp, no animation
 	// ADJUST HERE: controls how tall the bottom overlay (normal-bg-cover) is.
 	// Value is a ratio of the *scene height* (e.g. 0.9 = 90% of the screen height).
 	// Width stays locked to the scene width; height is scaled independently (can distort).
@@ -44,7 +51,17 @@ export class Background {
 	private readonly MAX_SHINES: number = 5;
 	private shineTimer: Phaser.Time.TimerEvent | null = null;
 	private normalGameSpine: any = null; // Spine animation for NormalGame_BZ
-	private oldFilterOverlay: any = null; // Foreground overlay spine
+	private conveyorSpines: any[] = []; // 7 columns of BG_Conveyor_PC - one behind each reel
+	private conveyorScene: Scene | null = null;
+	/** Offset (px) for conveyor position. Positive X = right, positive Y = down. */
+	public conveyorOffsetX: number = 0;
+	public conveyorOffsetY: number = 60;
+	/** Vertical scale multiplier for conveyor. < 1 = shorter, 1 = same as width. */
+	public conveyorScaleY: number = 0.85;
+	/** Horizontal scale multiplier to eliminate gaps. > 1 = overlap. Increase if gaps remain. */
+	public conveyorOverlapScaleX: number = 1.15;
+	private boundPlayConveyor = () => this.playConveyorAnimation();
+	private boundStopConveyor = () => this.stopConveyorAnimation();
 
 	constructor(networkManager: NetworkManager, screenModeManager: ScreenModeManager) {
 		this.networkManager = networkManager;
@@ -93,17 +110,17 @@ export class Background {
 		// so its depth can reliably sit above symbols/win animations if needed.
 		this.normalBgCover = scene.add.image(
 			scene.scale.width * 0.5,
-			scene.scale.height * 0.776,
+			scene.scale.height * 0.5,
 			'normal-bg-cover'
-		).setOrigin(0.5, 0.5).setDepth(850);
+		).setOrigin(0.5, 0).setDepth(850);
 
 		// Add shine effect (if needed)
 		this.createShineEffect(scene, assetScale);
 
 		// Create Spine animation background if needed (will be layered between the two if visible)
 		this.createNormalGameSpine(scene, assetScale);
-		// Foreground overlay (Old Filter) sits above playfield
-		this.createForegroundOverlay(scene, assetScale);
+		// Conveyor background behind symbols - animates during spin
+		this.createConveyorSpine(scene, assetScale);
 	}
 
 	/**
@@ -183,6 +200,117 @@ export class Background {
 		}
 	}
 
+	/**
+	 * Create 7 BG_Conveyor_PC spines - one behind each reel column, aligned with symbol grid
+	 */
+	private createConveyorSpine(scene: Scene, assetScale: number): void {
+		try {
+			if (!ensureSpineFactory(scene, '[Background] createConveyorSpine')) {
+				scene.time.delayedCall(250, () => this.createConveyorSpine(scene, assetScale));
+				return;
+			}
+			if (!scene.cache.json.has('BG_Conveyor_PC')) {
+				scene.time.delayedCall(500, () => this.createConveyorSpine(scene, assetScale));
+				return;
+			}
+
+			const width = scene.scale.width;
+			const height = scene.scale.height;
+			const conveyorRefWidth = 56; // Conveyor region width in atlas
+			const conveyorWidth = scene.scale.width / 7;
+			// Scale so conveyors overlap - removes horizontal gaps (conveyorOverlapScaleX > 1)
+			const scaleX = (conveyorWidth / conveyorRefWidth) * this.conveyorOverlapScaleX;
+			const scaleY = scaleX * this.conveyorScaleY;
+			const slotY = height * GRID_CENTER_Y_RATIO + GRID_CENTER_Y_OFFSET_PX;
+
+			for (let col = 0; col < 7; col++) {
+				const colCenterX = (col + 0.5) * conveyorWidth + this.conveyorOffsetX;
+				const spine = scene.add.spine(
+					colCenterX,
+					slotY + this.conveyorOffsetY,
+					'BG_Conveyor_PC',
+					'BG_Conveyor_PC-atlas'
+				);
+				spine.setOrigin(0.5, 0.5); // center - same Y as reel
+				spine.setScale(scaleX, scaleY);
+				spine.setDepth(5);
+				this.bgContainer.add(spine);
+				this.conveyorSpines.push(spine);
+			}
+
+			this.conveyorScene = scene;
+			this.setupConveyorSpinListeners(scene);
+			scene.time.delayedCall(50, () => this.layout(scene));
+			console.log('[Background] 7 conveyor columns created successfully');
+		} catch (error) {
+			console.error('[Background] Error creating BG_Conveyor_PC:', error);
+			this.conveyorSpines = [];
+		}
+	}
+
+	private boundPlayConveyorForColumns = (data?: unknown) => this.playConveyorForColumns((data as { columns?: number[] })?.columns ?? []);
+	private boundStopConveyorForColumns = (data?: unknown) => this.stopConveyorForColumns((data as { columns?: number[] })?.columns ?? []);
+
+	private setupConveyorSpinListeners(scene: Scene): void {
+		gameEventManager.on(GameEventType.REELS_START, this.boundPlayConveyor);
+		gameEventManager.on(GameEventType.REELS_STOP, this.boundStopConveyor);
+		gameEventManager.on(GameEventType.TUMBLE_COLUMNS_START, this.boundPlayConveyorForColumns);
+		gameEventManager.on(GameEventType.TUMBLE_COLUMNS_DONE, this.boundStopConveyorForColumns);
+		scene.events.once('shutdown', () => {
+			gameEventManager.off(GameEventType.REELS_START, this.boundPlayConveyor);
+			gameEventManager.off(GameEventType.REELS_STOP, this.boundStopConveyor);
+			gameEventManager.off(GameEventType.TUMBLE_COLUMNS_START, this.boundPlayConveyorForColumns);
+			gameEventManager.off(GameEventType.TUMBLE_COLUMNS_DONE, this.boundStopConveyorForColumns);
+		});
+	}
+
+	private playConveyorAnimation(): void {
+		this.playConveyorForColumns([...Array(this.conveyorSpines.length).keys()]);
+	}
+
+	private playConveyorForColumns(columns: number[]): void {
+		const staggerMs = gameStateManager.isTurbo ? 0 : TIMING_CONFIG.SYMBOL_STAGGER_MS;
+		const colSet = new Set(columns);
+		for (let col = 0; col < this.conveyorSpines.length; col++) {
+			if (!colSet.has(col)) continue;
+			const spine = this.conveyorSpines[col];
+			if (!spine?.visible) continue;
+			const delayMs = staggerMs * col;
+			const startOne = () => {
+				try {
+					const state: any = spine?.animationState;
+					if (state?.setAnimation) state.setAnimation(0, 'animation', true);
+					if (state) (state as any).timeScale = CONVEYOR_ANIMATION_TIME_SCALE;
+				} catch (e) {
+					console.warn('[Background] Failed to play conveyor animation:', e);
+				}
+			};
+			if (delayMs <= 0) {
+				startOne();
+			} else if (this.conveyorScene) {
+				this.conveyorScene.time.delayedCall(delayMs, startOne);
+			}
+		}
+	}
+
+	private stopConveyorAnimation(): void {
+		this.stopConveyorForColumns([...Array(this.conveyorSpines.length).keys()]);
+	}
+
+	private stopConveyorForColumns(columns: number[]): void {
+		const colSet = new Set(columns);
+		for (let col = 0; col < this.conveyorSpines.length; col++) {
+			if (!colSet.has(col)) continue;
+			const spine = this.conveyorSpines[col];
+			if (!spine?.visible) continue;
+			try {
+				const state: any = spine.animationState;
+				if (state?.setEmptyAnimation) state.setEmptyAnimation(0, 0.2);
+			} catch (e) {
+				console.warn('[Background] Failed to stop conveyor animation:', e);
+			}
+		}
+	}
 
 	// adjustments for the background layout
 	private layout(scene: Scene): void {
@@ -212,96 +340,37 @@ export class Background {
 			this.normalGameSpine.setScale(finalScale);
 			console.log(`[Background] Spine scaled to ${finalScale.toFixed(3)} (base: ${baseScale.toFixed(3)} * multiplier: ${this.spineContainFitMultiplier})`);
 		}
+		if (this.conveyorSpines.length > 0) {
+			const conveyorRefWidth = 56;
+			const conveyorWidth = width / 7;
+			// Scale so conveyors overlap - removes horizontal gaps
+			const conveyorScaleX = (conveyorWidth / conveyorRefWidth) * this.conveyorOverlapScaleX;
+			const conveyorScaleY = conveyorScaleX * this.conveyorScaleY;
+			const slotY = height * GRID_CENTER_Y_RATIO + GRID_CENTER_Y_OFFSET_PX;
+			for (let col = 0; col < this.conveyorSpines.length; col++) {
+				const spine = this.conveyorSpines[col];
+				if (!spine) continue;
+				const colCenterX = (col + 0.5) * conveyorWidth + this.conveyorOffsetX;
+				spine.setPosition(colCenterX, slotY + this.conveyorOffsetY);
+				spine.setScale(conveyorScaleX, conveyorScaleY);
+			}
+		}
 		if (this.normalBgCover) {
 			// Height adjuster (percentage): change `coverHeightPercentOfScene` above.
 			// this.coverHeightPercentOfScene = 0.45; //adjust normal bg cover height
 			const pct = Phaser.Math.Clamp(this.coverHeightPercentOfScene, 0, 1);
-			const scaleX = this.normalBgCover.width ? (width / this.normalBgCover.width) : 1;
-			const scaleY = this.normalBgCover.height ? ((height * pct) / this.normalBgCover.height) : 1;
+			const scaleX = this.normalBgCover.width ? (width / this.normalBgCover.width * 1.2) : 1;
+			const scaleY = this.normalBgCover.height ? ((height * pct) / this.normalBgCover.height * 1.15) : 1;
 			this.normalBgCover.setScale(scaleX, scaleY);
 
-			const coverHalfHeight = this.normalBgCover.displayHeight * 0.5;
+			const coverHalfHeight = this.normalBgCover.displayHeight * 1;
 			// Bottom-edge aligned positioning:
 			// With origin (0.5, 0.5), bottom edge is at (y + displayHeight/2).
 			// So to align the bottom edge to the bottom of the scene: y = height - displayHeight/2.
 			const y = height - coverHalfHeight - this.coverBottomOffsetPx;
-			this.normalBgCover.setPosition(width * 0.5, y);
+			this.normalBgCover.setPosition(width * 0.5, y * 1.56);
 		}
 
-		if (this.oldFilterOverlay) {
-			this.fitSpineCover(scene, this.oldFilterOverlay, width, height);
-			this.oldFilterOverlay.setDepth(9000);
-		}
-	}
-
-	private createForegroundOverlay(scene: Scene, assetScale: number): void {
-		try {
-			if (!ensureSpineFactory(scene, '[Background] createForegroundOverlay')) {
-				console.warn('[Background] Spine factory not available for foreground overlay; will retry shortly');
-				scene.time.delayedCall(250, () => this.createForegroundOverlay(scene, assetScale));
-				return;
-			}
-
-			if (!scene.cache.json.has('Old_Filter_Overlay')) {
-				console.warn('[Background] Old_Filter_Overlay spine assets not loaded yet, will retry later');
-				scene.time.delayedCall(1000, () => {
-					this.createForegroundOverlay(scene, assetScale);
-				});
-				return;
-			}
-
-			const centerX = scene.scale.width * 0.5;
-			const centerY = scene.scale.height * 0.5;
-
-			this.oldFilterOverlay = scene.add.spine(
-				centerX,
-				centerY,
-				'Old_Filter_Overlay',
-				'Old_Filter_Overlay-atlas'
-			);
-			this.oldFilterOverlay.setOrigin(0.5, 0.5);
-			this.oldFilterOverlay.setDepth(9000);
-			try {
-				const state: any = this.oldFilterOverlay.animationState;
-				if (state && typeof state.setAnimation === 'function') {
-					state.setAnimation(0, 'Old_Filter_Overlay', true);
-					state.timeScale = 0.2; // Adjust speed overlay animation speed
-					console.log('[Background] Playing Old_Filter_Overlay animation');
-				}
-			} catch (e) {
-				console.warn('[Background] Failed to start Old_Filter_Overlay animation:', e);
-			}
-
-			scene.time.delayedCall(50, () => {
-				this.layout(scene);
-			});
-		} catch (error) {
-			console.error('[Background] Error creating foreground overlay:', error);
-		}
-	}
-
-	private fitSpineCover(scene: Scene, spineObj: any, targetWidth: number, targetHeight: number): void {
-		try {
-			if (!spineObj || typeof spineObj.getBounds !== 'function') return;
-			spineObj.setScale(1, 1);
-			const baseBounds = spineObj.getBounds();
-			const baseWidth = Number(baseBounds?.width ?? 0);
-			const baseHeight = Number(baseBounds?.height ?? 0);
-			if (!Number.isFinite(baseWidth) || baseWidth <= 0) return;
-			if (!Number.isFinite(baseHeight) || baseHeight <= 0) return;
-
-			const scaleFactor = Math.max(targetWidth / baseWidth, targetHeight / baseHeight);
-			if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) return;
-			spineObj.setScale(scaleFactor, scaleFactor);
-
-			const boundsAfterScale = spineObj.getBounds();
-			const dx = (targetWidth * 0.5) - Number(boundsAfterScale?.centerX ?? targetWidth * 0.5);
-			const dy = (targetHeight * 0.5) - Number(boundsAfterScale?.centerY ?? targetHeight * 0.5);
-			if (Number.isFinite(dx)) spineObj.x += dx;
-			if (Number.isFinite(dy)) spineObj.y += dy;
-		} catch (e) {
-			console.warn('[Background] fitSpineCover failed:', e);
-		}
 	}
 
 	// Shine effect creation
@@ -424,7 +493,7 @@ export class Background {
 		this.shineInstances = [];
 		this.activeShineCount = 0;
 
-		// Destroy Spine animation
+		// Destroy Spine animations
 		if (this.normalGameSpine) {
 			try {
 				this.normalGameSpine.destroy();
@@ -433,14 +502,17 @@ export class Background {
 			}
 			this.normalGameSpine = null;
 		}
-		if (this.oldFilterOverlay) {
+		gameEventManager.off(GameEventType.REELS_START, this.boundPlayConveyor);
+		gameEventManager.off(GameEventType.REELS_STOP, this.boundStopConveyor);
+		for (const spine of this.conveyorSpines) {
 			try {
-				this.oldFilterOverlay.destroy();
+				spine?.destroy();
 			} catch (e) {
-				console.warn('[Background] Error destroying foreground overlay:', e);
+				console.warn('[Background] Error destroying conveyor Spine:', e);
 			}
-			this.oldFilterOverlay = null;
 		}
+		this.conveyorSpines = [];
+		this.conveyorScene = null;
 	}
 
 	/**
@@ -453,6 +525,9 @@ export class Background {
 			if (this.normalGameSpine) {
 				this.normalGameSpine.setVisible(!isBonus);
 				console.log(`[Background] NormalGame_BZ Spine visibility set to: ${!isBonus} (isBonus: ${isBonus})`);
+			}
+			for (const spine of this.conveyorSpines) {
+				if (spine) spine.setVisible(true); // Conveyor visible in both normal and bonus game
 			}
 
 			if (this.normalBgCover) {

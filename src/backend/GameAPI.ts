@@ -106,7 +106,7 @@ export interface RefreshTokenResponse {
 }
 
 export class GameAPI {  
-    private static readonly GAME_ID: string = '00120925';
+    private static readonly GAME_ID: string = '00120925'; //change to 00171225 for pastry cub
     private static DEMO_BALANCE: number = 10000;
     private static readonly REFRESH_TOKEN_KEY: string = 'refresh_token';
 

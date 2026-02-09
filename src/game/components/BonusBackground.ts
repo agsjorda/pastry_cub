@@ -22,15 +22,6 @@ export class BonusBackground {
 	// Negative values = move UP (e.g., -50 moves image 50px up)
 	private bonusBackgroundYOffset: number = -200;
 	
-	// ============================================
-	// ADJUST HERE: Vertical offset for bonus-bg-cover overlay
-	// ============================================
-	// Controls the vertical position of the bonus-bg-cover overlay
-	// 0 = default position (height * 0.776)
-	// Positive values = move DOWN from default (e.g., 50 moves cover 50px down)
-	// Negative values = move UP from default (e.g., -50 moves cover 50px up)
-	private bonusBgCoverYOffset: number = 20;
-
 	constructor(networkManager: NetworkManager, screenModeManager: ScreenModeManager) {
 		this.networkManager = networkManager;
 		this.screenModeManager = screenModeManager;
@@ -90,42 +81,26 @@ export class BonusBackground {
 
 	private createPortraitBonusBackground(scene: Scene, assetScale: number): void {
 		console.log("[BonusBackground] Creating portrait bonus background layout");
-		
-		// Main bonus background spine animation - depth relative to container (container is at depth 1)
-		this.bonusBg = (scene.add as any).spine(
-			scene.scale.width * 0.5,
-			scene.scale.height * 0.5,
-			'BonusGame_BZ',
-			'BonusGame_BZ-atlas'
-		);
-		if (this.bonusBg) {
-			this.bonusBg.setOrigin(0.5, 0.5);
-			this.bonusBg.setDepth(0);
-			// Scale to cover screen
+
+		// Static bonus background (reuses NormalGame.webp via BG-Bonus key)
+		if (scene.textures.exists('BG-Bonus')) {
+			this.bonusBg = scene.add.image(
+				scene.scale.width * 0.5,
+				scene.scale.height * 0.5,
+				'BG-Bonus'
+			).setOrigin(0.5, 0.5).setDepth(0);
 			const scaleX = scene.scale.width / (this.bonusBg.width || 1);
 			const scaleY = scene.scale.height / (this.bonusBg.height || 1);
-			const scale = Math.max(scaleX, scaleY);
-			this.bonusBg.setScale(scale);
-			// Play idle animation
-			try {
-				const animState = this.bonusBg.animationState;
-				if (animState && typeof animState.setAnimation === 'function') {
-					animState.setAnimation(0, 'BonusGame_BZ_idle', true);
-					console.log('[BonusBackground] Playing BonusGame_BZ_idle animation');
-				}
-			} catch (e) {
-				console.warn('[BonusBackground] Failed to play bonus bg animation:', e);
-			}
+			this.bonusBg.setScale(Math.max(scaleX, scaleY));
 			this.bonusContainer.add(this.bonusBg);
 		}
 
-		// Bonus cover overlay (centered)
-		// Add directly to scene with depth 850 (above symbols 0-600, win animations 800, but below controller 900)
+		// Bonus cover overlay - bottom edge aligned with bottom of screen
 		this.bonusBgCover = scene.add.image(
 			scene.scale.width * 0.5,
-			scene.scale.height * 0.776,
+			scene.scale.height,
 			'bonus-bg-cover'
-		).setOrigin(0.5, 0.5).setDepth(850);
+		).setOrigin(0.5, 1).setDepth(850);
 		// Initially hidden, will be shown when bonus mode is active
 		this.bonusBgCover.setVisible(false);
 		// Don't add to container - add directly to scene so depth works correctly
@@ -137,42 +112,26 @@ export class BonusBackground {
 
 	private createLandscapeBonusBackground(scene: Scene, assetScale: number): void {
 		console.log("[BonusBackground] Creating landscape bonus background layout");
-		
-		// Main bonus background spine animation - depth relative to container (container is at depth 1)
-		this.bonusBg = (scene.add as any).spine(
-			scene.scale.width * 0.5,
-			scene.scale.height * 0.5,
-			'BonusGame_BZ',
-			'BonusGame_BZ-atlas'
-		);
-		if (this.bonusBg) {
-			this.bonusBg.setOrigin(0.5, 0.5);
-			this.bonusBg.setDepth(0);
-			// Scale to cover screen
+
+		// Static bonus background (reuses NormalGame.webp via BG-Bonus key)
+		if (scene.textures.exists('BG-Bonus')) {
+			this.bonusBg = scene.add.image(
+				scene.scale.width * 0.5,
+				scene.scale.height * 0.5,
+				'BG-Bonus'
+			).setOrigin(0.5, 0.5).setDepth(0);
 			const scaleX = scene.scale.width / (this.bonusBg.width || 1);
 			const scaleY = scene.scale.height / (this.bonusBg.height || 1);
-			const scale = Math.max(scaleX, scaleY);
-			this.bonusBg.setScale(scale);
-			// Play idle animation
-			try {
-				const animState = this.bonusBg.animationState;
-				if (animState && typeof animState.setAnimation === 'function') {
-					animState.setAnimation(0, 'BonusGame_BZ_idle', true);
-					console.log('[BonusBackground] Playing BonusGame_BZ_idle animation');
-				}
-			} catch (e) {
-				console.warn('[BonusBackground] Failed to play bonus bg animation:', e);
-			}
+			this.bonusBg.setScale(Math.max(scaleX, scaleY));
 			this.bonusContainer.add(this.bonusBg);
 		}
 
-		// Bonus cover overlay
-		// Add directly to scene with depth 850 (above symbols 0-600, win animations 800, but below controller 900)
+		// Bonus cover overlay - bottom edge aligned with bottom of screen
 		this.bonusBgCover = scene.add.image(
 			scene.scale.width * 0.5,
-			scene.scale.height * 0.5,
+			scene.scale.height,
 			'bonus-bg-cover'
-		).setOrigin(0.5, 0.5).setDepth(850);
+		).setOrigin(0.5, 1).setDepth(850);
 		// Initially hidden, will be shown when bonus mode is active
 		this.bonusBgCover.setVisible(false);
 		// Don't add to container - add directly to scene so depth works correctly
@@ -216,11 +175,9 @@ export class BonusBackground {
 		}
 
 		if (this.bonusBgCover) {
-			// Match normal background cover behavior: anchor around the reel/controller separation.
-			// Apply Y offset adjustment (see bonusBgCoverYOffset property at top of class)
-			const yPosition = (height * 0.776) + this.bonusBgCoverYOffset;
-			this.bonusBgCover.setPosition(width * 0.5, yPosition);
+			// Bottom edge aligned with bottom of screen (origin 0.5, 1)
 			this.scaleImageToWidth(this.bonusBgCover, width);
+			this.bonusBgCover.setPosition(width * 0.5, height);
 		}
 
 	}

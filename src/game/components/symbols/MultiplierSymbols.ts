@@ -35,10 +35,10 @@ export class MultiplierSymbols {
   }
 
   /**
-   * Check if a symbol value is a regular sugar symbol (1-9)
+   * Check if a symbol value is a regular sugar symbol (1-7)
    */
   public static isSugarSymbol(symbolValue: number): boolean {
-    return symbolValue >= 1 && symbolValue <= 9;
+    return symbolValue >= 1 && symbolValue <= 7;
   }
 
   // ============================================================================

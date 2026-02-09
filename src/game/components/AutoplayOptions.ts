@@ -108,7 +108,7 @@ export class AutoplayOptions {
 		
 		// Create main container
 		this.container = scene.add.container(0, 0);
-		this.container.setDepth(2000); // Very high depth to appear above everything including win animations and symbols
+		this.container.setDepth(12001); // Above header (9500), backgrounds (850/9000), and dialogs (12000)
 		
 		// Create full-screen interaction blocker
 		this.createFullScreenBlocker(scene);
@@ -147,7 +147,7 @@ export class AutoplayOptions {
 		this.fullScreenBlocker.fillStyle(0x000000, 0.01); // Nearly transparent, just to block interactions
 		this.fullScreenBlocker.fillRect(0, 0, screenWidth, screenHeight);
 		this.fullScreenBlocker.setInteractive(new Phaser.Geom.Rectangle(0, 0, screenWidth, screenHeight), Phaser.Geom.Rectangle.Contains);
-		this.fullScreenBlocker.setDepth(1999); // Just below the menu container (2000)
+		this.fullScreenBlocker.setDepth(9500); // Just below the popup container (9501)
 		this.fullScreenBlocker.setVisible(false);
 	}
 

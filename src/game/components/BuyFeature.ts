@@ -116,7 +116,7 @@ export class BuyFeature {
 		
 		// Create main container
 		this.container = scene.add.container(0, 0);
-		this.container.setDepth(2000); // Very high depth to appear above everything
+		this.container.setDepth(9501); // Above header (9500) and backgrounds (850/9000); below dialogs (12000)
 		
 		// Create background
 		this.createBackground(scene);

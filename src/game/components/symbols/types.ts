@@ -1,9 +1,13 @@
 /**
  * Type definitions for the Symbols component
- * Provides strong typing for better IDE support and error catching
+ * Provides strong typing for better IDE support and error catching.
+ * Win/tumble evaluation types (TumbleOut) are canonical in Spin.ts; re-exported here for compatibility.
  */
 
 import type { Game } from '../../scenes/Game';
+
+/** Re-export from Spin (single source of truth for win/tumble evaluation) */
+export type { TumbleOut } from '../Spin';
 
 // ============================================================================
 // GRID TYPES
@@ -135,18 +139,6 @@ export interface SpineSkeleton {
 // ============================================================================
 // TUMBLE TYPES
 // ============================================================================
-
-/**
- * Represents a symbol removal in a tumble
- */
-export interface TumbleOut {
-  /** The symbol value being removed */
-  symbol: number;
-  /** Number of this symbol to remove */
-  count: number;
-  /** Win amount for this symbol removal (optional) */
-  win?: number;
-}
 
 /**
  * Represents a single tumble step
