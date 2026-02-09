@@ -29,9 +29,6 @@ export class ScatterAnimationManager {
   public delayedScatterData: any = null;
   private scatterSymbols: any[] = []; // Store references to scatter symbols
   
-  // Event listener references for cleanup
-  private wheelSpinStartListener: ((data?: any) => void) | null = null; // deprecated
-  private wheelSpinDoneListener: ((data?: any) => void) | null = null; // deprecated
   
   private config: ScatterAnimationConfig = {
     scatterRevealDelay: 2500,
@@ -159,26 +156,7 @@ export class ScatterAnimationManager {
     }
   }
 
-  private async disableSymbols(): Promise<void> {
-    if (!this.symbolsContainer) return;
 
-    console.log('[ScatterAnimationManager] Disabling symbols...');
-    
-    // Immediately disable symbols by setting alpha to 0
-    this.symbolsContainer.setAlpha(0);
-    
-    // Also hide scatter symbols that are added directly to the scene
-    this.hideScatterSymbols();
-    
-    // Add a small delay to ensure the disable is visible
-    await this.delay(50);
-    
-    console.log('[ScatterAnimationManager] Symbols disabled');
-  }
-
-  // Spinner slide-in removed
-
-  // Spinner pulse removed
 
   private async delay(ms: number): Promise<void> {
     return new Promise<void>((resolve) => {
@@ -385,7 +363,20 @@ export class ScatterAnimationManager {
     this.delayedScatterData = data;
   }
 
-
+  /**
+   * If delayed scatter data was set (deferred for win dialogs), play it now.
+   * Call from Game after win dialogs close (e.g. dialogAnimationsComplete handler).
+   */
+  public tryPlayDelayedScatterAnimation(): void {
+    if (!this.delayedScatterData) return;
+    const data = this.delayedScatterData;
+    this.delayedScatterData = null;
+    if (!this.scene) return;
+    console.log('[ScatterAnimationManager] Playing delayed scatter animation after win dialogs');
+    this.scene.time.delayedCall(100, () => {
+      this.playScatterAnimation(data);
+    });
+  }
 
   public resetSymbolsVisibility(): void {
     if (this.symbolsContainer) {

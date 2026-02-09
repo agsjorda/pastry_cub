@@ -31,6 +31,9 @@ export class BonusHeader {
 	private allMultipliersComplete: boolean = false; // Flag to confirm all multipliers are fully displayed and animated
 	private showingTotalWin: boolean = false; // Flag to prevent multipliers from overwriting TOTAL WIN
 	private scene: Scene | null = null;
+	private headerSceneImage?: Phaser.GameObjects.Image;
+	private headerSceneFrameImage?: Phaser.GameObjects.Image;
+	private headerWinBarImage?: Phaser.GameObjects.Image;
 	// Track if we just seeded the win to prevent immediate text overrides
 	private justSeededWin: boolean = false;
 	// Suppress win bar text while TotalW_BZ dialog is showing
@@ -53,7 +56,7 @@ export class BonusHeader {
 		this.scene = scene;
 		
 		// Create main container for all bonus header elements
-		this.bonusHeaderContainer = scene.add.container(0, 0);
+		this.bonusHeaderContainer = scene.add.container(0, 0).setDepth(9500); // Above controller (900) and background (850)
 		
 		const screenConfig = this.screenModeManager.getScreenConfig();
 		const assetScale = this.networkManager.getAssetScale();
@@ -92,13 +95,47 @@ export class BonusHeader {
 	}
 
 	private createBonusHeaderElements(scene: Scene, assetScale: number): void {
+		// Create header images (Scene, WinBar, SceneFrame) - same for portrait and landscape
+		this.createHeaderImages(scene);
+
 		const screenConfig = this.screenModeManager.getScreenConfig();
-		
 		if (screenConfig.isPortrait) {
 			this.createPortraitBonusHeader(scene, assetScale);
 		} else {
 			this.createLandscapeBonusHeader(scene, assetScale);
 		}
+	}
+
+	private createHeaderImages(scene: Scene): void {
+		const centerX = scene.scale.width * 0.5;
+
+		if (scene.textures.exists('Header_Scene')) {
+			this.headerSceneImage = this.createScaledHeaderImage(scene, 'Header_Scene', centerX, 0);
+			this.bonusHeaderContainer.add(this.headerSceneImage);
+		}
+		if (scene.textures.exists('Header_WinBar')) {
+			const frameHeight = this.getHeaderImageDisplayHeight(scene, 'Header_SceneFrame');
+			this.headerWinBarImage = this.createScaledHeaderImage(scene, 'Header_WinBar', centerX, frameHeight);
+			this.bonusHeaderContainer.add(this.headerWinBarImage);
+		}
+		if (scene.textures.exists('Header_SceneFrame')) {
+			this.headerSceneFrameImage = this.createScaledHeaderImage(scene, 'Header_SceneFrame', centerX, 0);
+			this.bonusHeaderContainer.add(this.headerSceneFrameImage);
+		}
+	}
+
+	private createScaledHeaderImage(scene: Scene, key: string, x: number, y: number): Phaser.GameObjects.Image {
+		const img = scene.add.image(x, y, key).setOrigin(0.5, 0);
+		const scale = scene.scale.width / img.width;
+		img.setScale(scale);
+		return img;
+	}
+
+	private getHeaderImageDisplayHeight(scene: Scene, key: string): number {
+		if (!scene.textures.exists(key)) return 0;
+		const texture = scene.textures.get(key).getSourceImage();
+		const scale = scene.scale.width / texture.width;
+		return texture.height * scale;
 	}
 
 	private createPortraitBonusHeader(scene: Scene, assetScale: number): void {
@@ -1387,6 +1424,20 @@ export class BonusHeader {
 	resize(scene: Scene): void {
 		if (this.bonusHeaderContainer) {
 			this.bonusHeaderContainer.setSize(scene.scale.width, scene.scale.height);
+		}
+		const centerX = scene.scale.width * 0.5;
+		if (this.headerSceneImage) {
+			this.headerSceneImage.setPosition(centerX, 0);
+			this.headerSceneImage.setScale(scene.scale.width / this.headerSceneImage.width);
+		}
+		if (this.headerSceneFrameImage) {
+			this.headerSceneFrameImage.setPosition(centerX, 0);
+			this.headerSceneFrameImage.setScale(scene.scale.width / this.headerSceneFrameImage.width);
+		}
+		if (this.headerWinBarImage && scene.textures.exists('Header_SceneFrame')) {
+			const frameHeight = this.getHeaderImageDisplayHeight(scene, 'Header_SceneFrame');
+			this.headerWinBarImage.setPosition(centerX, frameHeight);
+			this.headerWinBarImage.setScale(scene.scale.width / this.headerWinBarImage.width);
 		}
 	}
 

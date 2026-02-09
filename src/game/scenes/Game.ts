@@ -35,7 +35,6 @@ import { ScatterAnticipation } from '../components/ScatterAnticipation';
 import { ClockDisplay } from '../components/ClockDisplay';
 import WinTracker from '../components/WinTracker';
 import {
-	WIN_THRESHOLDS,
 	CLOCK_DISPLAY_NAME,
 	GAME_DISPLAY_NAME,
 	CLOCK_DISPLAY_CONFIG,
@@ -49,6 +48,7 @@ import { FreeRoundManager } from '../components/FreeRoundManager';
 import { ensureSpineFactory } from '../../utils/SpineGuard';
 import { Character } from '../components/Character';
 import { CurrencyManager } from '../components/CurrencyManager';
+import { calculateTotalWinFromTumbles as spinCalculateTotalWinFromTumbles, capWinByMaxMultiplier } from '../components/Spin';
 
 export class Game extends Scene {
 	private networkManager!: NetworkManager;
@@ -70,8 +70,8 @@ export class Game extends Scene {
 	private clockDisplay!: ClockDisplay;
 	private winTracker!: WinTracker;
 	private freeRoundManager: FreeRoundManager | null = null;
-	private character1!: Character;
-	private character2!: Character;
+	private character1?: Character;
+	private character2?: Character;
 
 	// Queue for wins that occur while a dialog is already showing
 	private winQueue: Array<{ payout: number; bet: number }> = [];
@@ -89,30 +89,15 @@ export class Game extends Scene {
 		this.scatterAnticipation = new ScatterAnticipation();
 	}
 
-	/** Create Character1 and Character2 using GAME_SCENE_CHARACTER_* config */
+	/** Create Character1 and Character2 - disabled for now */
 	private createCharacters(): void {
-		const c1 = GAME_SCENE_CHARACTER_1;
-		const c2 = GAME_SCENE_CHARACTER_2;
-		this.character1 = new Character(this, {
-			x: this.scale.width * c1.X_RATIO,
-			y: this.scale.height * c1.Y_RATIO,
-			scale: c1.SCALE,
-			depth: c1.DEPTH,
-			characterKey: 'character1',
-			animation: 'character1_BZ_idle',
-			loop: true,
-		});
-		this.character1.create();
-		this.character2 = new Character(this, {
-			x: this.scale.width * c2.X_RATIO,
-			y: this.scale.height * c2.Y_RATIO,
-			scale: c2.SCALE,
-			depth: c2.DEPTH,
-			characterKey: 'character2',
-			animation: 'character2_BZ_idle',
-			loop: true,
-		});
-		this.character2.create();
+		// Characters removed for now - re-enable by uncommenting the block below
+		// const c1 = GAME_SCENE_CHARACTER_1;
+		// const c2 = GAME_SCENE_CHARACTER_2;
+		// this.character1 = new Character(this, { ... });
+		// this.character1.create();
+		// this.character2 = new Character(this, { ... });
+		// this.character2.create();
 	}
 
 	private handleResize(): void {
@@ -200,76 +185,86 @@ export class Game extends Scene {
 
 	create() {
 		console.log(`[Game] Creating game scene`);
-		// Ensure Spine plugin instance is attached and sys keys are synced for this scene
-		// before any components try to call `scene.add.spine(...)`.
 		try { ensureSpineFactory(this, '[Game] create'); } catch { }
 
-		if (this.physics && this.physics.world) {
+		const fadeOverlay = this.createFadeAndResize();
+		this.createHeaderAndBackground();
+		this.createCharactersAndClock();
+		this.createBonusLayers();
+		this.createSymbolsAndWinTracker();
+		this.createAudio();
+		this.createDialogsAndScatter();
+		this.createBetAndAutoplay();
+		this.createSlotController();
+		this.createFreeRoundAndScatterAnticipation();
+
+		this.initializeGameBalance();
+		console.log(`[Game] Emitting START event to initialize game...`);
+		gameEventManager.emit(GameEventType.START);
+		this.header.initializeWinnings();
+		this.setupBonusModeEventListeners();
+		EventBus.emit('current-scene-ready', this);
+
+		this.runFadeIn(fadeOverlay);
+		this.setupEventBusListeners();
+		this.setupGameEventListeners();
+	}
+
+	/** Physics, fade overlay, resize handler */
+	private createFadeAndResize(): Phaser.GameObjects.Rectangle {
+		if (this.physics?.world) {
 			this.physics.world.setBounds(0, 0, this.scale.width, this.scale.height - GAME_SCENE_PHYSICS_BOTTOM_OFFSET);
 			console.log('[Game] Physics world bounds set');
 		} else {
 			console.warn('[Game] Physics system not available');
 		}
-
-		// Create fade overlay for transition from black
 		const fadeOverlay = this.add.rectangle(
-			this.scale.width * 0.5,
-			this.scale.height * 0.5,
-			this.scale.width,
-			this.scale.height,
-			0x000000
+			this.scale.width * 0.5, this.scale.height * 0.5, this.scale.width, this.scale.height, 0x000000
 		).setOrigin(0.5, 0.5).setScrollFactor(0).setAlpha(1);
-
-		// Keep layout responsive (fullscreen / parent resize / orientation changes).
 		this.scale.on('resize', this.handleResize, this);
-		this.events.once('shutdown', () => {
-			this.scale.off('resize', this.handleResize, this);
-		});
+		this.events.once('shutdown', () => this.scale.off('resize', this.handleResize, this));
+		return fadeOverlay;
+	}
 
-		// Backend initialization removed - using SlotController autoplay system
-		// Create header and background first
+	private createHeaderAndBackground(): void {
 		this.header = new Header(this.networkManager, this.screenModeManager);
 		this.header.create(this);
 		this.background = new Background(this.networkManager, this.screenModeManager);
 		this.background.create(this);
+	}
 
-		// Create characters (positioned on left and right)
+	private createCharactersAndClock(): void {
 		this.createCharacters();
-
-		// Create persistent clock display (stays on screen)
 		this.clockDisplay = new ClockDisplay(this, {
 			...CLOCK_DISPLAY_CONFIG,
 			suffixText: ` | ${GAME_DISPLAY_NAME}${this.gameAPI.getDemoState() ? ' | DEMO' : ''}`,
 			additionalText: CLOCK_DISPLAY_NAME,
 		});
 		this.clockDisplay.create();
+	}
 
-		// Create bonus background using the managers (initially hidden)
+	private createBonusLayers(): void {
 		console.log('[Game] Creating bonus background...');
 		this.bonusBackground = new BonusBackground(this.networkManager, this.screenModeManager);
 		this.bonusBackground.create(this);
 		this.bonusBackground.getContainer().setVisible(false);
-		console.log('[Game] Bonus background created and hidden');
-
-		// Create bonus header using the managers (initially hidden)
 		console.log('[Game] Creating bonus header...');
 		this.bonusHeader = new BonusHeader(this.networkManager, this.screenModeManager);
 		this.bonusHeader.create(this);
 		this.bonusHeader.getContainer().setVisible(false);
-		console.log('[Game] Bonus header created and hidden');
+	}
 
-		// Create WinTracker (used to display per-symbol wins)
+	private createSymbolsAndWinTracker(): void {
 		this.winTracker = new WinTracker();
 		this.winTracker.create(this);
 		this.winTracker.setLayout(WIN_TRACKER_LAYOUT);
 		console.log(`[Game] Creating symbols...`);
 		this.symbols.create(this);
+	}
 
-		// Initialize AudioManager
+	private createAudio(): void {
 		this.audioManager = new AudioManager(this);
 		console.log('[Game] AudioManager initialized');
-
-		// Defer audio: it may already be downloading (started in Preloader), so initialize when ready.
 		this.time.delayedCall(0, () => {
 			const tryInitAudio = () => {
 				try {
@@ -277,30 +272,20 @@ export class Game extends Scene {
 					this.audioManager.playBackgroundMusic(MusicType.MAIN);
 					console.log('[Game] Audio instances created and background music started');
 					return true;
-				} catch (_e) {
-					return false;
-				}
+				} catch { return false; }
 			};
-
-			// If audio is already in cache, init immediately.
 			if (tryInitAudio()) return;
-
-			// Otherwise, background-load audio on this scene as a fallback (e.g., user clicked early).
 			try {
 				console.log('[Game] Background-loading audio assets (fallback)...');
 				const audioAssets = new AssetConfig(this.networkManager, this.screenModeManager).getAudioAssets();
 				const audioMap = audioAssets.audio || {};
 				let queued = 0;
 				for (const [key, path] of Object.entries(audioMap)) {
-					try {
-						if ((this.cache.audio as any)?.exists?.(key)) continue;
-					} catch { }
+					try { if ((this.cache.audio as any)?.exists?.(key)) continue; } catch { }
 					try { this.load.audio(key, path as string); queued++; } catch { }
 				}
 				if (queued > 0) {
-					this.load.once('complete', () => {
-						tryInitAudio();
-					}, this);
+					this.load.once('complete', () => tryInitAudio(), this);
 					this.load.start();
 				} else {
 					this.time.delayedCall(150, tryInitAudio);
@@ -310,90 +295,55 @@ export class Game extends Scene {
 				this.time.delayedCall(250, tryInitAudio);
 			}
 		});
-
-		// Make AudioManager available globally for other components
 		(window as any).audioManager = this.audioManager;
+	}
 
-		// Create dialogs using the managers
+	private createDialogsAndScatter(): void {
 		this.dialogs = new Dialogs(this.networkManager, this.screenModeManager);
 		this.dialogs.create(this);
+		this.symbols.scatterAnimationManager.initialize(this, this.symbols.container, this.dialogs);
+	}
 
-		// Initialize scatter animation manager with containers and dialogs component
-		const scatterAnimationManager = this.symbols.scatterAnimationManager;
-		scatterAnimationManager.initialize(this, this.symbols.container, this.dialogs);
-
-		// Create bet options using the managers
+	private createBetAndAutoplay(): void {
 		this.betOptions = new BetOptions(this.networkManager, this.screenModeManager);
 		this.betOptions.create(this);
-
-		// Create autoplay options using the managers
 		this.autoplayOptions = new AutoplayOptions(this.networkManager, this.screenModeManager);
 		this.autoplayOptions.create(this);
+	}
 
-		// Create slot controller using the managers
+	private createSlotController(): void {
 		this.slotController = new SlotController(this.networkManager, this.screenModeManager);
-		this.slotController.setSymbols(this.symbols); // Set symbols reference for free spin data access
-		this.slotController.setBuyFeatureReference(); // Set BuyFeature reference for bet access
+		this.slotController.setSymbols(this.symbols);
+		this.slotController.setBuyFeatureReference();
 		this.slotController.create(this);
+	}
 
-		// Create free round manager AFTER SlotController so it can mirror the spin button.
-		// It will read the backend initialization data and decide whether to show itself.
+	private createFreeRoundAndScatterAnticipation(): void {
 		try {
 			const initData = this.gameAPI.getInitializationData();
 			const initFsRemaining = this.gameAPI.getRemainingInitFreeSpins();
 			const initFsBet = this.gameAPI.getInitFreeSpinBet();
 			CurrencyManager.initializeFromInitData(initData);
 			this.slotController?.refreshCurrencySymbols?.();
-
 			this.freeRoundManager = new FreeRoundManager();
 			this.freeRoundManager.create(this, this.gameAPI, this.slotController);
-
 			if (initData && initData.hasFreeSpinRound && initFsRemaining > 0) {
-				console.log(
-					`[Game] Initialization indicates free spin round available (${initFsRemaining}). Enabling FreeRoundManager UI.`
-				);
-
-				// If backend provided a bet size for the free rounds, apply it to the SlotController
-				// so both the UI and the underlying base bet used for spins match the init data.
+				console.log(`[Game] Initialization indicates free spin round available (${initFsRemaining}). Enabling FreeRoundManager UI.`);
 				if (this.slotController && initFsBet && initFsBet > 0) {
-					console.log(
-						`[Game] Applying initialization free spin bet to SlotController: ${initFsBet.toFixed(2)}`
-					);
 					this.slotController.updateBetAmount(initFsBet);
 				}
-
 				this.freeRoundManager.setFreeSpins(initFsRemaining);
 				this.freeRoundManager.enableFreeSpinMode();
 			}
 		} catch (e) {
 			console.warn('[Game] Failed to create FreeRoundManager from initialization data:', e);
 		}
-
-		// Create scatter anticipation component inside background container to avoid symbol mask and stay behind symbols
 		this.scatterAnticipation.create(this, this.background.getContainer());
 		this.scatterAnticipation.hide();
 		(this as any).scatterAnticipation = this.scatterAnticipation;
+	}
 
-		// Initialize balance on game start
-		this.initializeGameBalance();
-
-		// Emit START event AFTER SlotController is created
-		console.log(`[Game] Emitting START event to initialize game...`);
-		gameEventManager.emit(GameEventType.START);
-
-		// Trigger initial symbol display
-		console.log(`[Game] Starting game...`);
-		// Game starts automatically when scene is created
-
-		// Initialize winnings display
-		this.header.initializeWinnings();
-
-		// Setup bonus mode event listeners
-		this.setupBonusModeEventListeners();
-
-		EventBus.emit('current-scene-ready', this);
-
-		// Fade in from black after all components are created
+	private runFadeIn(fadeOverlay: Phaser.GameObjects.Rectangle): void {
 		this.tweens.add({
 			targets: fadeOverlay,
 			alpha: 0,
@@ -401,49 +351,36 @@ export class Game extends Scene {
 			ease: 'Power2',
 			onComplete: () => {
 				console.log('[Game] Fade in from black complete');
-				// Remove the fade overlay to clean up
 				fadeOverlay.destroy();
 			}
 		});
+	}
 
-		EventBus.on('spin', () => {
-			this.spin();
-		});
-
-		// Listen for menu button click
+	/** EventBus: spin, menu, bet-options, autoplay, amplify */
+	private setupEventBusListeners(): void {
+		EventBus.on('spin', () => this.spin());
 		EventBus.on('menu', () => {
 			console.log('[Game] Menu button clicked - toggling menu');
 			this.menu.toggleMenu(this);
 		});
-
 		EventBus.on('show-bet-options', () => {
-			console.log('[Game] Showing bet options with fade-in effect');
-
-			// Use base bet for selection; use display bet for enhanced multiplier if active
 			const currentBaseBet = this.slotController.getBaseBetAmount() || 0.20;
 			const currentDisplayText = this.slotController.getBetAmountText();
 			const currentDisplayBet = currentDisplayText ? parseFloat(currentDisplayText) : currentBaseBet;
-
 			this.betOptions.show({
 				currentBet: currentBaseBet,
 				currentBetDisplay: currentDisplayBet,
 				isEnhancedBet: this.gameData?.isEnhancedBet,
-				onClose: () => {
-					console.log('[Game] Bet options closed');
-				},
+				onClose: () => console.log('[Game] Bet options closed'),
 				onConfirm: (betAmount: number) => {
-					console.log(`[Game] Bet confirmed: £${betAmount}`);
-					// Update the bet display in the slot controller
 					this.slotController.updateBetAmount(betAmount);
-					// Update the bet amount in the backend
 					gameEventManager.emit(GameEventType.BET_UPDATE, { newBet: betAmount, previousBet: currentBaseBet });
 				}
 			});
 		});
-
 		EventBus.on('amplify', (isEnhanced: boolean) => {
 			try {
-				if (this.betOptions && this.betOptions.isVisible()) {
+				if (this.betOptions?.isVisible()) {
 					const baseBet = this.slotController.getBaseBetAmount() || 0.20;
 					const displayText = this.slotController.getBetAmountText();
 					const displayBet = displayText ? parseFloat(displayText) : baseBet;
@@ -451,262 +388,138 @@ export class Game extends Scene {
 				}
 			} catch { }
 		});
-
-		// Listen for autoplay button click
 		EventBus.on('autoplay', () => {
-			console.log('[Game] Autoplay button clicked - showing options');
-
 			const currentBetText = this.slotController.getBetAmountText();
 			const currentBet = currentBetText ? parseFloat(currentBetText) : 0.20;
-
-			// Get the most current balance as a numeric value from the SlotController
 			const currentBalance = this.slotController.getBalanceAmount();
-
-			console.log(`[Game] Current balance for autoplay options: $${currentBalance}`);
-
 			this.autoplayOptions.show({
 				currentAutoplayCount: 10,
-				currentBet: currentBet,
-				currentBalance: currentBalance,
+				currentBet,
+				currentBalance,
 				isEnhancedBet: this.gameData?.isEnhancedBet,
-				onClose: () => {
-					console.log('[Game] Autoplay options closed');
-				},
+				onClose: () => console.log('[Game] Autoplay options closed'),
 				onConfirm: (autoplayCount: number) => {
-					console.log(`[Game] Autoplay confirmed: ${autoplayCount} spins`);
-					// Read the bet selected within the autoplay panel
 					const selectedBet = this.autoplayOptions.getCurrentBet();
-					// If bet changed, update UI and backend
 					if (Math.abs(selectedBet - currentBet) > 0.0001) {
-						// Use a dedicated API so amplify/enhance bet is preserved when active
 						this.slotController.updateBetAmountFromAutoplay(selectedBet);
 						gameEventManager.emit(GameEventType.BET_UPDATE, { newBet: selectedBet, previousBet: currentBet });
 					}
-					console.log(`[Game] Total cost: $${(selectedBet * autoplayCount).toFixed(2)}`);
-
-					// Start autoplay using the new SlotController method
 					this.slotController.startAutoplay(autoplayCount);
 				}
 			});
 		});
+	}
 
-		// Note: SPIN_RESPONSE event listeners removed - now using SPIN_DATA_RESPONSE
-
-		// Listen for animations completion to show win dialogs (tumble-based)
-		gameEventManager.on(GameEventType.WIN_STOP, (data: any) => {
-			console.log('[Game] WIN_STOP event received (tumble-based evaluation)');
-
-			// Get the current spin data from the Symbols component
-			if (this.symbols && this.symbols.currentSpinData) {
-				const spinData = this.symbols.currentSpinData;
-				let freeSpinItem: any | null = null;
-				let totalWin = 0;
-				const betAmount = parseFloat(spinData.bet);
-
-				// During free spins, try to resolve the current item (by area match) so we can
-				// use its totalWin and tumbles for accurate win dialog gating.
-				if (gameStateManager.isBonus) {
-					try {
-						const slotAny: any = spinData.slot || {};
-						const fs = slotAny.freespin || slotAny.freeSpin;
-						const items = Array.isArray(fs?.items) ? fs.items : [];
-						const area = slotAny.area;
-
-						if (items.length > 0 && Array.isArray(area)) {
-							const areaJson = JSON.stringify(area);
-							freeSpinItem = items.find((item: any) =>
-								Array.isArray(item?.area) && JSON.stringify(item.area) === areaJson
-							) || null;
-						}
-
-						if (!freeSpinItem && items.length > 0) {
-							freeSpinItem = items[0];
-						}
-
-						if (freeSpinItem) {
-							const itemTotalWinRaw = (freeSpinItem as any).totalWin ?? (freeSpinItem as any).subTotalWin ?? 0;
-							const itemTotalWin = Number(itemTotalWinRaw);
-							if (!isNaN(itemTotalWin) && itemTotalWin > 0) {
-								console.log(`[Game] WIN_STOP: Using freespin item totalWin=${itemTotalWin}`);
-								totalWin = itemTotalWin;
-							}
-						}
-					} catch (e) {
-						console.warn('[Game] WIN_STOP: Failed to derive freespin item totalWin, falling back to tumble totalWin', e);
-					}
-				}
-
-				// Prefer slot.totalWin when provided (includes full tumble sequence)
-				const slotTotalWinRaw = (spinData.slot as any)?.totalWin;
-				const slotTotalWin = Number(slotTotalWinRaw);
-				if (totalWin === 0 && Number.isFinite(slotTotalWin) && slotTotalWin > 0) {
-					console.log(`[Game] WIN_STOP: Using slot.totalWin=${slotTotalWin}`);
-					totalWin = slotTotalWin;
-				}
-
-				const slotTumbles = spinData.slot?.tumbles || [];
-				const bonusTumbles = freeSpinItem?.tumbles;
-				const tumblesToUse = (Array.isArray(slotTumbles) && slotTumbles.length > 0)
-					? slotTumbles
-					: (Array.isArray(bonusTumbles) ? bonusTumbles : []);
-				const tumbleResult = this.calculateTotalWinFromTumbles(tumblesToUse);
-				if (totalWin === 0) {
-					totalWin = tumbleResult.totalWin;
-				}
-				const hasCluster = tumbleResult.hasCluster;
-
-
-				   console.log(`[Game] WIN_STOP: totalWin used for win dialog=$${totalWin}, hasCluster>=8=${hasCluster}`);
-				   if (hasCluster && totalWin > 0) {
-					   this.checkAndShowWinDialog(totalWin, betAmount);
-				   } else {
-					   console.log('[Game] WIN_STOP: No qualifying cluster wins (>=8) detected');
-				   }
-
-				const isDemo = this.gameAPI.getDemoState();
-				if (isDemo && !gameStateManager.isScatter && !gameStateManager.isBonus) {
-					this.gameAPI.updateDemoBalance(this.gameAPI.getDemoBalance() + totalWin);
-				}
-			} else {
-				console.log('[Game] WIN_STOP: No current spin data available');
-			}
-
-			// Update balance from server after WIN_STOP (skip during scatter/bonus)
-			if (!gameStateManager.isScatter && !gameStateManager.isBonus) {
-				this.updateBalanceAfterWinStop();
-			} else {
-				console.log('[Game] Skipping balance update on WIN_STOP (scatter/bonus active)');
-			}
-		});
-
-		// Play character win animations whenever a win sequence starts
+	/** GameEventManager: WIN_STOP, WIN_START, REELS_*, dialogAnimationsComplete, SPIN, AUTO_START */
+	private setupGameEventListeners(): void {
+		gameEventManager.on(GameEventType.WIN_STOP, (data: any) => this.onWinStop(data));
 		gameEventManager.on(GameEventType.WIN_START, () => {
 			try {
-				if (this.character1) {
-					this.character1.playAnimation('Character1_BZ_win', false, true);
-				}
-				if (this.character2) {
-					this.character2.playAnimation('Character2_BZ_win', false, true);
-				}
+				if (this.character1) this.character1.playAnimation('Character1_BZ_win', false, true);
+				if (this.character2) this.character2.playAnimation('Character2_BZ_win', false, true);
 			} catch (e) {
 				console.warn('[Game] Failed to play character win animations on WIN_START:', e);
 			}
 		});
-
-		// Listen for reel completion to handle balance updates only
 		gameEventManager.on(GameEventType.REELS_STOP, () => {
 			console.log('[Game] REELS_STOP event received');
-
-			// Update balance from server after REELS_STOP (for no-wins scenarios)
-			// Skip during scatter/bonus; balance will be finalized after bonus ends
-			if (!gameStateManager.isScatter && !gameStateManager.isBonus) {
-				this.updateBalanceAfterWinStop();
-			} else {
-				console.log('[Game] Skipping balance update on REELS_STOP (scatter/bonus active)');
-			}
-
-			// Request balance update to finalize the spin (add winnings to balance)
-			// This is needed to complete the spin cycle and update the final state
-			console.log('[Game] Reels done - requesting balance update to finalize spin');
+			if (!gameStateManager.isScatter && !gameStateManager.isBonus) this.updateBalanceAfterWinStop();
 			gameEventManager.emit(GameEventType.BALANCE_UPDATE);
-
-			console.log('[Game] REELS_STOP: Balance update requested');
 		});
-
-		// Ensure WinTracker is cleared (with a fade-out) as soon as reels actually start for a new spin
 		gameEventManager.on(GameEventType.REELS_START, () => {
 			try {
-				if (this.winTracker) {
-					this.winTracker.hideWithFade(250);
-					console.log('[Game] Fading out WinTracker on REELS_START (new spin started)');
-				}
+				if (this.winTracker) this.winTracker.hideWithFade(250);
 			} catch (e) {
 				console.warn('[Game] Failed to clear WinTracker on REELS_START:', e);
 			}
 		});
-
-		// Listen for dialog animations to complete
 		this.events.on('dialogAnimationsComplete', () => {
 			console.log('[Game] Dialog animations complete event received');
-			// Re-allow win dialogs after transitions complete
 			this.suppressWinDialogsUntilNextSpin = false;
-
-			// Clear the win dialog state - autoplay can resume
 			gameStateManager.isShowingWinDialog = false;
-			console.log('[Game] Set isShowingWinDialog to false - autoplay can resume');
-
-			// Check if there's a delayed scatter animation waiting to start
-			this.checkAndStartDelayedScatterAnimation();
-
-			// Note: Autoplay continuation is now handled by SlotController's WIN_DIALOG_CLOSED handler
-			// No need to retry spin here as it conflicts with SlotController's autoplay logic
-
-			// Process any remaining wins in the queue
+			this.symbols?.scatterAnimationManager?.tryPlayDelayedScatterAnimation();
 			this.processWinQueue();
 		});
-
-		// Listen for any spin to start (manual or autoplay)
-		gameEventManager.on(GameEventType.SPIN, (eventData: any) => {
+		gameEventManager.on(GameEventType.SPIN, () => {
 			console.log('[Game] SPIN event received - clearing win queue for new spin');
-			// Allow win dialogs again on the next spin
 			this.suppressWinDialogsUntilNextSpin = false;
-
-			// CRITICAL: Block autoplay spins if win dialog is showing, but allow manual spins
-			// This fixes the timing issue where manual spins were blocked
 			if (gameStateManager.isShowingWinDialog && this.gameData?.isAutoPlaying) {
 				console.log('[Game] Autoplay SPIN event BLOCKED - win dialog is showing');
-				console.log('[Game] Manual spins are still allowed to proceed');
 				return;
 			}
-
-			// Clear any previously displayed WinTracker when a new spin actually starts
-			try {
-				if (this.winTracker) {
-					this.winTracker.hideWithFade(250);
-					console.log('[Game] Fading out WinTracker for new spin');
-				}
-			} catch (e) {
-				console.warn('[Game] Failed to clear WinTracker on SPIN:', e);
-			}
-
-			// Only clear win queue if this is a new spin (not a retry of a paused spin)
-			// Check if we're retrying a paused autoplay spin
+			try { this.winTracker?.hideWithFade(250); } catch { }
 			const isRetryingPausedSpin = this.gameData?.isAutoPlaying && this.winQueue.length > 0;
-
 			if (!isRetryingPausedSpin) {
 				this.clearWinQueue();
-				console.log('[Game] Cleared win queue for new spin');
-
-				// Only clear win dialog state for completely new spins
 				gameStateManager.isShowingWinDialog = false;
-				console.log('[Game] Cleared isShowingWinDialog state for new spin');
-			} else {
-				console.log('[Game] Not clearing win queue - retrying paused autoplay spin');
-				console.log('[Game] Keeping isShowingWinDialog state for paused spin retry');
 			}
 		});
-
-		// Listen for autoplay start to prevent it when win dialogs are showing
-		gameEventManager.on(GameEventType.AUTO_START, (eventData: any) => {
-			// When autoplay resumes, ensure win dialogs are allowed again
+		gameEventManager.on(GameEventType.AUTO_START, () => {
 			this.suppressWinDialogsUntilNextSpin = false;
 			if (gameStateManager.isShowingWinDialog) {
 				console.log('[Game] AUTO_START blocked - win dialog is showing');
-				// Don't allow autoplay to start while win dialog is showing
 				return;
 			}
-			console.log('[Game] AUTO_START allowed - no win dialog showing');
+			try { this.winTracker?.hideWithFade(250); } catch { }
+		});
+	}
 
-			// Clear any previously displayed WinTracker when a new autoplay sequence starts
+	/** WIN_STOP: resolve totalWin, character animation, win dialog, demo balance, balance update */
+	private onWinStop(_data: any): void {
+		console.log('[Game] WIN_STOP event received (tumble-based evaluation)');
+		if (!this.symbols?.currentSpinData) {
+			console.log('[Game] WIN_STOP: No current spin data available');
+			if (!gameStateManager.isScatter && !gameStateManager.isBonus) this.updateBalanceAfterWinStop();
+			return;
+		}
+		const spinData = this.symbols.currentSpinData;
+		let freeSpinItem: any | null = null;
+		let totalWin = 0;
+		const betAmount = parseFloat(spinData.bet);
+
+		if (gameStateManager.isBonus) {
 			try {
-				if (this.winTracker) {
-					this.winTracker.hideWithFade(250);
-					console.log('[Game] Fading out WinTracker on AUTO_START');
+				const slotAny: any = spinData.slot || {};
+				const fs = slotAny.freespin || slotAny.freeSpin;
+				const items = Array.isArray(fs?.items) ? fs.items : [];
+				const area = slotAny.area;
+				if (items.length > 0 && Array.isArray(area)) {
+					const areaJson = JSON.stringify(area);
+					freeSpinItem = items.find((item: any) => Array.isArray(item?.area) && JSON.stringify(item.area) === areaJson) ?? null;
+				}
+				if (!freeSpinItem && items.length > 0) freeSpinItem = items[0];
+				if (freeSpinItem) {
+					const itemTotalWinRaw = (freeSpinItem as any).totalWin ?? (freeSpinItem as any).subTotalWin ?? 0;
+					const itemTotalWin = Number(itemTotalWinRaw);
+					if (!isNaN(itemTotalWin) && itemTotalWin > 0) totalWin = itemTotalWin;
 				}
 			} catch (e) {
-				console.warn('[Game] Failed to clear WinTracker on AUTO_START:', e);
+				console.warn('[Game] WIN_STOP: Failed to derive freespin item totalWin', e);
 			}
-		});
+		}
+
+		const slotTotalWin = Number((spinData.slot as any)?.totalWin);
+		if (totalWin === 0 && Number.isFinite(slotTotalWin) && slotTotalWin > 0) totalWin = slotTotalWin;
+
+		const slotTumbles = spinData.slot?.tumbles || [];
+		const bonusTumbles = freeSpinItem?.tumbles;
+		const tumblesToUse = (Array.isArray(slotTumbles) && slotTumbles.length > 0) ? slotTumbles : (Array.isArray(bonusTumbles) ? bonusTumbles : []);
+		const tumbleResult = spinCalculateTotalWinFromTumbles(tumblesToUse);
+		if (totalWin === 0) totalWin = tumbleResult.totalWin;
+		const hasCluster = tumbleResult.hasCluster;
+
+		if (hasCluster && !this.gameStateManager.isBonus) {
+			if (this.character1) this.character1.playAnimation('Character1_BZ_win', false, true);
+			if (this.character2) this.character2.playAnimation('Character2_BZ_win', false, true);
+		}
+		totalWin = capWinByMaxMultiplier(totalWin, betAmount);
+		console.log(`[Game] WIN_STOP: totalWin used for win dialog=$${totalWin}, hasCluster=${hasCluster}`);
+		if (hasCluster && totalWin > 0) this.checkAndShowWinDialog(totalWin, betAmount);
+
+		if (this.gameAPI.getDemoState() && !gameStateManager.isScatter && !gameStateManager.isBonus) {
+			this.gameAPI.updateDemoBalance(this.gameAPI.getDemoBalance() + totalWin);
+		}
+		if (!gameStateManager.isScatter && !gameStateManager.isBonus) this.updateBalanceAfterWinStop();
 	}
 
 	/**
@@ -779,176 +592,20 @@ export class Game extends Scene {
 	}
 
 	/**
-	 * Calculate total win amount from paylines array
-	 */
-	private calculateTotalWinFromTumbles(tumbles: any[]): { totalWin: number; hasCluster: boolean } {
-		if (!Array.isArray(tumbles) || tumbles.length === 0) {
-			return { totalWin: 0, hasCluster: false };
-		}
-		let totalWin = 0;
-		let hasCluster = false;
-		let triggeredWinAnim = false;
-		for (const tumble of tumbles) {
-			const w = Number(tumble?.win || 0);
-			totalWin += isNaN(w) ? 0 : w;
-			const outs = tumble?.symbols?.out || [];
-			if (Array.isArray(outs)) {
-				for (const out of outs) {
-					const c = Number(out?.count || 0);
-					if (c >= 8) {
-						hasCluster = true;
-						// Only trigger win animation for normal game (not bonus)
-						if (!this.gameStateManager.isBonus && !triggeredWinAnim) {
-							if (this.character1) {
-								   this.character1.playAnimation('Character1_BZ_win', false, true);
-							}
-							if (this.character2) {
-								   this.character2.playAnimation('Character2_BZ_win', false, true);
-							}
-							triggeredWinAnim = true;
-						}
-						break;
-					}
-				}
-			}
-		}
-		return { totalWin, hasCluster };
-	}
-
-	/**
-	 * Check if payout reaches win dialog thresholds and show appropriate dialog
+	 * Delegate to Dialogs: check conditions and show appropriate win dialog or queue.
 	 */
 	private checkAndShowWinDialog(payout: number, bet: number): void {
-		// Suppress win dialogs if we're transitioning out of bonus back to base
-		if (this.suppressWinDialogsUntilNextSpin) {
-			console.log('[Game] Suppressing win dialog (transitioning from bonus to base)');
-			return;
-		}
-		console.log(`[Game] checkAndShowWinDialog called with payout: $${payout}, bet: $${bet}`);
-		console.log(`[Game] Current win queue length: ${this.winQueue.length}`);
-		console.log(`[Game] Current isShowingWinDialog state: ${gameStateManager.isShowingWinDialog}`);
-		console.log(`[Game] Current dialog showing state: ${this.dialogs.isDialogShowing()}`);
-
-		// If multiplier animations are in progress, defer win dialog until animations complete
-		try {
-			const symbolsAny: any = this.symbols as any;
-			const isMultiplierAnimationsInProgress =
-				symbolsAny && typeof symbolsAny.isMultiplierAnimationsInProgress === 'function'
-					? !!symbolsAny.isMultiplierAnimationsInProgress()
-					: false;
-
-			if (isMultiplierAnimationsInProgress) {
-				console.log('[Game] Multiplier animations in progress - deferring win dialog until MULTIPLIER_ANIMATIONS_COMPLETE');
-				this.winQueue.push({ payout, bet });
-				console.log(`[Game] Added to win queue due to multiplier animations. Queue length: ${this.winQueue.length}`);
-				// Wait for multiplier animations to complete, then process the win queue
-				gameEventManager.once(GameEventType.MULTIPLIER_ANIMATIONS_COMPLETE, () => {
-					console.log('[Game] MULTIPLIER_ANIMATIONS_COMPLETE received - processing win queue');
-					this.processWinQueue();
-				});
-				return;
-			}
-		} catch (e) {
-			console.warn('[Game] Failed to check multiplier animation status:', e);
-		}
-
-		// If scatter retrigger animation is in progress, defer win dialog until animation and dialog complete
-		try {
-			const symbolsAny: any = this.symbols as any;
-			const isRetriggerAnimationInProgress =
-				symbolsAny && typeof symbolsAny.isScatterRetriggerAnimationInProgress === 'function'
-					? !!symbolsAny.isScatterRetriggerAnimationInProgress()
-					: false;
-
-			if (isRetriggerAnimationInProgress) {
-				console.log('[Game] Scatter retrigger animation in progress - deferring win dialog until retrigger dialog closes');
-				this.winQueue.push({ payout, bet });
-				console.log(`[Game] Added to win queue due to retrigger animation. Queue length: ${this.winQueue.length}`);
-				// Wait for retrigger animation to complete, then the retrigger dialog will show
-				// After the retrigger dialog closes (dialogAnimationsComplete), we'll process the win queue
-				// This is handled by the existing dialogAnimationsComplete listener which calls processWinQueue()
-				return;
-			}
-		} catch (e) {
-			console.warn('[Game] Failed to check retrigger animation status:', e);
-		}
-
-		// If scatter is active and we're autoplaying (normal or free spin), defer win dialog
-		// until after the free spin dialog finishes (dialogAnimationsComplete).
-		// EXCEPTION: When retrigger is pending, show win dialog NOW so it plays before the
-		// retrigger sequence (win → explosion → win dialogs → retrigger anims → FreeSpinRetri).
-		try {
-			const symbolsAny: any = this.symbols as any;
-			const hasPendingRetrigger =
-				(symbolsAny && typeof symbolsAny.hasPendingScatterRetrigger === 'function' && symbolsAny.hasPendingScatterRetrigger()) ||
-				(symbolsAny && typeof symbolsAny.hasPendingSymbol0Retrigger === 'function' && symbolsAny.hasPendingSymbol0Retrigger());
-
-			if (hasPendingRetrigger) {
-				console.log('[Game] Retrigger pending - showing win dialog now (before retrigger sequence)');
-				// Fall through to show win dialog below
-			} else {
-				const isFreeSpinAutoplayActive =
-					symbolsAny && typeof symbolsAny.isFreeSpinAutoplayActive === 'function'
-						? !!symbolsAny.isFreeSpinAutoplayActive()
-						: false;
-				const isNormalAutoplayActive = !!(gameStateManager.isAutoPlaying || this.gameData?.isAutoPlaying);
-
-				if (gameStateManager.isScatter && (isNormalAutoplayActive || isFreeSpinAutoplayActive)) {
-					console.log('[Game] Scatter + autoplay detected - deferring win dialog until after free spin dialog closes');
-					this.winQueue.push({ payout, bet });
-					console.log(`[Game] Added to win queue due to scatter/autoplay. Queue length: ${this.winQueue.length}`);
-					return;
-				}
-			}
-		} catch (e) {
-			console.warn('[Game] Failed to evaluate scatter/autoplay deferral for win dialog:', e);
-		}
-
-		// Check if a dialog is already showing - prevent multiple dialogs
-		if (this.dialogs.isDialogShowing()) {
-			console.log('[Game] Dialog already showing, skipping win dialog for this payout');
-			// Add to queue if dialog is already showing
-			this.winQueue.push({ payout: payout, bet: bet });
-			console.log(`[Game] Added to win queue. Queue length: ${this.winQueue.length}`);
-			return;
-		}
-
-		const multiplier = payout / bet;
-		console.log(`[Game] Win detected - Payout: $${payout}, Bet: $${bet}, Multiplier: ${multiplier}x`);
-
-		// Only show dialogs for wins that meet the configured thresholds
-		if (multiplier < WIN_THRESHOLDS.BIG_WIN) {
-			console.log(`[Game] Win below threshold (${WIN_THRESHOLDS.BIG_WIN}x) - No dialog shown for ${multiplier.toFixed(2)}x multiplier`);
-			// Clear the win dialog state since no dialog was shown
-			gameStateManager.isShowingWinDialog = false;
-			return;
-		}
-
-		// Determine which win dialog to show based on configured thresholds
-		if (multiplier >= WIN_THRESHOLDS.SUPER_WIN) {
-			console.log(
-				`[Game] Super Win! Showing SuperW_BZ dialog for ${multiplier.toFixed(2)}x multiplier (staged inside dialog)`
-			);
-			this.dialogs.showSuperWin(this, { winAmount: payout, betAmount: bet });
-		} else if (multiplier >= WIN_THRESHOLDS.EPIC_WIN) {
-			console.log(
-				`[Game] Epic Win! Showing EpicW_BZ dialog for ${multiplier.toFixed(2)}x multiplier (staged inside dialog)`
-			);
-			this.dialogs.showLargeWin(this, { winAmount: payout, betAmount: bet });
-		} else if (multiplier >= WIN_THRESHOLDS.MEGA_WIN) {
-			console.log(
-				`[Game] Mega Win! Showing MegaW_BZ dialog for ${multiplier.toFixed(2)}x multiplier (staged inside dialog)`
-			);
-			this.dialogs.showMediumWin(this, { winAmount: payout, betAmount: bet });
-		} else if (multiplier >= WIN_THRESHOLDS.BIG_WIN) {
-			console.log(
-				`[Game] Big Win! Showing BigW_BZ dialog for ${multiplier.toFixed(2)}x multiplier (no staging)`
-			);
-			this.dialogs.showSmallWin(this, { winAmount: payout, betAmount: bet });
-		}
-
-		console.log(`[Game] Win dialog should now be visible. isShowingWinDialog: ${gameStateManager.isShowingWinDialog}`);
+		this.dialogs.checkAndShowWinDialog(this, payout, bet, {
+			pushToQueue: (p, b) => this.winQueue.push({ payout: p, bet: b }),
+			scheduleProcessQueue: () => {
+				gameEventManager.once(GameEventType.MULTIPLIER_ANIMATIONS_COMPLETE, () => this.processWinQueue());
+			},
+			isSuppressed: () => this.suppressWinDialogsUntilNextSpin,
+			symbols: this.symbols,
+			gameData: this.gameData,
+		});
 	}
+
 	/**
 	 * Process the win queue to show the next win dialog
 	 */
@@ -1001,32 +658,6 @@ export class Game extends Scene {
 		return `Win Queue: ${this.winQueue.length} pending wins`;
 	}
 
-
-	/**
-	 * Check if there's a delayed scatter animation waiting and start it
-	 */
-	private checkAndStartDelayedScatterAnimation(): void {
-		if (this.symbols && this.symbols.scatterAnimationManager) {
-			const scatterManager = this.symbols.scatterAnimationManager;
-
-			// Check if there's delayed scatter data waiting
-			if (scatterManager.delayedScatterData) {
-				console.log('[Game] Found delayed scatter animation data - starting scatter animation after win dialogs');
-
-				// Get the delayed data and clear it
-				const delayedData = scatterManager.delayedScatterData;
-				scatterManager.delayedScatterData = null;
-
-				// Start the scatter animation with a small delay to ensure win dialogs are fully closed
-				this.time.delayedCall(100, () => {
-					console.log('[Game] Starting delayed scatter animation');
-					scatterManager.playScatterAnimation(delayedData);
-				});
-			} else {
-				console.log('[Game] No delayed scatter animation data found');
-			}
-		}
-	}
 
 	private setupBonusModeEventListeners(): void {
 		// Listen for bonus mode events from dialogs

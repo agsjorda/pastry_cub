@@ -13,6 +13,9 @@ export class Header {
 	private screenModeManager: ScreenModeManager;
 	private amountText: Phaser.GameObjects.Text;
 	private youWonText: Phaser.GameObjects.Text;
+	private headerSceneImage?: Phaser.GameObjects.Image;
+	private headerSceneFrameImage?: Phaser.GameObjects.Image;
+	private headerWinBarImage?: Phaser.GameObjects.Image;
 	private currentWinnings: number = 0;
 	private pendingWinnings: number = 0;
 	private scene: Scene | null = null;
@@ -34,7 +37,7 @@ export class Header {
 		this.scene = scene;
 		
 		// Create main container for all header elements
-		this.headerContainer = scene.add.container(0, 0);
+		this.headerContainer = scene.add.container(0, 0).setDepth(9500); // Above controller (900) and background (850)
 		
 		const screenConfig = this.screenModeManager.getScreenConfig();
 		const assetScale = this.networkManager.getAssetScale();
@@ -52,13 +55,43 @@ export class Header {
 	}
 
 	private createHeaderElements(scene: Scene, assetScale: number): void {
+		const centerX = scene.scale.width * 0.5;
 
-		// Add logo
-		
+		// Header_Scene: background, at top, behind the frame
+		if (scene.textures.exists('Header_Scene')) {
+			this.headerSceneImage = this.createScaledHeaderImage(scene, 'Header_Scene', centerX, 0);
+			this.headerContainer.add(this.headerSceneImage);
+		}
+
+		// Header_WinBar: below the frame (positioned after frame so we know its height)
+		if (scene.textures.exists('Header_WinBar')) {
+			const frameHeight = this.getHeaderImageDisplayHeight(scene, 'Header_SceneFrame');
+			this.headerWinBarImage = this.createScaledHeaderImage(scene, 'Header_WinBar', centerX, frameHeight);
+			this.headerContainer.add(this.headerWinBarImage);
+		}
+
+		// Header_SceneFrame: on top (foreground)
+		if (scene.textures.exists('Header_SceneFrame')) {
+			this.headerSceneFrameImage = this.createScaledHeaderImage(scene, 'Header_SceneFrame', centerX, 0);
+			this.headerContainer.add(this.headerSceneFrameImage);
+		}
+
 		// Add winnings text centered on the win bar
-		this.createWinBarText(scene, scene.scale.width * 0.5, scene.scale.height * 0.1
-		);
-		
+		this.createWinBarText(scene, scene.scale.width * 0.5, scene.scale.height * 0.1);
+	}
+
+	private createScaledHeaderImage(scene: Scene, key: string, x: number, y: number): Phaser.GameObjects.Image {
+		const img = scene.add.image(x, y, key).setOrigin(0.5, 0);
+		const scale = scene.scale.width / img.width;
+		img.setScale(scale);
+		return img;
+	}
+
+	private getHeaderImageDisplayHeight(scene: Scene, key: string): number {
+		if (!scene.textures.exists(key)) return 0;
+		const texture = scene.textures.get(key).getSourceImage();
+		const scale = scene.scale.width / texture.width;
+		return texture.height * scale;
 	}
 
 	// private createCharacterSpineAnimation(scene: Scene, assetScale: number): void {}
@@ -71,7 +104,7 @@ export class Header {
 			fontFamily: 'Poppins-Bold',
 			stroke: '#004D00',
 			strokeThickness: 3
-		}).setOrigin(0.5, 0.5).setDepth(602); // Above cloud middle (601) and symbols (600)
+		}).setOrigin(0.5, 0.5).setDepth(9501); // Above header container (9500)
 		// Don't add to container - add directly to scene so depth works correctly
 		// Start hidden by default; will be shown only when there is an actual win.
 		this.youWonText.setVisible(false);
@@ -86,7 +119,7 @@ export class Header {
 			fontFamily: 'Poppins-Bold',
 			stroke: '#004D00',
 			strokeThickness: 3
-		}).setOrigin(0.5, 0.5).setDepth(602); // Above cloud middle (601) and symbols (600)
+		}).setOrigin(0.5, 0.5).setDepth(9501); // Above header container (9500)
 		// Don't add to container - add directly to scene so depth works correctly
 		// Start hidden by default; will be shown only when there is an actual win.
 		this.amountText.setVisible(false);
@@ -95,6 +128,20 @@ export class Header {
 	resize(scene: Scene): void {
 		if (this.headerContainer) {
 			this.headerContainer.setSize(scene.scale.width, scene.scale.height);
+		}
+		const centerX = scene.scale.width * 0.5;
+		if (this.headerSceneImage) {
+			this.headerSceneImage.setPosition(centerX, 0);
+			this.headerSceneImage.setScale(scene.scale.width / this.headerSceneImage.width);
+		}
+		if (this.headerSceneFrameImage) {
+			this.headerSceneFrameImage.setPosition(centerX, 0);
+			this.headerSceneFrameImage.setScale(scene.scale.width / this.headerSceneFrameImage.width);
+		}
+		if (this.headerWinBarImage && scene.textures.exists('Header_SceneFrame')) {
+			const frameHeight = this.getHeaderImageDisplayHeight(scene, 'Header_SceneFrame');
+			this.headerWinBarImage.setPosition(centerX, frameHeight);
+			this.headerWinBarImage.setScale(scene.scale.width / this.headerWinBarImage.width);
 		}
 	}
 

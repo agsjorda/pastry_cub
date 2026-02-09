@@ -368,9 +368,9 @@ import { SoundEffectType } from '../../managers/AudioManager';
 		const hasFilter = Array.isArray(allowedSymbols) && allowedSymbols.length > 0;
 		const allowedSet = hasFilter ? new Set<number>(allowedSymbols as number[]) : null;
 
-		// Sugar idle symbol spines only: symbol_1_sugar_spine – symbol_9_sugar_spine
+		// Sugar idle symbol spines only: symbol_1_sugar_spine – symbol_7_sugar_spine
 		// Exclude scatter (Symbol0) and multiplier symbols from this transition.
-		for (let i = 1; i <= 9; i++) {
+		for (let i = 1; i <= 7; i++) {
 			const sugarKey = `symbol_${i}_sugar_spine`;
 			if (cacheJson && typeof cacheJson.has === 'function' && cacheJson.has(sugarKey)) {
 				descriptors.push({ spineKey: sugarKey, isSugar: true, symbolValue: i });

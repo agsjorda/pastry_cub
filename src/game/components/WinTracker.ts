@@ -1,6 +1,7 @@
 import { Scene } from 'phaser';
 import { SpinData } from '../../backend/SpinData';
 import { ensureSpineFactory } from '../../utils/SpineGuard';
+import { QUALIFYING_CLUSTER_COUNT } from './Spin';
 import { MIN_CLUSTER_SIZE, UI_CONFIG } from '../../config/GameConfig';
 import { Logger } from '../../utils/Logger';
 import { getMultiplierValue, isMultiplierSymbol } from '../../types/SymbolTypes';
@@ -504,7 +505,7 @@ export class WinTracker {
       const symbolId = Number(out?.symbol);
       const count = Number(out?.count) || 0;
       const win = Number(out?.win) || 0;
-      if (!isFinite(symbolId) || count < 8 || win <= 0) continue;
+      if (!isFinite(symbolId) || count < QUALIFYING_CLUSTER_COUNT || win <= 0) continue;
       const existing = summary.get(symbolId) || {
         lines: 0,
         totalWin: 0,
@@ -550,9 +551,9 @@ export class WinTracker {
   }
 
   private createSymbolIcon(symbolId: number): { icon: any; isSpine: boolean } {
-    // Try to create a spine-based icon for standard symbols (0–9)
+    // Try to create a spine-based icon for standard symbols (0–7)
     try {
-      if (symbolId >= 0 && symbolId <= 9) {
+      if (symbolId >= 0 && symbolId <= 7) {
         if (ensureSpineFactory(this.scene, 'WinTracker')) {
           const sugarKey = `symbol_${symbolId}_sugar_spine`;
           const sugarAtlasKey = `${sugarKey}-atlas`;
@@ -627,46 +628,6 @@ export class WinTracker {
 
   private getMultiplierAnimationBase(value: number): string | null {
     return (value >= 10 && value <= 22) ? 'Symbol10_BZ' : null;
-  }
-
-  private getPaylineMultiplier(payline: any): number {
-    try {
-      const arr = (payline && Array.isArray(payline.multipliers)) ? payline.multipliers : [];
-      let factor = 1;
-      for (const m of arr) {
-        const base = this.getMultiplierValueForSymbol(m?.symbol);
-        const count = Math.max(0, Math.floor(m?.count || 0));
-        if (base > 1 && count > 0) {
-          factor *= Math.pow(base, count);
-        }
-      }
-      return Math.max(1, Math.floor(factor));
-    } catch {
-      return 1;
-    }
-  }
-
-  private getPaylineMultiplierStats(payline: any): { product: number; sum: number; icons: Array<{ symbol: number; count: number }> } {
-    try {
-      const arr = (payline && Array.isArray(payline.multipliers)) ? payline.multipliers : [];
-      let product = 1;
-      let sum = 0;
-      const iconMap = new Map<number, number>();
-      for (const m of arr) {
-        const base = this.getMultiplierValueForSymbol(m?.symbol);
-        const count = Math.max(0, Math.floor(m?.count || 0));
-        if (base > 1 && count > 0) {
-          product *= Math.pow(base, count);
-          sum += base * count;
-          iconMap.set(m.symbol, (iconMap.get(m.symbol) || 0) + count);
-        }
-      }
-      if (sum === 0) sum = 1;
-      const icons = Array.from(iconMap.entries()).map(([symbol, count]) => ({ symbol, count }));
-      return { product: Math.max(1, Math.floor(product)), sum, icons };
-    } catch {
-      return { product: 1, sum: 1, icons: [] };
-    }
   }
 
   private getMultiplierValueForSymbol(symbolId: number | undefined): number {

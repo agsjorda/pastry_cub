@@ -18,7 +18,7 @@
  */
 
 import { Game } from '../../scenes/Game';
-import { GameData, setSpeed } from '../GameData';
+import { setSpeed } from '../GameData';
 import { ScatterAnimationManager } from '../../../managers/ScatterAnimationManager';
 import { getScatterGrids } from '../../../utils/scatterGrid';
 import { gameEventManager, GameEventType } from '../../../event/EventManager';
@@ -28,15 +28,12 @@ import {
   SLOT_ROWS,
   SLOT_COLUMNS,
   DELAY_BETWEEN_SPINS,
-  MULTIPLIER_SYMBOLS,
+  REEL_DROP_DURATION_MULTIPLIER,
   MIN_SCATTER_FOR_BONUS,
   MIN_SCATTER_FOR_RETRIGGER,
   SCATTER_SYMBOL_ID,
   INITIAL_SYMBOLS,
   SYMBOL_CONFIG,
-  SPINE_SYMBOL_SCALES,
-  DEFAULT_SPINE_SCALE,
-  SPINE_SCALE_ADJUSTMENT,
   DEPTH_WINNING_SYMBOL,
   SCATTER_ANIMATION_SCALE,
   SCATTER_GATHER_SCALE,
@@ -48,11 +45,20 @@ import {
 } from '../../../config/GameConfig';
 import { SoundEffectType } from '../../../managers/AudioManager';
 import { normalizeAreaToGameConfig } from '../../../utils/GridTransform';
+import {
+  getHighCountSymbolsFromOuts,
+  getTumbleTotal,
+  getTotalWinFromSlot,
+  getTotalWinFromFreespinOnly,
+  getTotalCountFromOuts,
+  getSpinTotalFromSpinData,
+  getSpinTotalWithFallback,
+} from '../Spin';
 
 // Import new modular components
 import { SymbolGrid } from './SymbolGrid';
 import { SymbolAnimations } from './SymbolAnimations';
-import { SymbolFactory } from './SymbolFactory';
+import { SymbolFactory, resolveSymbolAnimationName } from './SymbolFactory';
 import { SymbolOverlay } from './SymbolOverlay';
 import { FreeSpinController } from './FreeSpinController';
 import { MultiplierSymbols } from './MultiplierSymbols';
@@ -62,7 +68,6 @@ import type {
   SpinMockData,
   PendingFreeSpinsData,
   PendingScatterRetrigger,
-  TumbleData,
 } from './types';
 
 /**
@@ -107,6 +112,11 @@ export class Symbols {
   public isBuyFeatureTransitionComplete: boolean = false;
 
   // Expose grid properties for backward compatibility
+  /** Show or hide the red debug border around the reel container */
+  public setReelBorderVisible(visible: boolean): void {
+    this.grid.setReelBorderVisible(visible);
+  }
+
   public get container(): Phaser.GameObjects.Container {
     return this.grid?.container;
   }
@@ -559,44 +569,11 @@ export class Symbols {
     this.scene.events.on('postupdate', listener);
   }
 
-  private resetScatterSymbolsAfterRetrigger(scatterGrids: GridPosition[]): void {
-    const scatterScale = this.getSpineSymbolScale(SCATTER_SYMBOL_ID);
-    for (const grid of scatterGrids) {
-      try {
-        const symbol = this.grid.getSymbol(grid.x, grid.y);
-        if (!symbol || (symbol as any).destroyed) continue;
-        if (typeof (symbol as any).setScale === 'function') {
-          (symbol as any).setScale(scatterScale, scatterScale);
-        }
-
-        // Reset animation to idle if it has Spine animations
-        const animState = (symbol as any).animationState;
-        if (animState?.setAnimation) {
-          try {
-            const idleAnimName = `Symbol${SCATTER_SYMBOL_ID}_BZ_idle`;
-            animState.setAnimation(0, idleAnimName, true);
-          } catch { }
-        }
-
-        // Clear any tweens on the symbol
-        try {
-          this.scene.tweens.killTweensOf(symbol);
-          const overlayObj = (symbol as any).__overlayImage;
-          if (overlayObj) {
-            this.scene.tweens.killTweensOf(overlayObj);
-          }
-        } catch { }
-      } catch (e) {
-        console.warn(`[Symbols] Failed to reset scatter at (${grid.x}, ${grid.y}):`, e);
-      }
-    }
-  }
-
   private async playSymbol0RetriggerSequence(symbol0Grids: GridPosition[]): Promise<void> {
     if (!symbol0Grids.length) return;
 
-    const winAnimName = 'Symbol0_BZ_win';
-    const idleAnimName = 'Symbol0_BZ_idle';
+    const winAnimName = 'Symbol0_PC_win';
+    const idleAnimName = 'Symbol0_PC_idle';
 
     const animationPromises = symbol0Grids.map((grid) => {
       return new Promise<void>((resolve) => {
@@ -785,21 +762,6 @@ export class Symbols {
     return count;
   }
 
-  private getSymbol0GridsFromArea(area: number[][]): GridPosition[] {
-    const positions: GridPosition[] = [];
-    if (!Array.isArray(area)) return positions;
-
-    for (let col = 0; col < area.length; col++) {
-      if (!Array.isArray(area[col])) continue;
-      for (let row = 0; row < area[col].length; row++) {
-        if (area[col][row] === 0) {
-          positions.push({ x: col, y: row });
-        }
-      }
-    }
-    return positions;
-  }
-
   private handleWinDialogClosed(): void {
     console.log('[Symbols] WIN_DIALOG_CLOSED');
     gameStateManager.isShowingWinDialog = false;
@@ -940,23 +902,6 @@ export class Symbols {
 
   public forceAllSymbolsVisible(): void {
     this.grid.forceAllVisible();
-  }
-
-  public resetSpineSymbolsToPNG(): void {
-    // Delegate to factory for each symbol
-    const symbolData = this.currentSymbolData;
-    if (!symbolData) return;
-
-    this.grid.forEachSymbol((symbol, col, row) => {
-      if ((symbol as any).animationState) {
-        const value = symbolData[row]?.[col];
-        if (value !== undefined) {
-          const pos = this.grid.calculateCellPosition(col, row);
-          const pngSymbol = this.factory.convertSpineToPng(symbol, value, pos.x, pos.y);
-          this.grid.setSymbol(col, row, pngSymbol);
-        }
-      }
-    });
   }
 
   public resetSymbolsState(): void {
@@ -1492,6 +1437,23 @@ export class Symbols {
     console.log('[Symbols] Retrigger animation completed');
   }
 
+  /**
+   * Total win from current spin data (delegates to Spin).
+   */
+  private calculateTotalWinFromSpinData(): number {
+    try {
+      const slot = this.currentSpinData?.slot;
+      const totalWin = getTotalWinFromSlot(slot);
+      if (totalWin > 0 && typeof (this.currentSpinData?.slot as any)?.totalWin === 'number') {
+        console.log(`[Symbols] Using spinData.slot.totalWin: ${totalWin}`);
+      }
+      return totalWin;
+    } catch (e) {
+      console.warn('[Symbols] Failed to calculate total win from spinData', e);
+      return 0;
+    }
+  }
+
   private async showCongratsDialogAfterDelay(): Promise<void> {
     console.log('[Symbols] Showing congrats dialog');
 
@@ -1520,25 +1482,16 @@ export class Symbols {
       gameScene.dialogs.hideDialog();
     }
 
-    // Calculate total win
     let totalWin = 0;
     try {
       const bonusHeader = gameScene?.bonusHeader;
       if (bonusHeader?.getCumulativeBonusWin) {
         totalWin = Number(bonusHeader.getCumulativeBonusWin()) || 0;
       }
-    } catch { /* ignore */ }
-
-    if (totalWin === 0 && this.currentSpinData?.slot) {
-      const freespinData = this.currentSpinData.slot.freespin || this.currentSpinData.slot.freeSpin;
-      if (typeof freespinData?.totalWin === 'number') {
-        totalWin = Number(freespinData.totalWin) || 0;
-      } else if (freespinData?.items) {
-        totalWin = freespinData.items.reduce((sum: number, item: any) => {
-          return sum + (item.totalWin || item.subTotalWin || 0);
-        }, 0);
+      if (totalWin === 0 && this.currentSpinData?.slot) {
+        totalWin = getTotalWinFromFreespinOnly(this.currentSpinData.slot);
       }
-    }
+    } catch { /* ignore */ }
 
     // Get free spin count
     let freeSpinCount = 0;
@@ -1974,7 +1927,7 @@ export class Symbols {
                   if (animState.timeScale !== undefined) {
                     animState.timeScale = 0.5;
                   }
-                  animState.setAnimation(0, 'Symbol0_BZ_win', false);
+                  animState.setAnimation(0, 'Symbol0_PC_win', false);
                   // Double the delay since animation is half speed
                   this.scene.time.delayedCall(4000, () => {
                     try { 
@@ -1982,7 +1935,7 @@ export class Symbols {
                       if (animState.timeScale !== undefined) {
                         animState.timeScale = 1.0;
                       }
-                      animState.setAnimation(0, 'Symbol0_BZ_idle', true); 
+                      animState.setAnimation(0, 'Symbol0_PC_idle', true); 
                     } catch { }
                   });
                 }
@@ -2205,7 +2158,7 @@ export class Symbols {
                 if (animState.timeScale !== undefined) {
                   animState.timeScale = 0.5;
                 }
-                animState.setAnimation(0, 'Symbol0_BZ_win', false);
+                animState.setAnimation(0, 'Symbol0_PC_win', false);
                 // Double the delay since animation is half speed
                 const doubledIdleDelayMs = idleDelayMs * 2;
                 this.scene.time.delayedCall(doubledIdleDelayMs, () => {
@@ -2214,7 +2167,7 @@ export class Symbols {
                     if (animState.timeScale !== undefined) {
                       animState.timeScale = 1.0;
                     }
-                    animState.setAnimation(0, 'Symbol0_BZ_idle', true); 
+                    animState.setAnimation(0, 'Symbol0_PC_idle', true); 
                   } catch { }
                 });
                 // Double explosion timing since animation is half speed
@@ -2981,9 +2934,7 @@ export class Symbols {
   private async dropReels(data: SpinMockData): Promise<void> {
     this.reelDropInProgress = true;
 
-    const numRows = (this.symbols && this.symbols[0] && this.symbols[0].length)
-      ? this.symbols[0].length
-      : SLOT_ROWS;
+    const numCols = this.symbols?.length ?? SLOT_COLUMNS;
     const isTurbo = !!this.scene.gameData?.isTurbo;
     if (this.skipReelDropsPending) {
       this.skipReelDropsPending = false;
@@ -2991,22 +2942,20 @@ export class Symbols {
     }
     const isSkip = this.skipReelDropsActive || this.skipReelDropsPending;
 
-    // Drop symbols row by row from bottom to top
+    // Drop symbols column by column - each column drops all its rows vertically at the same time
     if (isSkip) {
-      // Enforce strict bottom-left to top-right order during skip.
       const bonusPreDropDelay = gameStateManager.isBonus
         ? (this.scene.gameData.winUpDuration * 2)
         : 0.5;
       const preDelay = bonusPreDropDelay * 0.2;
-      const rowDelay = this.scene.gameData.dropReelsDelay * 0.2;
+      const colDelay = this.scene.gameData.dropReelsDelay * 0.2;
 
-      for (let step = 0; step < numRows; step++) {
-        const actualRow = (numRows - 1) - step;
-        const startDelay = step === 0 ? preDelay : rowDelay;
+      for (let col = 0; col < numCols; col++) {
+        const startDelay = col === 0 ? preDelay : colDelay;
         await this.delay(startDelay);
-        console.log(`[Symbols] Processing row ${actualRow}/${numRows - 1}`);
-        await this.dropOldSymbols(actualRow);
-        await this.dropNewSymbols(actualRow, false);
+        console.log(`[Symbols] Processing column ${col}/${numCols - 1}`);
+        await this.dropOldSymbols(col);
+        await this.dropNewSymbols(col, false);
       }
 
       console.log('[Symbols] All reels completed');
@@ -3015,26 +2964,19 @@ export class Symbols {
     } else {
       const reelPromises: Promise<void>[] = [];
 
-      for (let step = 0; step < numRows; step++) {
-        const actualRow = (numRows - 1) - step;
-        const isLastReel = actualRow === 0;
-
-        // In bonus mode, add small pre-drop delay
+      for (let col = 0; col < numCols; col++) {
         const bonusPreDropDelay = gameStateManager.isBonus
           ? (this.scene.gameData.winUpDuration * 2)
           : 0.5;
 
-        // In turbo mode, remove row stagger so all drop together
-        const rowDelayFactor = isTurbo ? 0 : 1;
+        const colDelayFactor = isTurbo ? 0 : 1;
         const startDelay = bonusPreDropDelay +
-          (this.scene.gameData.dropReelsDelay * step * rowDelayFactor);
+          (this.scene.gameData.dropReelsDelay * col * colDelayFactor);
 
         const p = (async () => {
           await this.delayOrSkip(startDelay);
-          await this.dropOldSymbols(actualRow);
-
-          // Then drop new symbols
-          await this.dropNewSymbols(actualRow, false);
+          await this.dropOldSymbols(col);
+          await this.dropNewSymbols(col, false);
         })();
         reelPromises.push(p);
       }
@@ -3057,20 +2999,24 @@ export class Symbols {
     }
   }
 
-  private async dropOldSymbols(rowIndex: number): Promise<void> {
+  private async dropOldSymbols(colIndex: number): Promise<void> {
     return new Promise<void>((resolve) => {
       if (!this.symbols || this.symbols.length === 0) {
         resolve();
         return;
       }
 
+      const column = this.symbols[colIndex];
+      if (!column || column.length === 0) {
+        resolve();
+        return;
+      }
+
       let completedAnimations = 0;
-      const totalAnimations = this.symbols.length;
-      const STAGGER_MS = 100; // Same as new symbols
-      const symbolHop = this.scene.gameData.winUpHeight * 0.5;
-      const isTurbo = !!this.scene.gameData?.isTurbo;
+      const totalAnimations = column.length;
       const isSkip = this.skipReelDropsActive || this.skipReelDropsPending;
-      const speed = isSkip ? 0.5 : 1;
+      const DROP_DISTANCE = this.totalGridHeight * 2;
+      const dropDuration = Math.max(200, (this.scene.gameData?.dropDuration ?? 500) * (isSkip ? 0.3 : 1));
 
       // During scatter transitions, immediately dispose symbols without animation
       // to avoid conflicts with special transition sequences
@@ -3079,9 +3025,8 @@ export class Symbols {
                                    this.scatterRetriggerAnimationInProgress;
 
       if (shouldSkipAnimation) {
-        // Use immediate disposal for maximum performance
-        for (let col = 0; col < this.symbols.length; col++) {
-          const symbol = this.symbols[col]?.[rowIndex];
+        for (let row = 0; row < column.length; row++) {
+          const symbol = column[row];
           if (symbol && !(symbol as any).destroyed) {
             try {
               const baseObj: any = symbol as any;
@@ -3102,27 +3047,19 @@ export class Symbols {
         return;
       }
 
-      // Calculate drop distance to move off screen
-      const gridBottomY = this.slotY + this.totalGridHeight * 0.5;
-      const distanceToScreenBottom = Math.max(0, this.scene.scale.height - gridBottomY);
-      const extraDistance = this.displayHeight * 3;
-
-      for (let col = 0; col < this.symbols.length; col++) {
-        const symbol = this.symbols[col]?.[rowIndex];
+      for (let row = 0; row < column.length; row++) {
+        const symbol = column[row];
         if (!symbol || (symbol as any).destroyed) {
           completedAnimations++;
-          if (completedAnimations === totalAnimations) {
-            resolve();
-          }
+          if (completedAnimations === totalAnimations) resolve();
           continue;
         }
 
         const baseObj: any = symbol as any;
         const overlayObj: any = baseObj?.__overlayImage;
 
-        // Validate symbol has valid position and state before attempting to animate
         if (typeof baseObj.y !== 'number' || !isFinite(baseObj.y)) {
-          console.warn(`[Symbols] Symbol at row ${rowIndex}, col ${col} has invalid position (y=${baseObj.y}), destroying immediately`);
+          console.warn(`[Symbols] Symbol at col ${colIndex}, row ${row} has invalid position, destroying immediately`);
           try {
             this.scene.tweens.killTweensOf(baseObj);
             if (overlayObj) this.scene.tweens.killTweensOf(overlayObj);
@@ -3144,70 +3081,34 @@ export class Symbols {
             this.scene.tweens.killTweensOf(overlayObj);
           }
         } catch (e) {
-          console.warn(`[Symbols] Failed to kill tweens for symbol at row ${rowIndex}, col ${col}:`, e);
+          console.warn(`[Symbols] Failed to kill tweens for symbol at col ${colIndex}, row ${row}:`, e);
         }
 
         const tweenTargets: any = overlayObj ? [baseObj, overlayObj] : baseObj;
 
-        const tweens: any[] = [
-          {
-            delay: (isTurbo || isSkip) ? 0 : STAGGER_MS * col,
-            y: `-= ${symbolHop}`,
-            duration: Math.max(1, this.scene.gameData.winUpDuration * speed),
-            ease: Phaser.Math.Easing.Circular.Out,
-          },
-          {
-            y: `+= ${distanceToScreenBottom + extraDistance}`,
-            duration: Math.max(1, this.scene.gameData.dropDuration * 0.9 * speed),
-            ease: isTurbo ? Phaser.Math.Easing.Cubic.Out : Phaser.Math.Easing.Linear,
-            onComplete: () => {
-              // Destroy the symbol after it drops off screen
-              try {
-                if (!baseObj.destroyed) baseObj.destroy();
-                if (overlayObj && !overlayObj.destroyed) overlayObj.destroy();
-              } catch { }
-
-              completedAnimations++;
-              if (completedAnimations === totalAnimations) {
-                resolve();
-              }
-            }
-          },
-        ];
-
-        // Try to create the tween chain, but handle errors gracefully
-        try {
-          this.scene.tweens.chain({
-            targets: tweenTargets,
-            tweens,
-          });
-        } catch (e) {
-          console.warn(`[Symbols] Failed to create tween chain for symbol at row ${rowIndex}, col ${col}:`, e);
-          // If tween creation fails, count it as completed and clean up
-          try {
-            if (!baseObj.destroyed) baseObj.destroy();
-            if (overlayObj && !overlayObj.destroyed) overlayObj.destroy();
-          } catch { }
-          completedAnimations++;
-          if (completedAnimations === totalAnimations) {
-            resolve();
+        this.scene.tweens.add({
+          targets: tweenTargets,
+          y: `+= ${DROP_DISTANCE}`,
+          duration: dropDuration,
+          ease: Phaser.Math.Easing.Linear,
+          onComplete: () => {
+            try {
+              if (!baseObj.destroyed) baseObj.destroy();
+              if (overlayObj && !overlayObj.destroyed) overlayObj.destroy();
+            } catch { }
+            completedAnimations++;
+            if (completedAnimations === totalAnimations) resolve();
           }
-        }
+        });
       }
 
-      // Safety timeout in case some animations don't complete
-      // If timeout triggers, forcefully clean up any remaining symbols
-      // Reduced timeout for faster cleanup (was dropDuration * 2, now * 1.5)
-      const timeoutDuration = this.scene.gameData.dropDuration * 1.5;
+      // Safety timeout in case some tweens don't complete
+      const timeoutDuration = dropDuration * 2;
       this.scene.time.delayedCall(timeoutDuration, () => {
         if (completedAnimations < totalAnimations) {
-          const remaining = totalAnimations - completedAnimations;
-          console.log(`[Symbols] Cleanup: ${remaining} symbol(s) at row ${rowIndex} didn't complete animation, force-destroying (${completedAnimations}/${totalAnimations})`);
-
-          // Force destroy any symbols that didn't animate properly
-          let forcedCount = 0;
-          for (let col = 0; col < this.symbols.length; col++) {
-            const symbol = this.symbols[col]?.[rowIndex];
+          console.log(`[Symbols] Cleanup: symbols at col ${colIndex} didn't complete, force-destroying`);
+          for (let row = 0; row < column.length; row++) {
+            const symbol = column[row];
             if (symbol && !(symbol as any).destroyed) {
               try {
                 const baseObj: any = symbol as any;
@@ -3216,115 +3117,57 @@ export class Symbols {
                 if (overlayObj) this.scene.tweens.killTweensOf(overlayObj);
                 if (!baseObj.destroyed) baseObj.destroy();
                 if (overlayObj && !overlayObj.destroyed) overlayObj.destroy();
-                forcedCount++;
               } catch (e) {
-                console.warn(`[Symbols] Failed to force-destroy symbol at row ${rowIndex}, col ${col}:`, e);
+                console.warn(`[Symbols] Failed to force-destroy symbol at col ${colIndex}, row ${row}:`, e);
               }
             }
           }
-
-          if (forcedCount > 0) {
-            console.log(`[Symbols] Force-destroyed ${forcedCount} symbol(s) at row ${rowIndex}`);
-          }
-
           resolve();
         }
       });
     });
   }
 
-  private async dropNewSymbols(index: number, extendDuration: boolean = false): Promise<void> {
+  private async dropNewSymbols(colIndex: number, extendDuration: boolean = false): Promise<void> {
     return new Promise<void>((resolve) => {
       if (!this.newSymbols || this.newSymbols.length === 0) {
         resolve();
         return;
       }
 
-      if (!this.symbols || !this.symbols[0] || !this.symbols[0][0]) {
-        console.warn('[Symbols] dropNewSymbols: invalid symbols array');
+      const column = this.newSymbols[colIndex];
+      if (!column || column.length === 0) {
         resolve();
         return;
       }
 
-      const height = this.symbols[0][0].displayHeight + this.verticalSpacing;
-      const extraMs = extendDuration ? 3000 : 0;
-
       let completedAnimations = 0;
-      const totalAnimations = this.newSymbols.length;
-      const STAGGER_MS = 100;
-      const symbolHop = this.scene.gameData.winUpHeight * 0.5;
-      const isTurbo = !!this.scene.gameData?.isTurbo;
+      const totalAnimations = column.length;
       const isSkip = this.skipReelDropsActive || this.skipReelDropsPending;
-      const speed = isSkip ? 0.2 : 1;
+      const dropDuration = Math.max(200, (this.scene.gameData?.dropDuration ?? 500) * (isSkip ? 0.3 : 0.9) * REEL_DROP_DURATION_MULTIPLIER);
 
-      console.log(`[Symbols] dropNewSymbols row ${index}: ${totalAnimations} columns, isTurbo=${isTurbo}, STAGGER_MS=${STAGGER_MS}`);
+      console.log(`[Symbols] dropNewSymbols col ${colIndex}: ${totalAnimations} rows`);
 
-      for (let col = 0; col < this.newSymbols.length; col++) {
-        let symbol = this.newSymbols[col][index];
-        const targetY = this.getYPos(index);
-
-        // Trigger drop animation if available
-        try { this.playDropAnimationIfAvailable(symbol); } catch { }
-
+      for (let row = 0; row < column.length; row++) {
+        const symbol = column[row];
+        const targetY = this.getYPos(row);
         const baseObj: any = symbol as any;
         const overlayObj: any = (baseObj as any)?.__overlayImage;
         const tweenTargets: any = overlayObj ? [baseObj, overlayObj] : baseObj;
 
-        const delayMs = (isTurbo || isSkip) ? 0 : STAGGER_MS * col;
-        console.log(`[Symbols] Column ${col}: delay=${delayMs}ms, targetY=${targetY}`);
-
-        const tweens: any[] = [
-          {
-            delay: delayMs,
-            y: `-= ${symbolHop}`,
-            duration: Math.max(1, this.scene.gameData.winUpDuration * speed),
-            ease: Phaser.Math.Easing.Circular.Out,
-          },
-          {
-            y: targetY,
-            duration: Math.max(1, ((this.scene.gameData.dropDuration * 0.9) + extraMs) * speed),
-            ease: isTurbo ? Phaser.Math.Easing.Cubic.Out : Phaser.Math.Easing.Linear,
-          },
-        ];
-
-        if (!isTurbo && !isSkip) {
-          tweens.push(
-            {
-              y: `+= ${10}`,
-              duration: Math.max(1, this.scene.gameData.dropDuration * 0.05 * speed),
-              ease: Phaser.Math.Easing.Linear,
-            },
-            {
-              y: `-= ${10}`,
-              duration: Math.max(1, this.scene.gameData.dropDuration * 0.05 * speed),
-              ease: Phaser.Math.Easing.Linear,
-              onComplete: () => {
-                if (!this.scene.gameData.isTurbo && (window as any).audioManager) {
-                  (window as any).audioManager.playSoundEffect(SoundEffectType.REEL_DROP);
-                }
-
-                completedAnimations++;
-                if (completedAnimations === totalAnimations) {
-                  resolve();
-                }
-              }
-            },
-          );
-        } else {
-          const last = tweens[tweens.length - 1];
-          const prevOnComplete = last.onComplete;
-          last.onComplete = () => {
-            try { if (prevOnComplete) prevOnComplete(); } catch { }
-            completedAnimations++;
-            if (completedAnimations === totalAnimations) {
-              resolve();
-            }
-          };
+        try { this.playDropAnimationIfAvailable(symbol); } catch { }
+        if (!this.scene.gameData.isTurbo && (window as any).audioManager) {
+          (window as any).audioManager.playSoundEffect(SoundEffectType.REEL_DROP);
         }
-
-        this.scene.tweens.chain({
+        this.scene.tweens.add({
           targets: tweenTargets,
-          tweens,
+          y: targetY,
+          duration: dropDuration,
+          ease: Phaser.Math.Easing.Linear,
+          onComplete: () => {
+            completedAnimations++;
+            if (completedAnimations === totalAnimations) resolve();
+          }
         });
       }
     });
@@ -3345,12 +3188,10 @@ export class Symbols {
       const value = (obj as any)?.symbolValue;
       if (value === undefined || value === null) return;
 
-      let dropAnimName = `Symbol${value}_BZ_drop`;
-      let idleAnimName = `Symbol${value}_BZ_idle`;
-      if (MultiplierSymbols.isMultiplier(value)) {
-        dropAnimName = 'Symbol10_BZ_drop';
-        idleAnimName = 'Symbol10_BZ_idle';
-      }
+      const skelData = (obj as any)?.skeleton?.data;
+      const baseValue = MultiplierSymbols.isMultiplier(value) ? 10 : value;
+      const dropAnimName = resolveSymbolAnimationName(skelData, baseValue, 'drop') ?? `Symbol${baseValue}_BZ_drop`;
+      const idleAnimName = resolveSymbolAnimationName(skelData, baseValue, 'idle') ?? `Symbol${baseValue}_BZ_idle`;
 
       animState.setAnimation(0, dropAnimName, false);
       animState.addAnimation(0, idleAnimName, true, 0);
@@ -3393,17 +3234,7 @@ export class Symbols {
       for (const tumble of tumbles) {
         tumbleIndex++;
 
-      // Compute this tumble's total win
-      let tumbleTotal = 0;
-      try {
-        const w = Number(tumble?.win ?? 0);
-        if (!isNaN(w) && w > 0) {
-          tumbleTotal = w;
-        } else {
-          const outsArr = Array.isArray(tumble?.symbols?.out) ? tumble.symbols.out : [];
-          tumbleTotal = outsArr.reduce((s: number, o: any) => s + (Number(o?.win) || 0), 0);
-        }
-      } catch { }
+      const tumbleTotal = getTumbleTotal(tumble);
 
       const currentTumbleIndex = tumbleIndex;
 
@@ -3491,39 +3322,7 @@ export class Symbols {
   }
 
   private getSpinTotalBeforeMultipliers(): number {
-    let spinTotal = 0;
-    try {
-      const spinData: any = this.currentSpinData;
-      const fs = spinData?.slot?.freespin || spinData?.slot?.freeSpin;
-      if (fs?.items && Array.isArray(fs.items)) {
-        const currentItem = fs.items.find((item: any) => Number(item?.spinsLeft) > 0);
-        const base = Number(currentItem?.subTotalWin);
-        if (!isNaN(base) && base > 0) {
-          spinTotal = base;
-        }
-      }
-
-      if (spinTotal === 0) {
-        if (Array.isArray(spinData?.slot?.paylines)) {
-          for (const pl of spinData.slot.paylines) {
-            const w = Number(pl?.win || 0);
-            if (!isNaN(w)) spinTotal += w;
-          }
-        }
-        if (Array.isArray(spinData?.slot?.tumbles)) {
-          for (const t of spinData.slot.tumbles) {
-            const w = Number(t?.win ?? 0);
-            if (!isNaN(w) && w > 0) {
-              spinTotal += w;
-            } else {
-              const outsArr = Array.isArray(t?.symbols?.out) ? t.symbols.out : [];
-              spinTotal += outsArr.reduce((s: number, o: any) => s + (Number(o?.win) || 0), 0);
-            }
-          }
-        }
-      }
-    } catch { }
-    return spinTotal;
+    return getSpinTotalFromSpinData(this.currentSpinData);
   }
 
   private playMultiplierWinThenIdle(obj: any, value: number, spinTotal: number, weight: number): Promise<void> {
@@ -3603,50 +3402,7 @@ export class Symbols {
               ease: Phaser.Math.Easing.Cubic.InOut,
               onComplete: () => {
                 try {
-                  let arrivalSpinTotal = spinTotal;
-                  if (!(arrivalSpinTotal > 0)) {
-                    // Match sugar_wonderland: recompute from current spin data on arrival.
-                    try {
-                      const spinData: any = this.currentSpinData;
-                      const slotAny: any = spinData?.slot || {};
-                      const fs = slotAny?.freespin || slotAny?.freeSpin;
-                      if (fs?.items && Array.isArray(fs.items)) {
-                        const currentItem = fs.items.find((item: any) => Number(item?.spinsLeft) > 0);
-                        const base = Number(currentItem?.subTotalWin);
-                        if (!isNaN(base) && base > 0) {
-                          arrivalSpinTotal = base;
-                        }
-                      }
-                      // Beelze Bop fallback: match freespin item by area if spinsLeft isn't reliable
-                      if (arrivalSpinTotal === 0 && Array.isArray(fs?.items) && Array.isArray(slotAny?.area)) {
-                        const areaJson = JSON.stringify(slotAny.area);
-                        const matchItem = fs.items.find((item: any) =>
-                          Array.isArray(item?.area) && JSON.stringify(item.area) === areaJson
-                        );
-                        if (matchItem) {
-                          const rawItemTotal = (matchItem as any).totalWin ?? (matchItem as any).subTotalWin ?? 0;
-                          const itemTotal = Number(rawItemTotal);
-                          if (!isNaN(itemTotal) && itemTotal > 0) {
-                            arrivalSpinTotal = itemTotal;
-                          }
-                        }
-                      }
-                      if (arrivalSpinTotal === 0) {
-                        if (Array.isArray(slotAny?.paylines)) {
-                          for (const pl of slotAny.paylines) {
-                            const w = Number(pl?.win || 0);
-                            if (!isNaN(w)) arrivalSpinTotal += w;
-                          }
-                        }
-                        if (Array.isArray(slotAny?.tumbles)) {
-                          for (const t of slotAny.tumbles) {
-                            const w = Number(t?.win ?? 0);
-                            if (!isNaN(w)) arrivalSpinTotal += w;
-                          }
-                        }
-                      }
-                    } catch { }
-                  }
+                  const arrivalSpinTotal = spinTotal > 0 ? spinTotal : getSpinTotalWithFallback(this.currentSpinData);
                   gameEventManager.emit(GameEventType.MULTIPLIER_ARRIVED, { spinTotal: arrivalSpinTotal, weight } as any);
                 } catch { }
                 this.scene.tweens.add({
@@ -3786,9 +3542,8 @@ export class Symbols {
     // Match manual drop timings and staggering for visual consistency
     const MANUAL_STAGGER_MS: number = (self.scene?.gameData?.tumbleStaggerMs ?? 100);
 
-    // Debug: log incoming tumble payload
     try {
-      const totalOutRequested = outs.reduce((s, o) => s + (Number(o?.count) || 0), 0);
+      const totalOutRequested = getTotalCountFromOuts(outs);
       const totalInProvided = (Array.isArray(ins) ? ins.flat().length : 0);
       console.log('[Symbols] Tumble payload:', {
         outs,
@@ -3801,15 +3556,7 @@ export class Symbols {
     // removeMask[col][row]
     const removeMask: boolean[][] = Array.from({ length: numCols }, () => Array<boolean>(numRows).fill(false));
 
-    // Identify symbols that meet the high-count threshold (>=8)
-    const highCountSymbols = new Set<number>();
-    for (const out of outs) {
-      const c = Number(out?.count || 0);
-      const s = Number(out?.symbol);
-      if (!isNaN(c) && !isNaN(s) && c >= 8) {
-        highCountSymbols.add(s);
-      }
-    }
+    const highCountSymbols = getHighCountSymbolsFromOuts(outs);
 
     // Build position indices by symbol (topmost-first per column)
     const positionsBySymbol: { [key: number]: Array<{ col: number; row: number }> } = {};
@@ -3877,14 +3624,22 @@ export class Symbols {
       }
     }
 
+    // Compute active columns (have removals or incoming) for conveyor animation
+    const removedPerCol: number[] = Array.from({ length: numCols }, () => 0);
+    for (let col = 0; col < numCols; col++) {
+      for (let row = 0; row < numRows; row++) {
+        if (removeMask[col][row]) removedPerCol[col]++;
+      }
+    }
+    const tumbleActiveColumns = Array.from({ length: numCols }, (_, c) => c).filter(
+      (c) => insCountByCol[c] > 0 || removedPerCol[c] > 0
+    );
+    if (tumbleActiveColumns.length > 0) {
+      gameEventManager.emit(GameEventType.TUMBLE_COLUMNS_START, { columns: tumbleActiveColumns } as any);
+    }
+
     // Debug: per-column removal vs incoming
     try {
-      const removedPerCol: number[] = Array.from({ length: numCols }, () => 0);
-      for (let col = 0; col < numCols; col++) {
-        for (let row = 0; row < numRows; row++) {
-          if (removeMask[col][row]) removedPerCol[col]++;
-        }
-      }
       console.log('[Symbols] Tumble per-column removal vs incoming:', removedPerCol.map((r, c) => ({ col: c, removed: r, incoming: insCountByCol[c] })));
     } catch { }
 
@@ -4028,7 +3783,7 @@ export class Symbols {
       }
     } catch { }
 
-    // Animate removal: for high-count sugar symbols (1..9), play SW_Win before destroy; otherwise fade out
+    // Animate removal: for high-count sugar symbols (1..7), play SW_Win before destroy; otherwise fade out
     const removalPromises: Promise<void>[] = [];
     const STAGGER_MS = 50; // match drop sequence stagger (shortened)
     // Track first win animation notification (we now trigger on animation start for better SFX sync)
@@ -4039,17 +3794,7 @@ export class Symbols {
           firstWinNotified = true;
         console.log(`[Symbols] notifyFirstWinIfNeeded called for tumble index: ${tumbleIndex} (first win animation started)`);
         try {
-          // Compute tumble total similarly here for safety
-          let tumbleTotal = 0;
-          try {
-            const tw = Number((tumble as any)?.win ?? 0);
-            if (!isNaN(tw) && tw > 0) {
-              tumbleTotal = tw;
-            } else {
-              const outsArr = Array.isArray((tumble as any)?.symbols?.out) ? (tumble as any).symbols.out as Array<{ win?: number }> : [];
-              tumbleTotal = outsArr.reduce((s, o) => s + (Number(o?.win) || 0), 0);
-            }
-          } catch { }
+          const tumbleTotal = getTumbleTotal(tumble);
           if (typeof onFirstWinComplete === 'function') {
             onFirstWinComplete(tumbleTotal);
           }
@@ -4061,12 +3806,8 @@ export class Symbols {
     }
 
     if (skipTumble) {
-      // Fast-path: remove symbols immediately but still play win animations at fast speed
       try {
-        const w = Number((tumble as any)?.win ?? 0);
-        const outsArr = Array.isArray((tumble as any)?.symbols?.out) ? (tumble as any).symbols.out as Array<{ win?: number }> : [];
-        const sumOuts = outsArr.reduce((s, o) => s + (Number(o?.win) || 0), 0);
-        const tumbleTotal = (!isNaN(w) && w > 0) ? w : sumOuts;
+        const tumbleTotal = getTumbleTotal(tumble);
         if (tumbleTotal > 0 || anyRemoval) {
           notifyFirstWinIfNeeded();
         }
@@ -4294,13 +4035,9 @@ export class Symbols {
     }
 
     await Promise.all(removalPromises);
-    // If we had a tumble win but did not notify (e.g., no win animations played), notify now
     try {
       if (!firstWinNotified) {
-        const w = Number((tumble as any)?.win ?? 0);
-        const outsArr = Array.isArray((tumble as any)?.symbols?.out) ? (tumble as any).symbols.out as Array<{ win?: number }> : [];
-        const sumOuts = outsArr.reduce((s, o) => s + (Number(o?.win) || 0), 0);
-        const tumbleTotal = (!isNaN(w) && w > 0) ? w : sumOuts;
+        const tumbleTotal = getTumbleTotal(tumble);
         if (tumbleTotal > 0 || anyRemoval) {
           notifyFirstWinIfNeeded();
         }
@@ -4654,9 +4391,8 @@ export class Symbols {
       await Promise.all(dropPromises);
     }
 
-    // Debug: validate totals between outs and ins after spawn
     try {
-      const totalOutRequested = outs.reduce((s, o) => s + (Number(o?.count) || 0), 0);
+      const totalOutRequested = getTotalCountFromOuts(outs);
       if (totalOutRequested !== totalSpawned) {
         console.warn('[Symbols] Tumble total mismatch: out.count sum != spawned', {
           totalOutRequested,
@@ -4667,10 +4403,8 @@ export class Symbols {
       }
     } catch { }
 
-    // Re-evaluate wins after each tumble drop completes
     // Sync data to match live symbols after compression/drop
     this.syncCurrentSymbolDataFromSymbols();
-    try { this.reevaluateWinsFromGrid(); } catch { }
 
     // Check for scatter hits from the updated grid after this tumble (both normal and bonus mode)
     try {
@@ -4712,13 +4446,10 @@ export class Symbols {
       console.warn('[Symbols] Failed to evaluate scatter during tumble:', e);
     }
 
+    if (tumbleActiveColumns.length > 0) {
+      gameEventManager.emit(GameEventType.TUMBLE_COLUMNS_DONE, { columns: tumbleActiveColumns } as any);
+    }
     this.tumbleDropInProgress = false;
-  }
-
-  private reevaluateWinsFromGrid(): void {
-    // Re-evaluate wins after tumble drop completes
-    // This would call the symbol detector logic to check for new wins
-    // For now, this is a placeholder
   }
 
   private playExplosionVfx(x: number, y: number, useMergeScale: boolean = false, minDurationMs?: number): void {
@@ -4946,25 +4677,6 @@ export class Symbols {
     });
   }
 
-
-  private showMultiplierOverlayAfterExplosion(baseObj: any): void {
-    if ((baseObj as any)?.__overlayHidden) {
-      return;
-    }
-    if (!this.scene || !this.scene.time) {
-      this.showMultiplierOverlay(baseObj);
-      return;
-    }
-
-    const pos = this.getSymbolWorldPosition(baseObj);
-    if (!pos) {
-      this.showMultiplierOverlay(baseObj);
-      return;
-    }
-
-    this.playExplosionVfx(pos.x, pos.y, false);
-    this.showMultiplierOverlay(baseObj);
-  }
 
   private showMultiplierOverlay(baseObj: any): void {
     if ((baseObj as any)?.__overlayHidden) {

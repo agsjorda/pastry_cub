@@ -15,6 +15,16 @@ import type { SymbolOverlay } from './SymbolOverlay';
 import { SYMBOL_MULTIPLIER_VISUAL_SCALE } from '../../../config/GameConfig';
 import { gameStateManager } from '../../../managers/GameStateManager';
 
+/** Resolve symbol animation name - pastry_cub uses _PC for symbols 1-7 */
+export function resolveSymbolAnimationName(skeletonData: any, value: number, type: 'drop' | 'idle' | 'win'): string | null {
+  if (!skeletonData?.findAnimation) return null;
+  for (const suffix of ['_BZ_', '_PC_']) {
+    const name = `Symbol${value}${suffix}${type}`;
+    if (skeletonData.findAnimation(name)) return name;
+  }
+  return null;
+}
+
 /**
  * Factory for creating symbol objects
  */
@@ -59,7 +69,7 @@ export class SymbolFactory {
 
   /**
    * Create a sugar Spine symbol or PNG fallback
-   * Handles symbols 0-9 (scatter and regular sugar symbols)
+   * Handles symbols 0-7 (scatter and regular sugar symbols)
    */
   public createSugarOrPngSymbol(
     value: number,
@@ -69,8 +79,8 @@ export class SymbolFactory {
   ): SymbolObject {
     let created: SymbolObject | null = null;
 
-    // Try Spine for symbols 0-9
-    if (value >= 0 && value <= 9) {
+    // Try Spine for symbols 0-7
+    if (value >= 0 && value <= 7) {
       try {
         const spineSymbol = this.createSpineSymbol(value, x, y, alpha);
         if (spineSymbol) {
@@ -78,10 +88,8 @@ export class SymbolFactory {
         }
       } catch (error) {
         console.warn(`[SymbolFactory] Failed to create Spine symbol ${value}, falling back to PNG:`, error);
-        // Only fallback to PNG for 0-9
         created = this.createPngSymbol(value, x, y, alpha);
       }
-      // If not returned, fallback to PNG for 0-9
       if (!created) {
         created = this.createPngSymbol(value, x, y, alpha);
       }
@@ -97,14 +105,18 @@ export class SymbolFactory {
       } catch (error) {
         console.warn(`[SymbolFactory] Failed to create multiplier symbol ${value}:`, error);
       }
-      // Create a placeholder sprite if multiplier symbol creation failed
       if (!created) {
         console.warn(`[SymbolFactory] Creating placeholder for multiplier value ${value}`);
         created = this.createPlaceholderSymbol(value, x, y, alpha);
       }
     }
 
-    // Fallback to PNG sprite for any other values (should not happen)
+    // Symbols 8-9 are not used in pastry_cub; use placeholder if backend sends them
+    if (!created && (value === 8 || value === 9)) {
+      created = this.createPlaceholderSymbol(value, x, y, alpha);
+    }
+
+    // Fallback to PNG sprite for any other values
     if (!created) {
       created = this.createPngSymbol(value, x, y, alpha);
     }
@@ -164,18 +176,17 @@ export class SymbolFactory {
    */
   private playDropThenIdle(spineObj: any, value: number): void {
     try {
-      // Animation names in BZ assets are lowercase: drop, idle
-      const dropName = `Symbol${value}_BZ_drop`;
-      const idleName = `Symbol${value}_BZ_idle`;
-      
+      const skelData = spineObj?.skeleton?.data;
+      const dropName = resolveSymbolAnimationName(skelData, value, 'drop') ?? `Symbol${value}_BZ_drop`;
+      const idleName = resolveSymbolAnimationName(skelData, value, 'idle') ?? `Symbol${value}_BZ_idle`;
+
       const animState = spineObj.animationState;
       if (!animState || typeof animState.setAnimation !== 'function') {
         console.warn(`[SymbolFactory] No animation state for symbol ${value}`);
         return;
       }
-      
-      // Check if drop animation exists
-      const hasDrop = !!spineObj?.skeleton?.data?.findAnimation?.(dropName);
+
+      const hasDrop = !!skelData?.findAnimation?.(dropName);
       
       console.log(`[SymbolFactory] Symbol ${value}: dropName=${dropName}, idleName=${idleName}, hasDrop=${hasDrop}`);
       

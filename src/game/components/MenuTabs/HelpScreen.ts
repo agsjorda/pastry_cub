@@ -1,24 +1,23 @@
 import { Scene, GameObjects } from 'phaser';
 import { CurrencyManager } from '../CurrencyManager';
+import { QUALIFYING_CLUSTER_COUNT, SYMBOL_PAYTABLE, SYMBOL_PAY_COUNTS, getScatterFreeSpins } from '../Spin';
 
 type TextStyle = Phaser.Types.GameObjects.Text.TextStyle;
 
-const PAYOUT_RANGES = ['12+', '10', '8'] as const;
+const PAYOUT_RANGES = SYMBOL_PAY_COUNTS.map(String) as readonly string[];
 
-const SYMBOL_PAYOUTS: Record<number, [number, number, number]> = {
-    1: [50.0, 25.0, 10.0],
-    2: [25.0, 10.0, 2.5],
-    3: [15.0, 5.0, 2.0],
-    4: [12.0, 2.0, 1.5],
-    5: [10.0, 1.5, 1.0],
-    6: [8.0, 1.2, 0.8],
-    7: [5.0, 1.0, 0.5],
-    8: [4.0, 0.9, 0.4],
-    9: [2.0, 0.75, 0.25],
-};
+function getSymbolPayouts(): Record<number, number[]> {
+    const out: Record<number, number[]> = {};
+    for (let s = 1; s <= 7; s++) {
+        const row = SYMBOL_PAYTABLE[s];
+        out[s] = SYMBOL_PAY_COUNTS.map((c) => row?.[c] ?? 0);
+    }
+    return out;
+}
+const SYMBOL_PAYOUTS = getSymbolPayouts();
 
-const SCATTER_PAYOUTS: [number, number, number] = [100.0, 5.0, 3.0];
-const SCATTER_COUNTS = ['6', '5', '4'] as const;
+/** Scatter count labels for HelpScreen (3–7) */
+const SCATTER_COUNTS = [3, 4, 5, 6, 7] as const;
 const SCATTER_DESCRIPTIONS = [
     'This is the SCATTER symbol.',
     'SCATTER symbol is present on all reels.',
@@ -98,7 +97,7 @@ export class HelpScreen {
     // Game Rules section
     // RTP section
     // Payout section
-    private readonly payoutSymbolCount: number = 9;
+    private readonly payoutSymbolCount: number = 7;
     private readonly payoutSymbolKey: string = 'symbol';
     private readonly payoutTextRowSpacing: number = 30;
     private readonly payoutTextFontSize: number = 22;
@@ -310,7 +309,7 @@ export class HelpScreen {
 
     private createGameRulesSection(scene: GameScene, contentArea: GameObjects.Container): void {
         this.addTextBlock(scene, 'header1', 'Game Rules', { spacingAfter: 15 });
-        this.addTextBlock(scene, 'content1', 'Win by landing 8 or more matching symbols anywhere on the screen. The more matching symbols you get, the higher your payout.', { wordWrapWidth: this.contentWidth, spacingAfter: 24 });
+        this.addTextBlock(scene, 'content1', `Win by landing ${QUALIFYING_CLUSTER_COUNT} or more matching symbols anywhere on the screen. The more matching symbols you get, the higher your payout.`, { wordWrapWidth: this.contentWidth, spacingAfter: 24 });
     }
 
     private createRTPSection(scene: GameScene, contentArea: GameObjects.Container): void {
@@ -343,7 +342,7 @@ export class HelpScreen {
         scene: GameScene,
         container: GameObjects.Container,
         symbolIndex: number,
-        payoutData: [number, number, number],
+        payoutData: number[],
         payoutRange: readonly string[],
     ): void {
         void container;
@@ -366,7 +365,7 @@ export class HelpScreen {
         const isDemo = (scene as any)?.gameAPI?.getDemoState();
         const currencyPrefix = isDemo ? '' : CurrencyManager.getInlinePrefix();
 
-        for (let row = 0; row < 3; row++) {
+        for (let row = 0; row < payoutRange.length; row++) {
             const y = 0;
             // Left column: range label (bold)
             const rangeText = scene.add.text(rangeTextX, y, payoutRange[row] ?? '', {
@@ -457,16 +456,14 @@ export class HelpScreen {
         const payoutTexts: Array<{ text: GameObjects.Text; row: number }> = [];
         const rangeTexts: Array<{ text: GameObjects.Text; row: number }> = [];
 
-        // Check if demo mode is active - if so, use blank currency symbol
-        const isDemo = (scene as any)?.gameAPI?.getDemoState();
-        const currencyPrefix = isDemo ? '' : CurrencyManager.getInlinePrefix();
-
-        for (let row = 0; row < 3; row++) {
+        for (let row = 0; row < SCATTER_COUNTS.length; row++) {
             const adjustedTextY = baseTextY + row * this.scatterPayoutTextRowSpacing;
+            const count = SCATTER_COUNTS[row];
+            const freeSpins = getScatterFreeSpins(count);
             
-            // Left column: range label (bold)
+            // Left column: scatter count label
             const rangeTextX = baseTextX - this.scatterPayoutTextColumnSpacing / 2;
-            const rangeText = scene.add.text(rangeTextX, adjustedTextY, SCATTER_COUNTS[row] ?? '', {
+            const rangeText = scene.add.text(rangeTextX, adjustedTextY, `${count}`, {
                 fontSize: this.scatterPayoutTextFontSize + 'px',
                 color: '#FFFFFF',
                 fontFamily: 'Poppins-Bold',
@@ -477,10 +474,8 @@ export class HelpScreen {
             symbolContainer.add(rangeText);
             rangeTexts.push({ text: rangeText, row });
 
-            // Right column: payout value, right-aligned
-            const value = SCATTER_PAYOUTS[row] ?? 0;
-            const adjustedValue = this.applyBetToPayout(value);
-            const valueText = `${currencyPrefix}${this.formatPayout(adjustedValue)}`;
+            // Right column: free spins awarded (e.g. "10 FS")
+            const valueText = `${freeSpins} FS`;
             const payoutTextX = baseTextX + this.scatterPayoutTextColumnSpacing / 2;
             const payoutText = scene.add.text(payoutTextX, adjustedTextY, valueText, {
                 fontSize: this.scatterPayoutTextFontSize + 'px',
@@ -493,8 +488,8 @@ export class HelpScreen {
             payoutTexts.push({ text: payoutText, row });
         }
 
-        const tableBottomLocalY = baseTextY;
-        const descTopLocalY = tableBottomLocalY + this.scatterElementSpacing + this.scatterPayoutTextRowSpacing * 3;
+        const tableBottomLocalY = baseTextY + (SCATTER_COUNTS.length - 1) * this.scatterPayoutTextRowSpacing;
+        const descTopLocalY = tableBottomLocalY + this.scatterElementSpacing + this.scatterPayoutTextRowSpacing;
 
         const scatterDescriptionText = SCATTER_DESCRIPTIONS.join('\n');
         // Center the scatter description text under the Scatter symbol/table
@@ -1250,7 +1245,7 @@ export class HelpScreen {
         const blockerHeight = this.tabHeight;
         const blocker = scene.add.zone(0, this.menuTopPadding, blockerWidth, blockerHeight);
         blocker.setOrigin(0, 0);
-        blocker.setDepth(3000);
+        blocker.setDepth(9501); // Above backgrounds (850/9000) and header (9500)
         blocker.setScrollFactor(0);
 
         this.tabInteractionHitArea = new Phaser.Geom.Rectangle(0, 0, blockerWidth, blockerHeight);
@@ -1726,11 +1721,12 @@ export class HelpScreen {
         const cellHeight = 22.5;
         const cellPadding = 5;
 
-        const tableHeight = (cellHeight + cellPadding) * 4;
-        // Center the table vertically relative to the symbol
+        const isScatter = symbolIndex === 0;
+        const rowCount = isScatter ? SCATTER_COUNTS.length : PAYOUT_RANGES.length;
+        const tableHeight = (cellHeight + cellPadding) * (rowCount + 1);
         const tableY = y - tableHeight / 2;
 
-        for (let row = 0; row < 3; row++) {
+        for (let row = 0; row < rowCount; row++) {
             for (let col = 0; col < 3; col++) {
                 let cellWidth = 0;
                 if (col === 0) {
@@ -1743,17 +1739,15 @@ export class HelpScreen {
                 const cellX = x + (col === 2 ? cellWidth1 + cellWidth2 + cellPadding * 2 : col * (cellWidth + cellPadding));
                 const cellY = tableY + row * (cellHeight + cellPadding);
 
-                const isScatter = symbolIndex === 0;
                 let textValue: string | undefined;
                 let wrapWidth: number | undefined;
 
                 if (isScatter) {
                     if (col === 0) {
-                        textValue = SCATTER_COUNTS[row];
+                        textValue = String(SCATTER_COUNTS[row]);
                     } else if (col === 1) {
-                        textValue = this.formatPayout(this.applyBetToPayout(SCATTER_PAYOUTS[row]));
+                        textValue = `${getScatterFreeSpins(SCATTER_COUNTS[row])} FS`;
                     } else {
-                        // Scatter descriptions are rendered below the table in the Scatter section
                         textValue = undefined;
                     }
                 } else if (col < 2) {
@@ -1763,6 +1757,8 @@ export class HelpScreen {
                         const payoutValue = SYMBOL_PAYOUTS[symbolIndex]?.[row] ?? 0;
                         textValue = this.formatPayout(this.applyBetToPayout(payoutValue));
                     }
+                } else {
+                    textValue = undefined;
                 }
 
                 if (!textValue) {

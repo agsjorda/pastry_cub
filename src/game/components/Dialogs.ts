@@ -31,6 +31,15 @@ export interface DialogConfig {
 	autoCloseMs?: number;
 }
 
+/** Context passed from Game so Dialogs can decide show vs defer and access queue/symbols */
+export interface CheckAndShowWinDialogContext {
+	pushToQueue: (payout: number, bet: number) => void;
+	scheduleProcessQueue: () => void;
+	isSuppressed: () => boolean;
+	symbols: any;
+	gameData: any;
+}
+
 export class Dialogs {
 	// Main dialog container that covers the entire screen
 	private dialogOverlay!: Phaser.GameObjects.Container;
@@ -170,7 +179,7 @@ export class Dialogs {
 
 		// Create main dialog overlay container
 		this.dialogOverlay = scene.add.container(0, 0);
-		this.dialogOverlay.setDepth(12000); // Very high depth to cover everything
+		this.dialogOverlay.setDepth(13000); // Above all popups (9501), header (9500), and backgrounds (850/9000)
 		this.dialogOverlay.setVisible(false); // Hidden by default
 
 		// Create black overlay background just behind dialog overlay
@@ -2516,6 +2525,97 @@ export class Dialogs {
 
 	showFreeSpinRetriggerDialog(scene: Scene, config?: Partial<DialogConfig>): void {
 		this.showDialog(scene, { type: 'FreeSpinRetri_BZ', isRetrigger: true, ...config });
+	}
+
+	/**
+	 * Check conditions and either show the appropriate win dialog or defer (push to queue).
+	 * Caller (Game) owns the queue and processWinQueue; this method uses context to push/schedule.
+	 */
+	public checkAndShowWinDialog(scene: Scene, payout: number, bet: number, context: CheckAndShowWinDialogContext): void {
+		if (context.isSuppressed()) {
+			console.log('[Dialogs] Suppressing win dialog (transitioning from bonus to base)');
+			return;
+		}
+		console.log(`[Dialogs] checkAndShowWinDialog: payout=$${payout}, bet=$${bet}`);
+
+		try {
+			const symbolsAny = context.symbols as any;
+			const isMultiplierAnimationsInProgress =
+				symbolsAny && typeof symbolsAny.isMultiplierAnimationsInProgress === 'function'
+					? !!symbolsAny.isMultiplierAnimationsInProgress()
+					: false;
+
+			if (isMultiplierAnimationsInProgress) {
+				console.log('[Dialogs] Multiplier animations in progress - deferring win dialog');
+				context.pushToQueue(payout, bet);
+				context.scheduleProcessQueue();
+				return;
+			}
+		} catch (e) {
+			console.warn('[Dialogs] Failed to check multiplier animation status:', e);
+		}
+
+		try {
+			const symbolsAny = context.symbols as any;
+			const isRetriggerAnimationInProgress =
+				symbolsAny && typeof symbolsAny.isScatterRetriggerAnimationInProgress === 'function'
+					? !!symbolsAny.isScatterRetriggerAnimationInProgress()
+					: false;
+
+			if (isRetriggerAnimationInProgress) {
+				console.log('[Dialogs] Scatter retrigger animation in progress - deferring win dialog');
+				context.pushToQueue(payout, bet);
+				return;
+			}
+		} catch (e) {
+			console.warn('[Dialogs] Failed to check retrigger animation status:', e);
+		}
+
+		try {
+			const symbolsAny = context.symbols as any;
+			const hasPendingRetrigger =
+				(symbolsAny && typeof symbolsAny.hasPendingScatterRetrigger === 'function' && symbolsAny.hasPendingScatterRetrigger()) ||
+				(symbolsAny && typeof symbolsAny.hasPendingSymbol0Retrigger === 'function' && symbolsAny.hasPendingSymbol0Retrigger());
+
+			if (!hasPendingRetrigger) {
+				const isFreeSpinAutoplayActive =
+					symbolsAny && typeof symbolsAny.isFreeSpinAutoplayActive === 'function'
+						? !!symbolsAny.isFreeSpinAutoplayActive()
+						: false;
+				const isNormalAutoplayActive = !!(gameStateManager.isAutoPlaying || context.gameData?.isAutoPlaying);
+
+				if (gameStateManager.isScatter && (isNormalAutoplayActive || isFreeSpinAutoplayActive)) {
+					console.log('[Dialogs] Scatter + autoplay - deferring win dialog');
+					context.pushToQueue(payout, bet);
+					return;
+				}
+			}
+		} catch (e) {
+			console.warn('[Dialogs] Failed to evaluate scatter/autoplay deferral:', e);
+		}
+
+		if (this.isDialogShowing()) {
+			console.log('[Dialogs] Dialog already showing, queueing win');
+			context.pushToQueue(payout, bet);
+			return;
+		}
+
+		const multiplier = payout / bet;
+		if (multiplier < WIN_THRESHOLDS.BIG_WIN) {
+			console.log(`[Dialogs] Win below threshold (${WIN_THRESHOLDS.BIG_WIN}x) - no dialog for ${multiplier.toFixed(2)}x`);
+			gameStateManager.isShowingWinDialog = false;
+			return;
+		}
+
+		if (multiplier >= WIN_THRESHOLDS.SUPER_WIN) {
+			this.showSuperWin(scene, { winAmount: payout, betAmount: bet });
+		} else if (multiplier >= WIN_THRESHOLDS.EPIC_WIN) {
+			this.showLargeWin(scene, { winAmount: payout, betAmount: bet });
+		} else if (multiplier >= WIN_THRESHOLDS.MEGA_WIN) {
+			this.showMediumWin(scene, { winAmount: payout, betAmount: bet });
+		} else {
+			this.showSmallWin(scene, { winAmount: payout, betAmount: bet });
+		}
 	}
 
 	showLargeWin(scene: Scene, config?: Partial<DialogConfig>): void {

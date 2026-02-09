@@ -1701,8 +1701,8 @@ export class SlotController {
 		const hitbox = scene.add.rectangle(
 			featureX,
 			featureY,
-			baseWidth * 0.74,
-			baseHeight * 0.55,
+			baseWidth * 0.65, //Set base width to 65% of feature button width
+			baseHeight * 0.49, //Set base height to 49% of feature button height
 			0xffffff,
 			0 // fully transparent
 		).setOrigin(0.5, 0.5).setDepth(11);
@@ -2525,7 +2525,7 @@ export class SlotController {
 			// Re-enable spin button, autoplay button, bet buttons, feature button, and bet background
 			this.updateSpinButtonState();
 			// Deferred retry: pending balance or other async state may clear shortly after AUTO_STOP
-			this.scene.time.delayedCall(150, () => this.updateSpinButtonState());
+			this.scene?.time.delayedCall(150, () => this.updateSpinButtonState());
 			// Don't re-enable auxiliary buttons if buy feature spin lock is active
 			if (!this.isBuyFeatureControlsLocked()) {
 				this.enableAutoplayButton();

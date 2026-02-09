@@ -183,22 +183,24 @@ export const DEFAULT_SPINE_SYMBOL_SCALES: SpineSymbolScaleConfig = {
 };
 
 /**
- * Multiplier symbol value mapping
+ * Multiplier symbol value mapping (8–22: multiplier bombs, 2×–500×)
  */
 export const MULTIPLIER_VALUES: Record<number, number> = {
-  10: 2,
-  11: 3,
-  12: 4,
-  13: 5,
-  14: 6,
-  15: 8,
-  16: 10,
-  17: 12,
-  18: 15,
-  19: 20,
-  20: 25,
-  21: 50,
-  22: 100,
+  8: 2,
+  9: 3,
+  10: 4,
+  11: 5,
+  12: 6,
+  13: 8,
+  14: 10,
+  15: 12,
+  16: 15,
+  17: 20,
+  18: 25,
+  19: 50,
+  20: 100,
+  21: 250,
+  22: 500,
 };
 
 /**
@@ -209,10 +211,10 @@ export function getMultiplierValue(symbolId: number): number {
 }
 
 /**
- * Check if a symbol is a multiplier symbol
+ * Check if a symbol is a multiplier symbol (IDs 8–22)
  */
 export function isMultiplierSymbol(symbolId: number): boolean {
-  return symbolId >= 10 && symbolId <= 22;
+  return symbolId >= 8 && symbolId <= 22;
 }
 
 /**

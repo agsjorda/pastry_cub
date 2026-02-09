@@ -10,8 +10,11 @@ export enum GameEventType {
   WIN_START = 'WIN_START',
   WIN_STOP = 'WIN_STOP',
   // Tumble-specific win progress events
-  TUMBLE_WIN_PROGRESS = 'TUMBLE_WIN_PROGRESS',   // payload: { cumulativeWin: number }
-  TUMBLE_SEQUENCE_DONE = 'TUMBLE_SEQUENCE_DONE', // payload: { totalWin: number }
+  TUMBLE_START = 'TUMBLE_START',
+  TUMBLE_COLUMNS_START = 'TUMBLE_COLUMNS_START',   // payload: { columns: number[] }
+  TUMBLE_COLUMNS_DONE = 'TUMBLE_COLUMNS_DONE',     // payload: { columns: number[] }
+  TUMBLE_WIN_PROGRESS = 'TUMBLE_WIN_PROGRESS',     // payload: { cumulativeWin: number }
+  TUMBLE_SEQUENCE_DONE = 'TUMBLE_SEQUENCE_DONE',   // payload: { totalWin: number }
   // Bonus multiplier trigger
   MULTIPLIERS_TRIGGERED = 'MULTIPLIERS_TRIGGERED', // payload: { spinTotal: number, multiplierSum: number }
   // Emitted each time a multiplier PNG reaches the winnings display center
