@@ -6,6 +6,7 @@ import { gameStateManager } from '../../managers/GameStateManager';
 import { PaylineData } from '../../backend/SpinData';
 import { CurrencyManager } from './CurrencyManager';
 import { HEADER_CONFIG } from '../../config/GameConfig';
+import { ensureSpineFactory } from '../../utils/SpineGuard';
 
 
 export class Header {
@@ -17,6 +18,7 @@ export class Header {
 	private headerSceneImage?: Phaser.GameObjects.Image;
 	private headerSceneFrameImage?: Phaser.GameObjects.Image;
 	private headerWinBarImage?: Phaser.GameObjects.Image;
+	private conveyorTopSpine: any = null;
 	private currentWinnings: number = 0;
 	private pendingWinnings: number = 0;
 	private scene: Scene | null = null;
@@ -73,6 +75,9 @@ export class Header {
 			this.headerContainer.add(this.headerSceneImage);
 		}
 
+		// Conveyor top: at top inside Header_SceneFrame, higher depth than Header_Scene (added after so it draws on top)
+		this.createConveyorTopSpine(scene, centerXView);
+
 		// Header_WinBar: below the frame (positioned after frame so we know its height)
 		if (scene.textures.exists('Header_WinBar')) {
 			const frameHeight = this.getHeaderImageDisplayHeight(scene, 'Header_SceneFrame');
@@ -108,6 +113,49 @@ export class Header {
 		const scale = scene.scale.width / texture.width;
 		const scaleMultiplier = key === 'Header_SceneFrame' ? HEADER_CONFIG.SCENE_FRAME_SCALE : 1;
 		return texture.height * scale * scaleMultiplier;
+	}
+
+	/** Conveyor top spine at the top inside Header_SceneFrame, drawn above Header_Scene. */
+	private createConveyorTopSpine(scene: Scene, centerXView: number): void {
+		if (!ensureSpineFactory(scene, '[Header] createConveyorTopSpine') || !scene.cache.json.has('BG_ConveyorTop_PC')) {
+			scene.time.delayedCall(300, () => this.createConveyorTopSpine(scene, centerXView));
+			return;
+		}
+		try {
+			const x = centerXView + HEADER_CONFIG.SCENE_FRAME_OFFSET_X;
+			const y = HEADER_CONFIG.SCENE_FRAME_OFFSET_Y + HEADER_CONFIG.CONVEYOR_TOP_OFFSET_Y;
+			this.conveyorTopSpine = scene.add.spine(x, y, 'BG_ConveyorTop_PC', 'BG_ConveyorTop_PC-atlas');
+			this.conveyorTopSpine.setOrigin(0.5, 0);
+			// Scale to match frame width (spine ref width 580 from JSON), then apply config multiplier
+			const spineRefWidth = 580;
+			const scale = (scene.scale.width / spineRefWidth) * HEADER_CONFIG.SCENE_FRAME_SCALE * HEADER_CONFIG.CONVEYOR_TOP_SCALE;
+			this.conveyorTopSpine.setScale(scale);
+			this.headerContainer.add(this.conveyorTopSpine); // list order: above Header_Scene, below Header_SceneFrame (scene 9501)
+		} catch (e) {
+			console.warn('[Header] Failed to create conveyor top spine:', e);
+		}
+	}
+
+	/** Play conveyor top animation (during spin). */
+	private playConveyorTopAnimation(): void {
+		if (!this.conveyorTopSpine?.animationState) return;
+		try {
+			const state: any = this.conveyorTopSpine.animationState;
+			if (state?.setAnimation) state.setAnimation(0, 'BG_ConveyorTop_PC', true);
+		} catch (e) {
+			console.warn('[Header] Failed to play conveyor top animation:', e);
+		}
+	}
+
+	/** Stop conveyor top animation (spin/tumbles done). */
+	private stopConveyorTopAnimation(): void {
+		if (!this.conveyorTopSpine?.animationState) return;
+		try {
+			const state: any = this.conveyorTopSpine.animationState;
+			if (state?.setEmptyAnimation) state.setEmptyAnimation(0, 0.2);
+		} catch (e) {
+			console.warn('[Header] Failed to stop conveyor top animation:', e);
+		}
 	}
 
 	// private createCharacterSpineAnimation(scene: Scene, assetScale: number): void {}
@@ -207,8 +255,9 @@ export class Header {
 			} catch {}
 		});
 
-		// Listen for tumble sequence completion to display TOTAL WIN
+		// Listen for tumble sequence completion to display TOTAL WIN and stop conveyor top
 		gameEventManager.on(GameEventType.TUMBLE_SEQUENCE_DONE, (data: any) => {
+			this.stopConveyorTopAnimation();
 			try {
 				// Don't show winnings in header if in bonus mode (bonus header handles it)
 				if (gameStateManager.isBonus) {
@@ -266,15 +315,16 @@ export class Header {
 			this.hideWinningsDisplay();
 		});
 
-		// Listen for reels start to hide winnings display
+		// Listen for reels start to hide winnings display and play conveyor top
 		gameEventManager.on(GameEventType.REELS_START, () => {
 			console.log('[Header] Reels started - hiding winnings display');
 			// Keep winnings visible during scatter transition and bonus start
 			if (gameStateManager.isScatter || gameStateManager.isBonus) {
 				console.log('[Header] Skipping hide on REELS_START (scatter/bonus active)');
-				return;
+			} else {
+				this.hideWinningsDisplay();
 			}
-			this.hideWinningsDisplay();
+			this.playConveyorTopAnimation();
 		});
 
 		// Listen for reel done events to show winnings display

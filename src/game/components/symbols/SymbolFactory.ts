@@ -10,9 +10,7 @@
 import type { Game } from '../../scenes/Game';
 import type { SymbolObject } from './types';
 import { SymbolAnimations } from './SymbolAnimations';
-import { MultiplierSymbols } from './MultiplierSymbols';
 import type { SymbolOverlay } from './SymbolOverlay';
-import { SYMBOL_MULTIPLIER_VISUAL_SCALE } from '../../../config/GameConfig';
 import { gameStateManager } from '../../../managers/GameStateManager';
 
 /** Resolve symbol animation name - pastry_cub uses _PC for symbols 1-7 */
@@ -95,33 +93,15 @@ export class SymbolFactory {
       }
     }
 
-    // Try multiplier symbols (10-22)
-    if (!created && MultiplierSymbols.isMultiplier(value)) {
-      try {
-        const multiplierSymbol = this.createMultiplierSymbol(value, x, y, alpha);
-        if (multiplierSymbol) {
-          created = multiplierSymbol;
-        }
-      } catch (error) {
-        console.warn(`[SymbolFactory] Failed to create multiplier symbol ${value}:`, error);
-      }
-      if (!created) {
-        console.warn(`[SymbolFactory] Creating placeholder for multiplier value ${value}`);
-        created = this.createPlaceholderSymbol(value, x, y, alpha);
-      }
-    }
-
-    // Symbols 8-9 are not used in pastry_cub; use placeholder if backend sends them
-    if (!created && (value === 8 || value === 9)) {
-      created = this.createPlaceholderSymbol(value, x, y, alpha);
+    // Symbols 8+ (previously multiplier) are not used; replace with scatter (0) if backend sends them
+    if (!created && value >= 8) {
+      return this.createSugarOrPngSymbol(0, x, y, alpha);
     }
 
     // Fallback to PNG sprite for any other values
     if (!created) {
       created = this.createPngSymbol(value, x, y, alpha);
     }
-
-    this.attachMultiplierOverlay(created, value, x, y);
 
     return created;
   }
@@ -252,68 +232,6 @@ export class SymbolFactory {
   }
 
   /**
-   * Create a multiplier symbol (values 10-22)
-   */
-  private createMultiplierSymbol(
-    value: number,
-    x: number,
-    y: number,
-    alpha: number
-  ): SymbolObject | null {
-    const idleName = MultiplierSymbols.getIdleAnimationName(value);
-    if (!idleName) return null;
-    
-    const spineKey = 'symbol_10_sugar_spine';
-    const atlasKey = `${spineKey}-atlas`;
-    
-    // Check if add.spine exists
-    if (typeof (this.scene.add as any).spine !== 'function') {
-      return null;
-    }
-    
-    try {
-      const spineObj: any = (this.scene.add as any).spine(x, y, spineKey, atlasKey);
-      if (!spineObj) return null;
-      
-      // Set symbol value
-      try { spineObj.symbolValue = value; } catch { /* ignore */ }
-      
-      // Set origin
-      if (typeof spineObj.setOrigin === 'function') {
-        spineObj.setOrigin(0.5, 0.5);
-      }
-      
-      // Fit to symbol box then apply multiplier visual boost
-      this.animations.fitSpineToSymbolBox(spineObj);
-      try {
-        const baseX = (spineObj as any)?.scaleX ?? 1;
-        const baseY = (spineObj as any)?.scaleY ?? 1;
-        if (typeof spineObj.setScale === 'function') {
-          spineObj.setScale(baseX * SYMBOL_MULTIPLIER_VISUAL_SCALE, baseY * SYMBOL_MULTIPLIER_VISUAL_SCALE);
-        }
-      } catch { /* ignore */ }
-      
-      // Set alpha
-      if (typeof spineObj.setAlpha === 'function') {
-        spineObj.setAlpha(alpha);
-      }
-      
-      // Play idle animation
-      const animState = spineObj.animationState;
-      if (animState && typeof animState.setAnimation === 'function') {
-        animState.setAnimation(0, idleName, true);
-      }
-      
-      // Add to container
-      this.container.add(spineObj);
-      
-      return spineObj as SymbolObject;
-    } catch {
-      return null;
-    }
-  }
-
-  /**
    * Create a placeholder symbol (colored rectangle with value text)
    */
   private createPlaceholderSymbol(
@@ -381,13 +299,6 @@ export class SymbolFactory {
     return sprite as SymbolObject;
   }
 
-  private attachMultiplierOverlay(symbol: SymbolObject, value: number, x: number, y: number): void {
-    if (!this.overlay || !symbol) return;
-    try {
-      this.overlay.attachMultiplierOverlay(symbol, value, x, y, this.displayWidth, this.container);
-    } catch { /* ignore */ }
-  }
-
   // ============================================================================
   // SYMBOL REPLACEMENT
   // ============================================================================
@@ -401,8 +312,8 @@ export class SymbolFactory {
     col: number,
     row: number
   ): SymbolObject | null {
-    // Don't replace scatter (0) or multipliers (10-21) - keep as PNG
-    if (symbolValue === 0 || (symbolValue >= 10 && symbolValue <= 21)) {
+    // Don't replace scatter (0) - keep as PNG
+    if (symbolValue === 0) {
       return null;
     }
     

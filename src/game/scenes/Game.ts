@@ -15,9 +15,11 @@ import { Scene } from 'phaser';
 import { Background } from '../components/Background';
 import { Header } from '../components/Header';
 import { SlotController } from '../components/controller/SlotController';
+import { LoadingSpinner } from '../components/LoadingSpinner';
 import { NetworkManager } from '../../managers/NetworkManager';
 import { ScreenModeManager } from '../../managers/ScreenModeManager';
 import { AssetConfig } from '../../config/AssetConfig';
+import { GRID_CENTER_X_RATIO, GRID_CENTER_X_OFFSET_PX, GRID_CENTER_Y_RATIO, GRID_CENTER_Y_OFFSET_PX, MAX_IDLE_TIME_MINUTES } from '../../config/GameConfig';
 import { Symbols } from '../components/symbols/index';
 import { GameData } from '../components/GameData';
 import { BonusBackground } from '../components/BonusBackground';
@@ -49,6 +51,7 @@ import { ensureSpineFactory } from '../../utils/SpineGuard';
 import { Character } from '../components/Character';
 import { CurrencyManager } from '../components/CurrencyManager';
 import { calculateTotalWinFromTumbles as spinCalculateTotalWinFromTumbles, capWinByMaxMultiplier } from '../components/Spin';
+import { IdleManager } from '../components/IdleManager';
 
 export class Game extends Scene {
 	private networkManager!: NetworkManager;
@@ -72,6 +75,9 @@ export class Game extends Scene {
 	private freeRoundManager: FreeRoundManager | null = null;
 	private character1?: Character;
 	private character2?: Character;
+
+	private idleManager: IdleManager | null = null;
+	private onPointerDownResetIdle?: () => void;
 
 	// Queue for wins that occur while a dialog is already showing
 	private winQueue: Array<{ payout: number; bet: number }> = [];
@@ -198,6 +204,8 @@ export class Game extends Scene {
 		this.createSlotController();
 		this.createFreeRoundAndScatterAnticipation();
 
+		this.initializeAndStartIdleManager();
+
 		this.initializeGameBalance();
 		console.log(`[Game] Emitting START event to initialize game...`);
 		gameEventManager.emit(GameEventType.START);
@@ -208,6 +216,49 @@ export class Game extends Scene {
 		this.runFadeIn(fadeOverlay);
 		this.setupEventBusListeners();
 		this.setupGameEventListeners();
+	}
+
+	private initializeAndStartIdleManager(): void {
+		const idleTimeoutMs = MAX_IDLE_TIME_MINUTES * 60 * 1000;
+		this.idleManager = new IdleManager(this, idleTimeoutMs);
+
+		// On timeout, delegate to GameAPI handler (shows popup and clears tokens)
+		this.idleManager.events.on(IdleManager.TIMEOUT_EVENT, () => {
+			try {
+				this.gameAPI?.handleSessionTimeout?.();
+			} catch (e) {
+				console.error('[Game] Error handling session timeout:', e);
+			}
+		});
+
+		// Reset idle when game is actively running (bonus/spin) so we don't timeout mid-spin.
+		this.idleManager.events.on(IdleManager.CHECK_INTERVAL_EVENT, () => {
+			try {
+				const gsm: any = this.gameStateManager;
+				if (gsm?.isBonus || gsm?.isReelSpinning || gsm?.isProcessingSpin) {
+					this.idleManager?.reset();
+				}
+			} catch {}
+		});
+
+		this.onPointerDownResetIdle = () => {
+			this.idleManager?.reset();
+		};
+		this.input.on('pointerdown', this.onPointerDownResetIdle);
+
+		this.events.once('shutdown', () => {
+			try {
+				if (this.onPointerDownResetIdle) {
+					this.input.off('pointerdown', this.onPointerDownResetIdle);
+				}
+			} catch {}
+			try {
+				this.idleManager?.destroy();
+				this.idleManager = null;
+			} catch {}
+		});
+
+		this.idleManager.start();
 	}
 
 	/** Physics, fade overlay, resize handler */
@@ -312,9 +363,15 @@ export class Game extends Scene {
 	}
 
 	private createSlotController(): void {
+		// Create loading spinner at center of reel (same as symbol grid)
+		const centerX = this.scale.width * GRID_CENTER_X_RATIO + GRID_CENTER_X_OFFSET_PX;
+		const centerY = this.scale.height * GRID_CENTER_Y_RATIO + GRID_CENTER_Y_OFFSET_PX;
+		const loadingSpinner = new LoadingSpinner(this, centerX, centerY);
+
 		this.slotController = new SlotController(this.networkManager, this.screenModeManager);
 		this.slotController.setSymbols(this.symbols);
 		this.slotController.setBuyFeatureReference();
+		this.slotController.setLoadingSpinner(loadingSpinner);
 		this.slotController.create(this);
 	}
 
@@ -505,16 +562,42 @@ export class Game extends Scene {
 		const bonusTumbles = freeSpinItem?.tumbles;
 		const tumblesToUse = (Array.isArray(slotTumbles) && slotTumbles.length > 0) ? slotTumbles : (Array.isArray(bonusTumbles) ? bonusTumbles : []);
 		const tumbleResult = spinCalculateTotalWinFromTumbles(tumblesToUse);
-		if (totalWin === 0) totalWin = tumbleResult.totalWin;
+		if (Array.isArray(tumblesToUse) && tumblesToUse.length > 0 && tumbleResult.totalWin > 0) {
+			if (totalWin !== tumbleResult.totalWin) {
+				console.log('[Game] WIN_STOP: overriding totalWin with tumble total', {
+					previous: totalWin,
+					tumbleTotal: tumbleResult.totalWin
+				});
+			}
+			totalWin = tumbleResult.totalWin;
+		} else if (totalWin === 0) {
+			totalWin = tumbleResult.totalWin;
+		}
+		// Fallback: derive totalWin from paylines + tumbles when slot.totalWin / freespin item not set
+		if (totalWin === 0) {
+			let paylineWin = 0;
+			if (Array.isArray((spinData.slot as any)?.paylines)) {
+				for (const pl of (spinData.slot as any).paylines) {
+					paylineWin += Number(pl?.win ?? 0) || 0;
+				}
+			}
+			let tumbleSum = 0;
+			for (const t of tumblesToUse) {
+				tumbleSum += Number(t?.win ?? 0) || 0;
+			}
+			totalWin = paylineWin + tumbleSum;
+			if (totalWin > 0) console.log('[Game] WIN_STOP: totalWin derived from paylines + tumbles=', totalWin);
+		}
 		const hasCluster = tumbleResult.hasCluster;
+		const hasWin = totalWin > 0;
 
-		if (hasCluster && !this.gameStateManager.isBonus) {
+		if ((hasCluster || hasWin) && !this.gameStateManager.isBonus) {
 			if (this.character1) this.character1.playAnimation('Character1_BZ_win', false, true);
 			if (this.character2) this.character2.playAnimation('Character2_BZ_win', false, true);
 		}
 		totalWin = capWinByMaxMultiplier(totalWin, betAmount);
-		console.log(`[Game] WIN_STOP: totalWin used for win dialog=$${totalWin}, hasCluster=${hasCluster}`);
-		if (hasCluster && totalWin > 0) this.checkAndShowWinDialog(totalWin, betAmount);
+		console.log(`[Game] WIN_STOP: totalWin used for win dialog=$${totalWin}, hasCluster=${hasCluster}, hasWin=${hasWin}`);
+		if (hasWin) this.checkAndShowWinDialog(totalWin, betAmount);
 
 		if (this.gameAPI.getDemoState() && !gameStateManager.isScatter && !gameStateManager.isBonus) {
 			this.gameAPI.updateDemoBalance(this.gameAPI.getDemoBalance() + totalWin);
@@ -598,7 +681,7 @@ export class Game extends Scene {
 		this.dialogs.checkAndShowWinDialog(this, payout, bet, {
 			pushToQueue: (p, b) => this.winQueue.push({ payout: p, bet: b }),
 			scheduleProcessQueue: () => {
-				gameEventManager.once(GameEventType.MULTIPLIER_ANIMATIONS_COMPLETE, () => this.processWinQueue());
+				this.scene.time.delayedCall(0, () => this.processWinQueue());
 			},
 			isSuppressed: () => this.suppressWinDialogsUntilNextSpin,
 			symbols: this.symbols,

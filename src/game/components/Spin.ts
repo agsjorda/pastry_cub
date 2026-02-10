@@ -3,7 +3,7 @@
  *
  * Contains:
  * - Paytables (symbol and scatter)
- * - Qualifying cluster threshold (8+)
+ * - Qualifying cluster threshold (5+)
  * - Cluster detection from grid (4-connected)
  * - Win calculation from grid (cluster pays + scatter)
  * - Helpers to interpret backend tumble/out data
@@ -82,8 +82,8 @@ export interface Cluster {
 }
 
 /**
- * Find all 4-connected clusters of a pay symbol (1-7) in the grid.
- * Does not include scatter or multiplier symbols in cluster pay.
+ * Find all clusters of a pay symbol (1-7) using 4-directional connectivity (no diagonals).
+ * Only clusters with 5+ connected symbols qualify. Does not include scatter or multiplier symbols.
  */
 export function findClusters(area: GridArea): Cluster[] {
   const clusters: Cluster[] = [];
@@ -101,6 +101,7 @@ export function findClusters(area: GridArea): Cluster[] {
     return typeof val === 'number' ? val : -1;
   }
 
+  // 4-directional connectivity only (left, right, up, down — no diagonals). Clusters of 5+ symbols qualify.
   function dfs(col: number, row: number, symbol: number, positions: { col: number; row: number }[]): void {
     const k = key(col, row);
     if (visited.has(k)) return;
@@ -116,6 +117,44 @@ export function findClusters(area: GridArea): Cluster[] {
 
   const isClusterSymbol = (s: number) => CLUSTER_PAY_SYMBOLS.includes(s as any);
 
+  /** True if p and q are diagonal neighbors (and not 4-adjacent). */
+  const isDiagonalPair = (p: { col: number; row: number }, q: { col: number; row: number }) =>
+    Math.abs(p.col - q.col) === 1 && Math.abs(p.row - q.row) === 1;
+
+  /** Get 4-connected components of a set of positions (4-adjacency only). */
+  function getFourConnectedComponents(positions: { col: number; row: number }[]): { col: number; row: number }[][] {
+    const set = new Set(positions.map((p) => key(p.col, p.row)));
+    const components: { col: number; row: number }[][] = [];
+    const seen = new Set<string>();
+    for (const start of positions) {
+      const k = key(start.col, start.row);
+      if (seen.has(k)) continue;
+      const comp: { col: number; row: number }[] = [];
+      const stack = [start];
+      while (stack.length > 0) {
+        const p = stack.pop()!;
+        const pk = key(p.col, p.row);
+        if (seen.has(pk)) continue;
+        seen.add(pk);
+        comp.push(p);
+        for (const [dc, dr] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+          const nc = p.col + dc, nr = p.row + dr;
+          if (set.has(key(nc, nr))) stack.push({ col: nc, row: nr });
+        }
+      }
+      if (comp.length > 0) components.push(comp);
+    }
+    return components;
+  }
+
+  /** Remove positions that have a diagonal neighbor in the set; return 4-connected components of size >= 5. */
+  function filterDiagonalFree(positions: { col: number; row: number }[]): { col: number; row: number }[][] {
+    const hasDiagonal = (p: { col: number; row: number }) =>
+      positions.some((q) => p !== q && isDiagonalPair(p, q));
+    const diagonalFree = positions.filter((p) => !hasDiagonal(p));
+    return getFourConnectedComponents(diagonalFree).filter((comp) => comp.length >= QUALIFYING_CLUSTER_COUNT);
+  }
+
   for (let c = 0; c < cols; c++) {
     const rows = area[c]?.length ?? 0;
     for (let r = 0; r < rows; r++) {
@@ -123,12 +162,113 @@ export function findClusters(area: GridArea): Cluster[] {
       if (!isClusterSymbol(sym) || visited.has(key(c, r))) continue;
       const positions: { col: number; row: number }[] = [];
       dfs(c, r, sym, positions);
-      if (positions.length >= QUALIFYING_CLUSTER_COUNT) {
-        clusters.push({ symbol: sym, count: positions.length, positions });
+      if (positions.length < QUALIFYING_CLUSTER_COUNT) continue;
+      const diagonalFreeComponents = filterDiagonalFree(positions);
+      for (const comp of diagonalFreeComponents) {
+        if (comp.length >= QUALIFYING_CLUSTER_COUNT) {
+          clusters.push({ symbol: sym, count: comp.length, positions: comp });
+        }
       }
+      for (const p of positions) visited.add(key(p.col, p.row));
     }
   }
   return clusters;
+}
+
+/** Sentinel for empty cell during cascade simulation (not a valid symbol id). */
+const CASCADE_EMPTY = -1;
+
+/** Max tumble steps to avoid infinite loops. */
+const MAX_CASCADE_STEPS = 20;
+
+export interface CascadeResult {
+  tumbles: Tumble[];
+  finalArea: GridArea;
+  totalWin: number;
+}
+
+function cloneArea(area: GridArea): number[][] {
+  return (area ?? []).map((col) => (Array.isArray(col) ? [...col] : []));
+}
+
+function getGridRows(area: GridArea): number {
+  const c0 = area?.[0];
+  return Array.isArray(c0) ? c0.length : 0;
+}
+
+/**
+ * Simulate tumble cascade from current grid state: find 5+ 4-connected clusters,
+ * remove them, apply gravity, fill with new symbols, repeat until no wins.
+ * Grid is column-major; row 0 = bottom. Used for fake-data so win logic matches demo/normal.
+ */
+export function simulateTumbleCascade(area: GridArea, bet: number): CascadeResult {
+  const cols = Math.min(area?.length ?? 0, SLOT_COLUMNS);
+  const rows = Math.max(getGridRows(area), 1);
+  const state = cloneArea(area);
+  for (let c = 0; c < cols; c++) {
+    if (!state[c]) state[c] = [];
+    while (state[c].length < rows) state[c].push(CASCADE_EMPTY);
+    state[c] = state[c].slice(0, rows);
+  }
+
+  const tumbles: Tumble[] = [];
+  let totalWin = 0;
+
+  for (let step = 0; step < MAX_CASCADE_STEPS; step++) {
+    const clusters = findClusters(state);
+    if (clusters.length === 0) break;
+
+    let stepWin = 0;
+    const outs: TumbleOut[] = [];
+    const removeSet = new Set<string>();
+
+    for (const cl of clusters) {
+      const mult = getSymbolPayoutMultiplier(cl.symbol, cl.count);
+      const winAmount = mult * bet;
+      if (winAmount <= 0) continue;
+      stepWin += winAmount;
+      outs.push({
+        symbol: cl.symbol,
+        size: cl.count,
+        count: cl.count,
+        positions: cl.positions.map((p) => [p.col, p.row] as [number, number]),
+        win: { base: winAmount, multiplier: 1, total: winAmount },
+      });
+      for (const p of cl.positions) removeSet.add(`${p.col},${p.row}`);
+    }
+
+    if (outs.length === 0) break;
+
+    totalWin += stepWin;
+    const stepTumble: Tumble = { win: stepWin, symbols: { in: [], out: outs } };
+    tumbles.push(stepTumble);
+
+    for (let c = 0; c < cols; c++) {
+      for (let r = 0; r < rows; r++) {
+        if (removeSet.has(`${c},${r}`)) state[c][r] = CASCADE_EMPTY;
+      }
+    }
+
+    const ins: number[][] = Array.from({ length: cols }, () => []);
+    for (let c = 0; c < cols; c++) {
+      const column = state[c];
+      const fallen: number[] = [];
+      for (let r = 0; r < rows; r++) {
+        const v = column[r];
+        if (v !== CASCADE_EMPTY && v !== undefined && typeof v === 'number') fallen.push(v);
+      }
+      const emptyCount = rows - fallen.length;
+      const newSymbols: number[] = [];
+      for (let i = 0; i < emptyCount; i++) {
+        newSymbols.push(CLUSTER_PAY_SYMBOLS[Math.floor(Math.random() * CLUSTER_PAY_SYMBOLS.length)]);
+      }
+      state[c] = [...fallen, ...newSymbols];
+      ins[c] = newSymbols;
+    }
+    (stepTumble.symbols as TumbleSymbols).in = ins;
+  }
+
+  return { tumbles, finalArea: state, totalWin };
 }
 
 /**
@@ -195,7 +335,9 @@ export function evaluateGrid(area: GridArea, bet: number): EvaluateGridResult {
 export interface TumbleOut {
   symbol?: number;
   count?: number;
-  win?: number;
+  size?: number;
+  positions?: Array<[number, number] | { col?: number; row?: number; x?: number; y?: number }>;
+  win?: number | { base?: number; multiplier?: number; total?: number; amount?: number; value?: number };
 }
 
 export interface TumbleSymbols {
@@ -214,6 +356,36 @@ export interface TumbleResult {
 }
 
 /**
+ * Resolve the count for a tumble out entry (supports count, size, or positions length).
+ */
+export function getOutCount(out: TumbleOut | any): number {
+  const count = Number(out?.count);
+  if (Number.isFinite(count) && count > 0) return count;
+  const size = Number(out?.size);
+  if (Number.isFinite(size) && size > 0) return size;
+  if (Array.isArray(out?.positions)) return out.positions.length;
+  return 0;
+}
+
+/**
+ * Resolve the win amount for a tumble out entry (supports numeric win or win object).
+ */
+export function getOutWin(out: TumbleOut | any): number {
+  const direct = Number(out?.win);
+  if (Number.isFinite(direct)) return direct;
+  const obj = out?.win;
+  if (obj && typeof obj === 'object') {
+    const total = Number(obj?.total);
+    if (Number.isFinite(total)) return total;
+    const base = Number(obj?.base);
+    if (Number.isFinite(base)) return base;
+    const amount = Number(obj?.amount ?? obj?.value);
+    if (Number.isFinite(amount)) return amount;
+  }
+  return 0;
+}
+
+/**
  * Calculate total win from tumbles and detect if any qualifying cluster (count >= QUALIFYING_CLUSTER_COUNT) exists.
  * Tumble wins only count toward total when the tumble has at least 5 matching adjacent (H+V) symbols.
  * Used for win dialog triggering and total win display.
@@ -226,11 +398,11 @@ export function calculateTotalWinFromTumbles(tumbles: Tumble[] | any[]): TumbleR
   let hasCluster = false;
   for (const tumble of tumbles) {
     const outs = tumble?.symbols?.out || [];
-    const tumbleHasQualifying = Array.isArray(outs) && outs.some((o: any) => (Number(o?.count) || 0) >= QUALIFYING_CLUSTER_COUNT);
+    const tumbleHasQualifying = Array.isArray(outs) && outs.some((o: any) => getOutCount(o) >= QUALIFYING_CLUSTER_COUNT);
     if (tumbleHasQualifying) hasCluster = true;
-    const w = Number(tumble?.win || 0);
-    if (Number.isFinite(w) && w > 0 && tumbleHasQualifying) {
-      totalWin += w;
+    if (tumbleHasQualifying) {
+      const w = getTumbleTotal(tumble);
+      if (Number.isFinite(w) && w > 0) totalWin += w;
     }
   }
   return { totalWin, hasCluster };
@@ -241,7 +413,7 @@ export function calculateTotalWinFromTumbles(tumbles: Tumble[] | any[]): TumbleR
  */
 export function hasQualifyingCluster(outs: TumbleOut[] | null | undefined): boolean {
   if (!Array.isArray(outs) || outs.length === 0) return false;
-  return outs.some((o) => (Number(o?.count) || 0) >= QUALIFYING_CLUSTER_COUNT);
+  return outs.some((o) => getOutCount(o) >= QUALIFYING_CLUSTER_COUNT);
 }
 
 /**
@@ -259,8 +431,8 @@ export function filterQualifyingOuts(
 ): TumbleOut[] {
   if (!Array.isArray(outs) || outs.length === 0) return [];
   return outs.filter((o) => {
-    const count = Number(o?.count) || 0;
-    const win = Number(o?.win) || 0;
+    const count = getOutCount(o);
+    const win = getOutWin(o);
     return (
       Number.isFinite(Number(o?.symbol)) &&
       count >= QUALIFYING_CLUSTER_COUNT &&
@@ -276,7 +448,7 @@ export function getHighCountSymbolsFromOuts(outs: TumbleOut[] | null | undefined
   const set = new Set<number>();
   if (!Array.isArray(outs) || outs.length === 0) return set;
   for (const o of outs) {
-    const c = Number(o?.count || 0);
+    const c = getOutCount(o);
     const s = Number(o?.symbol);
     if (Number.isFinite(s) && c >= QUALIFYING_CLUSTER_COUNT) set.add(s);
   }
@@ -291,7 +463,7 @@ export function getTumbleTotal(tumble: Tumble | any): number {
   if (Number.isFinite(w) && w > 0) return w;
   const outs = tumble?.symbols?.out ?? [];
   if (!Array.isArray(outs)) return 0;
-  return outs.reduce((sum: number, o: any) => sum + (Number(o?.win) || 0), 0);
+  return outs.reduce((sum: number, o: any) => sum + getOutWin(o), 0);
 }
 
 /**
@@ -299,7 +471,7 @@ export function getTumbleTotal(tumble: Tumble | any): number {
  */
 export function getTotalCountFromOuts(outs: TumbleOut[] | null | undefined): number {
   if (!Array.isArray(outs) || outs.length === 0) return 0;
-  return outs.reduce((s, o) => s + (Number(o?.count) || 0), 0);
+  return outs.reduce((s, o) => s + getOutCount(o), 0);
 }
 
 /**

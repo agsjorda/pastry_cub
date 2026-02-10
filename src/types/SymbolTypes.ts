@@ -134,9 +134,13 @@ export interface TumbleOutSymbol {
   /** Symbol ID */
   symbol: number;
   /** Count of symbols removed */
-  count: number;
+  count?: number;
+  /** Alternate count field used by some backends */
+  size?: number;
+  /** Explicit positions for removed symbols (column, row) */
+  positions?: Array<[number, number] | { col?: number; row?: number; x?: number; y?: number }>;
   /** Win amount for this symbol cluster */
-  win?: number;
+  win?: number | { base?: number; multiplier?: number; total?: number; amount?: number; value?: number };
 }
 
 /**
@@ -183,38 +187,10 @@ export const DEFAULT_SPINE_SYMBOL_SCALES: SpineSymbolScaleConfig = {
 };
 
 /**
- * Multiplier symbol value mapping (8–22: multiplier bombs, 2×–500×)
- */
-export const MULTIPLIER_VALUES: Record<number, number> = {
-  8: 2,
-  9: 3,
-  10: 4,
-  11: 5,
-  12: 6,
-  13: 8,
-  14: 10,
-  15: 12,
-  16: 15,
-  17: 20,
-  18: 25,
-  19: 50,
-  20: 100,
-  21: 250,
-  22: 500,
-};
-
-/**
- * Get the multiplier value for a symbol
- */
-export function getMultiplierValue(symbolId: number): number {
-  return MULTIPLIER_VALUES[symbolId] ?? 1;
-}
-
-/**
- * Check if a symbol is a multiplier symbol (IDs 8–22)
+ * Check if a symbol is a multiplier symbol (multiplier feature removed; always false)
  */
 export function isMultiplierSymbol(symbolId: number): boolean {
-  return symbolId >= 8 && symbolId <= 22;
+  return false;
 }
 
 /**

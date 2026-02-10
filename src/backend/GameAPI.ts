@@ -4,6 +4,7 @@ import { gameStateManager } from "../managers/GameStateManager";
 import { SoundEffectType } from "../managers/AudioManager";
 import { SLOT_COLUMNS, SLOT_ROWS } from "../config/GameConfig";
 import { normalizeAreaToGameConfig } from "../utils/GridTransform";
+import { simulateTumbleCascade } from "../game/components/Spin";
 
 /**
  * Function to parse URL query parameters
@@ -159,13 +160,12 @@ export class GameAPI {
             "totalWin": 44.3,
             "tumbles": [],
             "freeSpin": {
-                "multiplierValue": 3,
                 "items": [
                     {
                         "spinsLeft": 10,
                         "area": [[8,8,9,9,1], [5,5,8,8,10], [5,8,8,7,7], [6,9,9,5,5], [4,8,8,3,3], [5,8,8,9,9]],
                         "totalWin": 2.3,
-                        "multipliers": [10],
+                        "multipliers": [],
                         "tumbles": [
                             {"symbols": {"in": [[9,6], [8,2], [9,9], [], [6,7], [1,8]], "out": [{"symbol": 8, "count": 10, "win": 0.9}]}, "win": 0.9},
                             {"symbols": {"in": [[7,7,1], [], [4,9], [8,8], [], [7,7]], "out": [{"symbol": 9, "count": 9, "win": 0.25}]}, "win": 0.25}
@@ -176,24 +176,24 @@ export class GameAPI {
                         "spinsLeft": 8,
                         "area": [[8,8,9,9,1], [9,0,3,3,7], [8,8,9,9,11], [2,2,9,9,8], [8,8,9,9,7], [8,5,5,9,9]],
                         "totalWin": 3.4499999999999997,
-                        "multipliers": [11],
+                        "multipliers": [],
                         "tumbles": [{"symbols": {"in": [[9,8,8,6], [6], [4,0,9,9], [5,5,8], [8,4,4,6], [6,6,7]], "out": [{"symbol": 8, "count": 8, "win": 0.4}, {"symbol": 9, "count": 11, "win": 0.75}]}, "win": 1.15}]
                     },
                     {
                         "spinsLeft": 7,
                         "area": [[5,10,3,3,6], [4,4,9,9,6], [5,9,9,4,4], [6,6,9,9,1], [9,9,7,7,5], [6,7,7,3,3]],
                         "totalWin": 0.5,
-                        "multipliers": [10],
+                        "multipliers": [],
                         "tumbles": [{"symbols": {"in": [[], [1,1], [8,4], [9,9], [9,9], []], "out": [{"symbol": 9, "count": 8, "win": 0.25}]}, "win": 0.25}]
                     },
-                    {"spinsLeft": 6, "area": [[1,7,7,4,4], [8,8,15,3,3], [9,9,5,5,8], [4,4,0,7,7], [3,9,9,7,7], [3,8,8,5,5]], "totalWin": 0, "multipliers": [15], "tumbles": []},
-                    {"spinsLeft": 5, "area": [[5,5,11,3,3], [9,9,6,6,1], [9,6,6,8,8], [3,8,8,5,5], [4,4,8,8,3], [7,4,4,9,9]], "totalWin": 0, "multipliers": [11], "tumbles": []},
+                    {"spinsLeft": 6, "area": [[1,7,7,4,4], [8,8,15,3,3], [9,9,5,5,8], [4,4,0,7,7], [3,9,9,7,7], [3,8,8,5,5]], "totalWin": 0, "multipliers": [], "tumbles": []},
+                    {"spinsLeft": 5, "area": [[5,5,11,3,3], [9,9,6,6,1], [9,6,6,8,8], [3,8,8,5,5], [4,4,8,8,3], [7,4,4,9,9]], "totalWin": 0, "multipliers": [], "tumbles": []},
                     {"spinsLeft": 4, "area": [[13,3,3,6,6], [8,12,3,3,7], [9,7,7,5,5], [8,8,9,9,4], [9,9,8,8,5], [7,7,5,5,9]], "totalWin": 0, "multipliers": [13,12], "tumbles": []},
                     {
                         "spinsLeft": 3,
                         "area": [[6,8,8,9,9], [5,4,4,6,6], [3,9,9,7,7], [4,4,7,7,8], [9,9,0,8,8], [9,9,5,5,8]],
                         "totalWin": 7.15,
-                        "multipliers": [11,15],
+                        "multipliers": [],
                         "tumbles": [
                             {"symbols": {"in": [[8,8], [], [9,9], [], [6,6], [9,9]], "out": [{"symbol": 9, "count": 8, "win": 0.25}]}, "win": 0.25},
                             {"symbols": {"in": [[4,8,8,11], [], [], [9], [6,15], [4]], "out": [{"symbol": 8, "count": 8, "win": 0.4}]}, "win": 0.4}
@@ -203,22 +203,22 @@ export class GameAPI {
                         "spinsLeft": 2,
                         "area": [[7,6,6,11,8], [6,6,10,9,9], [9,9,5,5,8], [6,9,9,5,5], [8,3,3,9,9], [9,9,7,7,4]],
                         "totalWin": 5.25,
-                        "multipliers": [11,10,10],
+                        "multipliers": [],
                         "tumbles": [{"symbols": {"in": [[], [8,9], [8,8], [4,9], [7,10], [5,7]], "out": [{"symbol": 9, "count": 10, "win": 0.75}]}, "win": 0.75}]
                     },
                     {
                         "spinsLeft": 1,
                         "area": [[8,8,0,9,9], [7,7,5,5,4], [9,9,5,5,8], [8,8,6,6,9], [9,0,8,8,7], [12,8,8,2,2]],
                         "totalWin": 20.4,
-                        "multipliers": [10,12],
+                        "multipliers": [],
                         "tumbles": [
                             {"symbols": {"in": [[9,9], [], [5], [9,9], [9,9], [7,6]], "out": [{"symbol": 8, "count": 9, "win": 0.4}]}, "win": 0.4},
                             {"symbols": {"in": [[3,10,5,5], [], [4,4], [5,8,8], [8,0,9], []], "out": [{"symbol": 9, "count": 12, "win": 2}]}, "win": 2},
                             {"symbols": {"in": [[8,6], [2,7], [5,1,1], [8], [], []], "out": [{"symbol": 5, "count": 8, "win": 1}]}, "win": 1}
                         ]
                     },
-                    {"spinsLeft": 5, "area": [[7,5,5,11,3], [7,2,2,8,8], [1,1,5,5,9], [3,3,0,11,8], [2,9,9,7,7], [8,8,6,6,7]], "totalWin": 0, "multipliers": [11,11], "tumbles": []},
-                    {"spinsLeft": 4, "area": [[1,1,5,5,8], [4,4,6,6,11], [4,4,7,7,9], [2,2,9,9,8], [7,7,6,6,9], [8,6,6,7,7]], "totalWin": 0, "multipliers": [11], "tumbles": []},
+                    {"spinsLeft": 5, "area": [[7,5,5,11,3], [7,2,2,8,8], [1,1,5,5,9], [3,3,0,11,8], [2,9,9,7,7], [8,8,6,6,7]], "totalWin": 0, "multipliers": [], "tumbles": []},
+                    {"spinsLeft": 4, "area": [[1,1,5,5,8], [4,4,6,6,11], [4,4,7,7,9], [2,2,9,9,8], [7,7,6,6,9], [8,6,6,7,7]], "totalWin": 0, "multipliers": [], "tumbles": []},
                     {
                         "spinsLeft": 3,
                         "area": [[6,6,8,8,9], [7,2,2,8,8], [9,4,4,2,2], [6,9,9,1,1], [7,7,6,6,9], [9,9,7,7,9]],
@@ -231,7 +231,7 @@ export class GameAPI {
                         "spinsLeft": 1,
                         "area": [[7,7,4,4,8], [7,9,9,5,5], [0,9,9,6,6], [9,9,6,6,15], [4,8,8,3,3], [8,1,1,9,9]],
                         "totalWin": 2,
-                        "multipliers": [15],
+                        "multipliers": [],
                         "tumbles": [{"symbols": {"in": [[], [6,8], [1,0], [9,9], [], [5,5]], "out": [{"symbol": 9, "count": 8, "win": 0.25}]}, "win": 0.25}]
                     }
                 ]
@@ -289,16 +289,46 @@ export class GameAPI {
             }
             if (cloned.slot) {
                 if (Array.isArray(cloned.slot.area)) {
+                    // fake_spin_data.json structure: each inner array is a column, values start from bottom (row 0 = bottom)
+                    // Format: [column][row] where column is outer array, row is inner array.
+                    // This matches SpinData format: [column][row] with bottom->top ordering.
                     cloned.slot.area = normalizeAreaToGameConfig(cloned.slot.area);
+
+                    // Use tumbles/totalWin from JSON when present so intended wins (e.g. symbol5 in first spin) are preserved.
+                    // Only simulate cascade when the file does not define tumbles.
+                    const hasTumblesFromFile = Array.isArray(cloned.slot.tumbles) && cloned.slot.tumbles.length > 0;
+                    if (!hasTumblesFromFile) {
+                        try {
+                            const { tumbles, totalWin } = simulateTumbleCascade(cloned.slot.area, bet);
+                            cloned.slot.tumbles = tumbles;
+                            cloned.slot.totalWin = totalWin;
+                        } catch {}
+                    }
+                    // If JSON had tumbles but no totalWin, sum win from tumble steps
+                    if (hasTumblesFromFile && (typeof cloned.slot.totalWin !== 'number' || !Number.isFinite(cloned.slot.totalWin))) {
+                        let sum = 0;
+                        for (const t of cloned.slot.tumbles) {
+                            const w = Number((t as any)?.win ?? 0);
+                            if (Number.isFinite(w)) sum += w;
+                        }
+                        if (sum > 0) cloned.slot.totalWin = sum;
+                    }
                 }
+
                 const items = cloned.slot.freeSpin?.items ?? cloned.slot.freespin?.items;
                 if (Array.isArray(items)) {
                     for (const item of items) {
                         if (item && Array.isArray(item.area)) {
                             item.area = normalizeAreaToGameConfig(item.area);
+                            try {
+                                const { tumbles: itemTumbles, totalWin: itemTotalWin } = simulateTumbleCascade(item.area, bet);
+                                item.tumbles = itemTumbles;
+                                item.totalWin = itemTotalWin;
+                            } catch {}
                         }
                     }
                 }
+
                 if (!Array.isArray(cloned.slot.paylines)) {
                     cloned.slot.paylines = [];
                 }
@@ -831,6 +861,30 @@ export class GameAPI {
             errorMessage.includes('401') ||
             errorMessage.includes('400')
         );
+    }
+
+    /**
+     * Handle session timeout triggered by an idle manager or similar.
+     * Shows the token-expired popup and clears auth tokens from storage.
+     */
+    public handleSessionTimeout(): void {
+        try {
+            this.showTokenExpiredPopup();
+        } catch (e) {
+            console.error('[GameAPI] Failed to show session timeout popup:', e);
+        }
+        try {
+            localStorage.removeItem('token');
+        } catch {}
+        try {
+            localStorage.removeItem(GameAPI.REFRESH_TOKEN_KEY);
+        } catch {}
+        try {
+            sessionStorage.removeItem('token');
+        } catch {}
+        try {
+            sessionStorage.removeItem(GameAPI.REFRESH_TOKEN_KEY);
+        } catch {}
     }
 
     /**

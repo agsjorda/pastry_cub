@@ -10,11 +10,10 @@
  * - SymbolAnimations: Handles animations and tweens
  * - SymbolOverlay: Manages overlays and win text
  * - FreeSpinController: Manages free spin autoplay
- * - MultiplierSymbols: Utility for multiplier symbols
  * 
  * For new code, prefer importing specific modules directly:
  * @example
- * import { SymbolGrid, MultiplierSymbols } from './symbols';
+ * import { SymbolGrid } from './symbols';
  */
 
 import { Game } from '../../scenes/Game';
@@ -35,18 +34,21 @@ import {
   INITIAL_SYMBOLS,
   SYMBOL_CONFIG,
   DEPTH_WINNING_SYMBOL,
+  DEPTH_WIN_LINES,
   SCATTER_ANIMATION_SCALE,
   SCATTER_GATHER_SCALE,
   SCATTER_RETRIGGER_SCALE,
   SCATTER_GATHER_DURATION_MS,
   SCATTER_SHRINK_DURATION_MS,
   SCATTER_MOVE_DURATION_MS,
-  MULTIPLIER_STAGGER_MS,
+  SHOW_WIN_BORDER_SYMBOLS,
 } from '../../../config/GameConfig';
 import { SoundEffectType } from '../../../managers/AudioManager';
 import { normalizeAreaToGameConfig } from '../../../utils/GridTransform';
 import {
   getHighCountSymbolsFromOuts,
+  getOutCount,
+  getOutWin,
   getTumbleTotal,
   getTotalWinFromSlot,
   getTotalWinFromFreespinOnly,
@@ -61,7 +63,6 @@ import { SymbolAnimations } from './SymbolAnimations';
 import { SymbolFactory, resolveSymbolAnimationName } from './SymbolFactory';
 import { SymbolOverlay } from './SymbolOverlay';
 import { FreeSpinController } from './FreeSpinController';
-import { MultiplierSymbols } from './MultiplierSymbols';
 import type {
   SymbolObject,
   GridPosition,
@@ -170,7 +171,6 @@ export class Symbols {
   // ============================================================================
 
   private hadWinsInCurrentItem: boolean = false;
-  private multiplierAnimationsInProgress: boolean = false;
   private scatterRetriggerAnimationInProgress: boolean = false;
   private pendingScatterRetrigger: PendingScatterRetrigger | null = null;
   private pendingSymbol0Retrigger: { symbol0Grids: GridPosition[] } | null = null;
@@ -195,6 +195,8 @@ export class Symbols {
   private tumbleDropInProgress: boolean = false;
   private readonly skipTweenTimeScale: number = 1;
   private explosionVfxInProgress: number = 0;
+  /** Win border graphics (scene layer) for SHOW_WIN_BORDER_SYMBOLS - cleared on new spin */
+  private winBorderGraphics: Phaser.GameObjects.Graphics[] = [];
 
   // Free spin autoplay state - delegate to controller
   public get freeSpinAutoplayActive(): boolean {
@@ -309,7 +311,6 @@ export class Symbols {
         return;
       }
 
-      this.multiplierAnimationsInProgress = false;
       this.scatterRetriggerAnimationInProgress = false;
       this.ensureCleanSymbolState();
       this.hideWinningOverlay();
@@ -344,10 +345,6 @@ export class Symbols {
     // WIN_DIALOG_CLOSED
     gameEventManager.on(GameEventType.WIN_DIALOG_CLOSED, () => this.handleWinDialogClosed());
 
-    // Track multiplier animations
-    gameEventManager.on(GameEventType.MULTIPLIERS_TRIGGERED, () => this.handleMultiplierTriggered());
-
-    gameEventManager.on(GameEventType.MULTIPLIER_ANIMATIONS_COMPLETE, () => this.handleMultiplierAnimationsComplete());
   }
 
   private handleEnableSymbolsAfterDialog(): void {
@@ -767,24 +764,9 @@ export class Symbols {
     gameStateManager.isShowingWinDialog = false;
 
     if (gameStateManager.isBonusFinished) {
-      if (this.multiplierAnimationsInProgress) {
-        gameEventManager.once(GameEventType.MULTIPLIER_ANIMATIONS_COMPLETE, () => {
-          this.showCongratsDialogAfterDelay();
-          gameStateManager.isBonusFinished = false;
-        });
-      } else {
-        this.showCongratsDialogAfterDelay();
-        gameStateManager.isBonusFinished = false;
-      }
+      this.showCongratsDialogAfterDelay();
+      gameStateManager.isBonusFinished = false;
     }
-  }
-
-  private handleMultiplierTriggered(): void {
-    this.multiplierAnimationsInProgress = true;
-  }
-
-  private handleMultiplierAnimationsComplete(): void {
-    this.multiplierAnimationsInProgress = false;
   }
 
   // ============================================================================
@@ -803,10 +785,6 @@ export class Symbols {
 
   public hasPendingScatterRetrigger(): boolean {
     return !!(this.pendingScatterRetrigger?.scatterGrids?.length);
-  }
-
-  public isMultiplierAnimationsInProgress(): boolean {
-    return this.multiplierAnimationsInProgress;
   }
 
   public isScatterRetriggerAnimationInProgress(): boolean {
@@ -934,6 +912,13 @@ export class Symbols {
 
   public hideWinningOverlay(): void {
     this.overlayModule.hideOverlay();
+    // Clear any win border graphics from the scene
+    for (const g of this.winBorderGraphics) {
+      try {
+        if (g && !g.destroyed && g.destroy) g.destroy();
+      } catch { /* ignore */ }
+    }
+    this.winBorderGraphics = [];
   }
 
   public moveWinningSymbolsToFront(data: SpinMockData): void {
@@ -1080,6 +1065,13 @@ export class Symbols {
 
   private ensureCleanSymbolState(): void {
     this.grid.forEachSymbol((symbol) => {
+      try {
+        const winBorder = (symbol as any).__winBorder;
+        if (winBorder && winBorder.destroy && !winBorder.destroyed) {
+          winBorder.destroy();
+          (symbol as any).__winBorder = null;
+        }
+      } catch { /* ignore */ }
       if ((symbol as any).animationState) {
         try {
           const pausedInfo = (symbol as any).__pausedMultiplierWin;
@@ -1692,12 +1684,6 @@ export class Symbols {
       }
     }
 
-    // Emit completion events
-    try {
-      await this.triggerMultiplierWinsAfterBonusSpin();
-    } catch (e) {
-      console.warn('[Symbols] Failed triggering multiplier wins:', e);
-    }
     gameEventManager.emit(GameEventType.REELS_STOP);
     gameEventManager.emit(GameEventType.WIN_STOP);
   }
@@ -2031,7 +2017,6 @@ export class Symbols {
 
     await Promise.all(gatherPromises);
 
-    // Use same transition as buy feature (merge + explosion + Transition_BZ) for both normal and buy feature trigger
     await this.buyFeatureTransition(scatterSymbols, winAnimName, idleAnimName);
   }
 
@@ -2136,7 +2121,6 @@ export class Symbols {
     let hideAfterExplosionDelay: Promise<void> | null = null;
 
     if (mergedSymbol && mergedSymbol !== this.mergeLeadSymbol) {
-      // Ease in the merged symbol before the Transition_BZ overlay appears.
       await new Promise<void>((resolve) => {
         if (!this.scene) {
           resolve();
@@ -2174,10 +2158,6 @@ export class Symbols {
                 const doubledExplosionStartMs = explosionStartMs * 2;
                 this.scene.time.delayedCall(doubledExplosionStartMs, () => {
                   this.playExplosionVfx(this.slotX, this.slotY, true);
-                  // Start Transition_BZ overlapping with explosion (300ms delay for overlap)
-                  this.scene.time.delayedCall(300, () => {
-                    this.playTransitionBzWinAnimation({ holdOverlay: false }).catch(() => {});
-                  });
                 });
                 explosionDone = this.delay(doubledExplosionStartMs + explosionDurationMs);
                 hideAfterExplosionDelay = this.delay(doubledExplosionStartMs + hideAfterExplosionMs);
@@ -2194,10 +2174,6 @@ export class Symbols {
       try {
         this.scene.time.delayedCall(explosionStartMs, () => {
           this.playExplosionVfx(this.slotX, this.slotY, true);
-          // Start Transition_BZ overlapping with explosion (900ms delay for overlap)
-          this.scene.time.delayedCall(900, () => {
-            this.playTransitionBzWinAnimation({ holdOverlay: false }).catch(() => {});
-          });
         });
         explosionDone = this.delay(explosionStartMs + explosionDurationMs);
         hideAfterExplosionDelay = this.delay(explosionStartMs + hideAfterExplosionMs);
@@ -2260,7 +2236,6 @@ export class Symbols {
       } catch { }
     }
 
-    // Transition_BZ already started immediately after explosion, so no need to wait or call it again
     await this.delay(100);
 
     try {
@@ -2285,9 +2260,6 @@ export class Symbols {
       gameScene?.bonusHeader?.hideWinningsDisplay?.();
     } catch {}
     await this.playBuyFeatureScatterMerge(scatterSymbols, winAnimName, idleAnimName);
-    // Transition_BZ already started immediately after explosion in playBuyFeatureScatterMerge
-    // await this.playTransitionBzWinAnimation({ holdOverlay: false });
-    // Radial dimmer transition removed for now.
     await this.waitForTransitionBzWinComplete();
     if (this.radialLightPromise) {
       try {
@@ -2301,131 +2273,8 @@ export class Symbols {
     } catch { }
   }
 
-  private async playTransitionBzWinAnimation(options: { holdOverlay?: boolean } = {}): Promise<void> {
+  private async playTransitionBzWinAnimation(_options: { holdOverlay?: boolean } = {}): Promise<void> {
     this.startTransitionBzTracking();
-    const transitionKey = 'Transition_BZ';
-    const atlasKey = `${transitionKey}-atlas`;
-    let transition: any = null;
-    const holdOverlay = options.holdOverlay !== false;
-
-    this.hideTransitionBzOverlay();
-
-    try {
-      if (typeof (this.scene.add as any).spine !== 'function') {
-        this.finishTransitionBzTracking();
-        return;
-      }
-      transition = (this.scene.add as any).spine(
-        this.scene.scale.width * 0.5,
-        this.scene.scale.height * 0.5,
-        transitionKey,
-        atlasKey
-      );
-    } catch {
-      this.finishTransitionBzTracking();
-      return;
-    }
-
-    if (!transition) {
-      this.finishTransitionBzTracking();
-      return;
-    }
-
-    if (holdOverlay) {
-      this.transitionBzOverlay = transition;
-    }
-
-    try { transition.setOrigin?.(0.5, 0.5); } catch { }
-    // Set depth lower than explosion VFX (which is DEPTH_WINNING_SYMBOL + 1000 = 1600) to render behind it
-    try { transition.setDepth?.(500); } catch { }
-
-    try {
-      const rawWidth = Number(transition.width) || 1;
-      const rawHeight = Number(transition.height) || 1;
-      const fitScale = Math.min(
-        (this.scene.scale.width * 0.9) / rawWidth,
-        (this.scene.scale.height * 0.9) / rawHeight
-      );
-      if (isFinite(fitScale) && fitScale > 0 && transition.setScale) {
-        transition.setScale(fitScale, fitScale);
-      }
-    } catch { }
-
-    // Ease in the overlay with alpha tween
-    try {
-      transition.alpha = 0;
-      this.scene.tweens.add({
-        targets: transition,
-        alpha: 1,
-        duration: 400,
-        ease: 'Sine.easeIn',
-      });
-    } catch { }
-
-    // Start the cover/fade as the mouth reaches its widest point (from Spine JSON ~2.4s).
-    let expandPromise: Promise<void> | null = null;
-    if (!holdOverlay) {
-      const expandDelayMs = 2400;
-      expandPromise = this.delay(expandDelayMs).then(() =>
-        this.expandTransitionToCoverAndFade(transition)
-      );
-    }
-
-    await new Promise<void>((resolve) => {
-      let finished = false;
-      const finish = () => {
-        if (finished) return;
-        finished = true;
-        resolve();
-      };
-
-      try {
-        const state = transition.animationState;
-        const animName = 'Transition_BZ_win';
-        if (state && typeof state.setAnimation === 'function') {
-          let listenerRef: any = null;
-          if (typeof state.addListener === 'function') {
-            listenerRef = {
-              complete: (entry: any) => {
-                try {
-                  if (!entry || entry.animation?.name !== animName) return;
-                } catch { }
-                try { if (state.removeListener && listenerRef) state.removeListener(listenerRef); } catch { }
-                finish();
-              }
-            };
-            state.addListener(listenerRef);
-          }
-          try {
-            const am = (window as any)?.audioManager;
-            if (am && typeof am.playSoundEffect === 'function') {
-              am.playSoundEffect(SoundEffectType.TRANSITION_BZ);
-            }
-          } catch { }
-          state.setAnimation(0, animName, false);
-          this.scene.time.delayedCall(3600, () => {
-            try { if (state.removeListener && listenerRef) state.removeListener(listenerRef); } catch { }
-            finish();
-          });
-          return;
-        }
-      } catch { }
-
-      this.scene.time.delayedCall(2200, finish);
-    });
-
-    if (!holdOverlay) {
-      if (expandPromise) {
-        await expandPromise;
-      }
-    }
-
-    if (!holdOverlay) {
-      try { transition.destroy?.(); } catch { }
-      if (this.transitionBzOverlay === transition) {
-        this.transitionBzOverlay = null;
-      }
-    }
     this.finishTransitionBzTracking();
   }
 
@@ -2488,7 +2337,7 @@ export class Symbols {
         complete();
         return;
       }
-      this.overlayModule.showOverlay(); // Dimmer shows before Transition_BZ fades out.
+      this.overlayModule.showOverlay();
       ensureTransitionVisible();
       const revealDelay = Math.max(0, fadeDuration - 100);
       const resetDelay = Math.max(0, fadeDuration - 200);
@@ -2735,7 +2584,6 @@ export class Symbols {
     } catch {}
   }
 
-  //change Transition_BZ to cover and fade faster
   private async expandTransitionToCoverAndFade(
     transition: any,
     scaleDurationMs: number = 1000,
@@ -3189,7 +3037,7 @@ export class Symbols {
       if (value === undefined || value === null) return;
 
       const skelData = (obj as any)?.skeleton?.data;
-      const baseValue = MultiplierSymbols.isMultiplier(value) ? 10 : value;
+      const baseValue = value;
       const dropAnimName = resolveSymbolAnimationName(skelData, baseValue, 'drop') ?? `Symbol${baseValue}_BZ_drop`;
       const idleAnimName = resolveSymbolAnimationName(skelData, baseValue, 'idle') ?? `Symbol${baseValue}_BZ_idle`;
 
@@ -3266,266 +3114,19 @@ export class Symbols {
     }
   }
 
-  private async triggerMultiplierWinsAfterBonusSpin(): Promise<void> {
-    if (!gameStateManager.isBonus || !this.hadWinsInCurrentItem) {
-      return;
-    }
-    if (!this.symbols || !this.symbols.length || !this.symbols[0]?.length) {
-      return;
-    }
-
-    type MultiplierItem = { obj: any; value: number; weight: number };
-    const items: MultiplierItem[] = [];
-    for (let col = 0; col < this.symbols.length; col++) {
-      for (let row = 0; row < this.symbols[col].length; row++) {
-        const obj: any = this.symbols[col][row];
-        if (!obj) continue;
-        const value = Number((obj as any)?.symbolValue);
-        if (!MultiplierSymbols.isMultiplier(value)) continue;
-        const weight = MultiplierSymbols.getNumericValue(value);
-        if (weight <= 0) continue;
-        items.push({ obj, value, weight });
-      }
-    }
-
-    if (items.length === 0) {
-      return;
-    }
-
-    const spinTotal = this.getSpinTotalBeforeMultipliers();
-    const multiplierSum = items.reduce((sum, it) => sum + (Number(it.weight) || 0), 0);
-    try {
-      gameEventManager.emit(GameEventType.MULTIPLIERS_TRIGGERED, { spinTotal, multiplierSum } as any);
-    } catch { }
-
-    items.sort((a, b) => (b.weight !== a.weight ? b.weight - a.weight : Math.random() - 0.5));
-
-    const runPromises = items.map((it, idx) => {
-      return new Promise<void>((resolve) => {
-        const delayMs = Math.max(0, MULTIPLIER_STAGGER_MS * idx);
-        this.scene.time.delayedCall(delayMs, async () => {
-          try {
-            await this.playMultiplierWinThenIdle(it.obj, it.value, spinTotal, it.weight);
-          } catch { }
-          resolve();
-        });
-      });
-    });
-
-    await Promise.allSettled(runPromises);
-    await new Promise<void>((resolve) => {
-      this.scene.time.delayedCall(800, () => resolve());
-    });
-    try {
-      gameEventManager.emit(GameEventType.MULTIPLIER_ANIMATIONS_COMPLETE);
-    } catch { }
-  }
-
-  private getSpinTotalBeforeMultipliers(): number {
-    return getSpinTotalFromSpinData(this.currentSpinData);
-  }
-
-  private playMultiplierWinThenIdle(obj: any, value: number, spinTotal: number, weight: number): Promise<void> {
-    return new Promise<void>((resolve) => {
-      const winAnim = MultiplierSymbols.getWinAnimationName(value);
-      const animState = obj?.animationState;
-      if (!winAnim || !animState?.setAnimation) {
-        resolve();
-        return;
-      }
-
-      let finished = false;
-      const safeResolve = () => {
-        if (finished) return;
-        finished = true;
-        resolve();
-      };
-
-      try {
-        if (animState.clearTracks) {
-          animState.clearTracks();
-        }
-      } catch { }
-
-      try {
-        const am = (window as any)?.audioManager;
-        if (am && typeof am.playSoundEffect === 'function') {
-          am.playSoundEffect(SoundEffectType.MULTIPLIER_TRIGGER);
-        }
-      } catch { }
-
-      let overlayAnimated = false;
-      let overlayStarted = false;
-      const startFlyingOverlay = () => {
-        if (overlayStarted) return;
-        overlayStarted = true;
-        try {
-          // Hide the in-grid overlay once the flying number starts.
-          try {
-            (obj as any).__overlayHidden = true;
-            const overlayObj: any = (obj as any)?.__overlayImage;
-            if (overlayObj) {
-              try { (overlayObj as any)?.__bounceTween?.stop?.(); } catch { }
-              overlayObj.setVisible?.(false);
-              overlayObj.setAlpha?.(0);
-              if (typeof overlayObj.alpha === 'number') {
-                overlayObj.alpha = 0;
-              }
-            }
-          } catch { }
-
-          const overlayKey = MultiplierSymbols.getOverlayKey(value);
-          const pos = this.getSymbolWorldPosition(obj);
-          if (overlayKey && pos && this.scene?.textures?.exists(overlayKey)) {
-            const overlay = this.scene.add.image(pos.x, pos.y, overlayKey);
-            overlay.setOrigin(0.5, 0.5);
-            // Scale overlay relative to symbol box
-            const desiredWidth = Math.max(3, this.displayWidth * 1.3);
-            const textureWidth = Math.max(1, overlay.width);
-            overlay.setScale(desiredWidth / textureWidth);
-            overlay.setDepth(9999);
-
-            const bonusHeader: any = (this.scene as any)?.bonusHeader;
-            const targetX = typeof bonusHeader?.multiplierTargetX === 'number'
-              ? bonusHeader.multiplierTargetX
-              : this.scene.scale.width * 0.5;
-            const targetY = typeof bonusHeader?.multiplierTargetY === 'number'
-              ? bonusHeader.multiplierTargetY
-              : this.scene.scale.height * 0.215 + 18;
-
-            overlayAnimated = true;
-            this.scene.tweens.add({
-              targets: overlay,
-              x: targetX,
-              y: targetY,
-              duration: Math.max(200, this.scene.gameData?.dropDuration ?? 600),
-              ease: Phaser.Math.Easing.Cubic.InOut,
-              onComplete: () => {
-                try {
-                  const arrivalSpinTotal = spinTotal > 0 ? spinTotal : getSpinTotalWithFallback(this.currentSpinData);
-                  gameEventManager.emit(GameEventType.MULTIPLIER_ARRIVED, { spinTotal: arrivalSpinTotal, weight } as any);
-                } catch { }
-                this.scene.tweens.add({
-                  targets: overlay,
-                  alpha: 0,
-                  scaleX: overlay.scaleX * 1.1,
-                  scaleY: overlay.scaleY * 1.1,
-                  duration: 200,
-                  ease: Phaser.Math.Easing.Cubic.Out,
-                  onComplete: () => {
-                    try { overlay.destroy(); } catch { }
-                    safeResolve();
-                  }
-                });
-              }
-            });
-          }
-        } catch { }
-      };
-
-      const scheduleWinThenOverlay = () => {
-        const startWinAnimation = () => {
-          try {
-            if (animState.addListener) {
-              const winListener = {
-                complete: (entry: any) => {
-                  try {
-                    if (!entry || entry.animation?.name !== winAnim) return;
-                  } catch { }
-                  try { if (animState.removeListener) animState.removeListener(winListener); } catch { }
-
-                  // Show overlay number, wiggle briefly, then fly.
-                  try {
-                    (obj as any).__overlayHidden = false;
-                    const overlayObj: any = (obj as any)?.__overlayImage;
-                    if (overlayObj) {
-                      overlayObj.setVisible?.(true);
-                      overlayObj.setAlpha?.(1);
-                      if (typeof overlayObj.alpha === 'number') {
-                        overlayObj.alpha = 1;
-                      }
-                      const wiggleMs = 500;
-                      try { this.scene.tweens.killTweensOf(overlayObj); } catch { }
-                      this.scene.tweens.add({
-                        targets: overlayObj,
-                        scaleX: overlayObj.scaleX * 1.08,
-                        scaleY: overlayObj.scaleY * 1.08,
-                        duration: Math.max(120, Math.floor(wiggleMs / 2)),
-                        yoyo: true,
-                        repeat: 1,
-                        ease: Phaser.Math.Easing.Sine.InOut,
-                        onComplete: () => {
-                          this.scene.time.delayedCall(100, () => startFlyingOverlay());
-                        }
-                      });
-                    } else {
-                      this.scene.time.delayedCall(200, () => startFlyingOverlay());
-                    }
-                  } catch {
-                    startFlyingOverlay();
-                  }
-                }
-              } as any;
-              animState.addListener(winListener);
-            } else {
-              const fallbackMs = Math.max(900, this.scene?.gameData?.winUpDuration ?? 900);
-              this.scene.time.delayedCall(fallbackMs, () => startFlyingOverlay());
-            }
-            animState.setAnimation(0, winAnim, false);
-          } catch {
-            safeResolve();
-          }
-        };
-
-        let winDurationMs = 900;
-        try {
-          const animDuration = obj?.skeleton?.data?.findAnimation?.(winAnim)?.duration;
-          if (typeof animDuration === 'number' && isFinite(animDuration) && animDuration > 0) {
-            winDurationMs = Math.max(100, Math.round(animDuration * 1000));
-          }
-        } catch { }
-        const explosionDurationMs = Math.max(1200, winDurationMs);
-
-        const pos = this.getSymbolWorldPosition(obj);
-        if (pos) {
-          this.playExplosionVfx(pos.x, pos.y, false, explosionDurationMs);
-        }
-        startWinAnimation();
-        // Safety: ensure flight starts even if win completion doesn't fire.
-        const fallbackMs = winDurationMs + 900;
-        this.scene.time.delayedCall(fallbackMs, () => startFlyingOverlay());
-      };
-
-      try {
-        // Keep overlay hidden until we explicitly show it after win animation.
-        (obj as any).__overlayHidden = true;
-        scheduleWinThenOverlay();
-      } catch {
-        safeResolve();
-        return;
-      }
-
-      if (!overlayAnimated) {
-        this.scene.time.delayedCall((this.scene.gameData?.winUpDuration ?? 900) + 600, () => {
-          safeResolve();
-        });
-      }
-    });
-  }
-
   private async applySingleTumble(tumble: any, tumbleIndex: number, onFirstWinComplete?: (tumbleTotal: number) => void): Promise<void> {
     const self = this;
     const disableScaling = gameStateManager.isBonus || gameStateManager.isBuyFeatureSpin;
     const skipTumble = this.skipTumblesActive;
     // Keep currentSymbolData in sync with live grid to avoid removal mismatches
     this.syncCurrentSymbolDataFromSymbols();
-    const outs = (tumble?.symbols?.out || []) as Array<{ symbol: number; count: number }>;
+    const outs = (tumble?.symbols?.out || []) as any[];
     const ins = (tumble?.symbols?.in || []) as number[][]; // per real column (x index)
 
     // If this tumble removes any symbols, it represents a win event during this item
     let anyRemoval = false;
     try {
-      anyRemoval = Array.isArray(outs) && outs.some(o => (Number(o?.count) || 0) > 0);
+      anyRemoval = Array.isArray(outs) && outs.some(o => getOutCount(o) > 0);
       if (anyRemoval) { (self as any).hadWinsInCurrentItem = true; }
     } catch { }
 
@@ -3558,6 +3159,64 @@ export class Symbols {
 
     const highCountSymbols = getHighCountSymbolsFromOuts(outs);
 
+    // Apply explicit removal positions from tumble outs (if provided)
+    const outsWithPositions = new Set<number>();
+    const preMarkedByCol: number[] = Array.from({ length: numCols }, () => 0);
+    const parseOutPositions = (raw: any): Array<{ col: number; row: number }> => {
+      if (!Array.isArray(raw)) return [];
+      const list: Array<{ col: number; row: number }> = [];
+      for (const entry of raw) {
+        let col: number | undefined;
+        let row: number | undefined;
+        if (Array.isArray(entry)) {
+          col = Number(entry[0]);
+          row = Number(entry[1]);
+        } else if (entry && typeof entry === 'object') {
+          col = Number((entry as any).col ?? (entry as any).x);
+          row = Number((entry as any).row ?? (entry as any).y);
+        }
+        if (Number.isFinite(col) && Number.isFinite(row)) {
+          list.push({ col: col as number, row: row as number });
+        }
+      }
+      return list;
+    };
+    const resolveOutPositions = (out: any): Array<{ col: number; row: number }> => {
+      const raw = parseOutPositions(out?.positions);
+      if (raw.length === 0) return [];
+      const inBounds = raw.filter(p => p.col >= 0 && p.col < numCols && p.row >= 0 && p.row < numRows);
+      if (inBounds.length === 0) return [];
+      const symbol = Number(out?.symbol);
+      if (self.currentSymbolData && Number.isFinite(symbol)) {
+        let matchRaw = 0;
+        let matchConverted = 0;
+        for (const p of inBounds) {
+          const rawRow = p.row;
+          const convRow = numRows - 1 - p.row;
+          if (self.currentSymbolData[rawRow]?.[p.col] === symbol) matchRaw++;
+          if (self.currentSymbolData[convRow]?.[p.col] === symbol) matchConverted++;
+        }
+        const useRaw = matchRaw > matchConverted;
+        return inBounds.map(p => ({ col: p.col, row: useRaw ? p.row : (numRows - 1 - p.row) }));
+      }
+      // Default: incoming positions are bottom-based (row 0 = bottom)
+      return inBounds.map(p => ({ col: p.col, row: numRows - 1 - p.row }));
+    };
+    outs.forEach((out, idx) => {
+      const targetSymbol = Number(out?.symbol);
+      if (gameStateManager.isBonus && targetSymbol === SCATTER_SYMBOL_ID) return;
+      const positions = resolveOutPositions(out);
+      if (!positions.length) return;
+      outsWithPositions.add(idx);
+      for (const p of positions) {
+        if (p.col < 0 || p.col >= numCols || p.row < 0 || p.row >= numRows) continue;
+        if (!removeMask[p.col][p.row]) {
+          removeMask[p.col][p.row] = true;
+          preMarkedByCol[p.col] += 1;
+        }
+      }
+    });
+
     // Build position indices by symbol (topmost-first per column)
     const positionsBySymbol: { [key: number]: Array<{ col: number; row: number }> } = {};
     let sequenceIndex = 0; // ensures 1-by-1 ordering across columns left-to-right
@@ -3576,7 +3235,7 @@ export class Symbols {
 
     // Determine per-column incoming counts
     const insCountByCol: number[] = Array.from({ length: numCols }, (_, c) => (Array.isArray(ins?.[c]) ? ins[c].length : 0));
-    let targetRemovalsPerCol: number[] = insCountByCol.slice();
+    let targetRemovalsPerCol: number[] = insCountByCol.map((n, c) => Math.max(0, n - (preMarkedByCol[c] || 0)));
 
     // Helper to pick and mark a position for a symbol in a preferred column
     function pickAndMark(symbol: number, preferredCol: number | null): boolean {
@@ -3594,8 +3253,10 @@ export class Symbols {
     }
 
     // First pass: satisfy per-column targets using outs composition
-    for (const out of outs) {
-      let remaining = Number(out?.count || 0);
+    for (let outIndex = 0; outIndex < outs.length; outIndex++) {
+      const out = outs[outIndex];
+      if (outsWithPositions.has(outIndex)) continue;
+      let remaining = getOutCount(out);
       const targetSymbol = Number(out?.symbol);
       if (isNaN(remaining) || isNaN(targetSymbol) || remaining <= 0) continue;
       // In bonus, never remove Symbol0 (scatter) so 3+ can trigger retrigger; no clearing.
@@ -3661,6 +3322,44 @@ export class Symbols {
       console.log('[Symbols] Tumble removal mask summary:', { totalRemoved, removedBySymbol });
     } catch { }
 
+    // Optional: draw red borders around winning symbols for visualization (scene layer, use grid cell position)
+    if (SHOW_WIN_BORDER_SYMBOLS && self.grid) {
+      const borderThickness = 4;
+      const borderColor = 0xff0000;
+      const w = self.displayWidth ?? 62;
+      const h = self.displayHeight ?? 62;
+      const halfW = w / 2;
+      const halfH = h / 2;
+      let borderCount = 0;
+      for (let col = 0; col < numCols; col++) {
+        for (let row = 0; row < numRows; row++) {
+          if (!removeMask[col][row]) continue;
+          const obj = self.symbols[col]?.[row];
+          try {
+            if (obj && (obj as any).__winBorder) {
+              const prev = (obj as any).__winBorder;
+              if (prev.destroy && !prev.destroyed) prev.destroy();
+              (obj as any).__winBorder = null;
+            }
+            const pos = self.grid.calculateCellPosition(col, row);
+            const g = self.scene.add.graphics();
+            g.lineStyle(borderThickness, borderColor, 1);
+            g.strokeRect(-halfW, -halfH, w, h);
+            g.setPosition(pos.x, pos.y);
+            g.setDepth(DEPTH_WIN_LINES + 1);
+            g.setScrollFactor(1);
+            self.scene.add.existing(g);
+            self.winBorderGraphics.push(g);
+            if (obj) (obj as any).__winBorder = g;
+            borderCount++;
+          } catch (e) {
+            console.warn('[Symbols] Win border draw failed for', col, row, e);
+          }
+        }
+      }
+      if (borderCount > 0) console.log('[Symbols] Drew', borderCount, 'win borders (SHOW_WIN_BORDER_SYMBOLS)');
+    }
+
     // Attach ONE win text per winning symbol value, prioritizing columns 2–5 (1–4 zero-based)
     if (!skipTumble) try {
       // Build removal positions by symbol value
@@ -3678,7 +3377,7 @@ export class Symbols {
       const winBySymbol: { [key: number]: number } = {};
       for (const out of outs as any[]) {
         const s = Number((out as any)?.symbol);
-        const w = Number((out as any)?.win);
+        const w = getOutWin(out);
         if (!isNaN(s) && !isNaN(w) && w > 0) winBySymbol[s] = w;
       }
       const tumbleWin = Number((tumble as any)?.win || 0);
@@ -3866,13 +3565,10 @@ export class Symbols {
             if (obj) {
               removalPromises.push(new Promise<void>((resolve) => {
               const value = self.currentSymbolData?.[row]?.[col];
-              const isSugarWin = typeof value === 'number' && value >= 1 && value <= 9 && highCountSymbols.has(value);
+              const isSugarWin = typeof value === 'number' && value >= 1 && value <= 7 && highCountSymbols.has(value);
               const sugarWinAnim = isSugarWin ? `Symbol${value}_BZ_win` : null;
               const hasSugarWinAnim = !!(sugarWinAnim && (obj as any)?.skeleton?.data?.findAnimation?.(sugarWinAnim));
               const canPlaySugarWin = !!(isSugarWin && hasSugarWinAnim && obj.animationState && obj.animationState.setAnimation);
-              const multiplierWinAnim = typeof value === 'number' ? MultiplierSymbols.getWinAnimationName(value) : null;
-              // For multipliers, allow win animation only when this item actually had wins
-              const canPlayMultiplierWin = !!multiplierWinAnim && !!(self as any).hadWinsInCurrentItem && obj.animationState && obj.animationState.setAnimation;
               const shouldExplode = !!isSugarWin;
               let vfxTriggered = false;
               const triggerRemovalVfx = () => {
@@ -3910,9 +3606,9 @@ export class Symbols {
                   if (shouldExplode) {
                     triggerRemovalVfx();
                   }
-                  if (canPlaySugarWin || canPlayMultiplierWin) {
+                  if (canPlaySugarWin) {
                     try { if (obj.animationState.clearTracks) obj.animationState.clearTracks(); } catch { }
-                    const winAnim = canPlaySugarWin ? (sugarWinAnim as string) : (multiplierWinAnim as string);
+                    const winAnim = sugarWinAnim as string;
                     let completed = false;
                     try {
                       if (obj.animationState.addListener) {
@@ -3935,19 +3631,11 @@ export class Symbols {
                         } as any;
                         obj.animationState.addListener(listener);
                       }
-                      if (canPlayMultiplierWin) {
-                        const pos = this.getSymbolWorldPosition(obj);
-                        if (pos) this.playExplosionVfx(pos.x, pos.y, false);
-                        this.showMultiplierOverlay(obj);
-                      }
                       obj.animationState.setAnimation(0, winAnim, false);
                       // Log the tumble index when win animation starts
                       console.log(`[Symbols] Playing win animation "${winAnim}" for tumble index: ${tumbleIndex}`);
-                      if (!shouldExplode) {
-                        // Keep multiplier emphasis without fighting the sugar explosion pulse
-                        if (!disableScaling) {
-                          this.animationsModule.scheduleScaleUp(obj, 500);
-                        }
+                      if (!shouldExplode && !disableScaling) {
+                        this.animationsModule.scheduleScaleUp(obj, 500);
                       }
                       // Safety timeout in case complete isn't fired
                       self.scene.time.delayedCall(self.scene.gameData.winUpDuration + 700, () => {
@@ -4533,7 +4221,7 @@ export class Symbols {
           try {
             const am = (window as any)?.audioManager;
             if (am && typeof am.playSoundEffect === 'function') {
-              am.playSoundEffect(SoundEffectType.MULTIPLIER_TRIGGER);
+              am.playSoundEffect(SoundEffectType.TUMBLE_BOMB);
             }
           } catch { }
         }
@@ -4620,7 +4308,6 @@ export class Symbols {
   private async waitForAnimationsAndTumblesToFinish(maxWaitMs: number = 6000): Promise<void> {
     if (!this.scene) return;
     const isBusy = () =>
-      this.multiplierAnimationsInProgress ||
       this.scatterRetriggerAnimationInProgress ||
       this.tumbleInProgress ||
       this.reelDropInProgress ||
@@ -4678,21 +4365,6 @@ export class Symbols {
   }
 
 
-  private showMultiplierOverlay(baseObj: any): void {
-    if ((baseObj as any)?.__overlayHidden) {
-      return;
-    }
-    try {
-      const overlayObj: any = (baseObj as any)?.__overlayImage;
-      if (!overlayObj) return;
-      overlayObj.setVisible?.(true);
-      overlayObj.setAlpha?.(1);
-      if (typeof overlayObj.alpha === 'number') {
-        overlayObj.alpha = 1;
-      }
-    } catch { /* ignore */ }
-  }
-
   /**
    * Destroy overlay image associated with a symbol
    */
@@ -4705,6 +4377,13 @@ export class Symbols {
       const winTextObj: any = (baseObj as any)?.__winText;
       // Detach from symbol so later cleanup doesn't double-handle it; let its tween onComplete destroy it
       if (winTextObj) { (baseObj as any).__winText = null; }
+    } catch { }
+    try {
+      const winBorder: any = (baseObj as any)?.__winBorder;
+      if (winBorder && winBorder.destroy && !winBorder.destroyed) {
+        winBorder.destroy();
+        (baseObj as any).__winBorder = null;
+      }
     } catch { }
   }
 }

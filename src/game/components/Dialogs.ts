@@ -1485,10 +1485,6 @@ export class Dialogs {
 		blackScreen.fillRect(0, 0, scene.scale.width, scene.scale.height);
 		blackScreen.setAlpha(0); // Start transparent
 
-		// Disable spinner immediately when black screen starts fading in
-		scene.events.emit('disableSpinner');
-		console.log('[Dialogs] Spinner disabled during transition');
-
 		// Fade in black screen
 		scene.tweens.add({
 			targets: blackScreen,

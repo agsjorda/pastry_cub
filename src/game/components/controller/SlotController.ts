@@ -6,13 +6,14 @@ import { GameData, setSpeed } from "../GameData";
 import { gameEventManager, GameEventType } from '../../../event/EventManager';
 import { gameStateManager } from '../../../managers/GameStateManager';
 import { TurboConfig } from '../../../config/TurboConfig';
-import { DELAY_BETWEEN_SPINS } from '../../../config/GameConfig';
+import { DELAY_BETWEEN_SPINS, LOADING_SPINNER_ENABLED, LOADING_SPINNER_SIMULATE_MIN_DISPLAY_MS, SHOW_BUTTON_HITBOXES, GRID_CENTER_X_RATIO, GRID_CENTER_X_OFFSET_PX, GRID_CENTER_Y_RATIO, GRID_CENTER_Y_OFFSET_PX } from '../../../config/GameConfig';
 import { GameAPI } from '../../../backend/GameAPI';
 import { SpinData, SpinDataUtils } from '../../../backend/SpinData';
 import { Symbols } from '../symbols/index';
 import { SoundEffectType } from '../../../managers/AudioManager';
 import { LoadingSpinner } from '../LoadingSpinner';
 import { ensureSpineFactory } from '../../../utils/SpineGuard';
+import { getOutWin } from '../Spin';
 import { AmplifyBetController } from './AmplifyBetController';
 import { TurboButtonController } from './TurboButtonController';
 import { MenuButtonController } from './MenuButtonController';
@@ -136,8 +137,8 @@ export class SlotController {
 	// Prevent re-enabling spin while win animations are pending
 	private pendingWinLock: boolean = false;
 
-	// Debug: visualize button hitboxes (red outlines)
-	private showButtonHitboxes: boolean = false;
+	// Debug: visualize button hitboxes (red outlines); default from GameConfig.SHOW_BUTTON_HITBOXES
+	private showButtonHitboxes: boolean = SHOW_BUTTON_HITBOXES;
 	private buttonHitboxGraphics: Phaser.GameObjects.Graphics | null = null;
 
 	constructor(networkManager: NetworkManager, screenModeManager: ScreenModeManager) {
@@ -174,32 +175,34 @@ export class SlotController {
 	}
 
 	/**
-	 * Initialize the loading spinner
-	 * Should be called after the scene and symbols are set up
+	 * Set the loading spinner (e.g. from Game scene so it's on the correct display list).
+	 * Call before create() if the scene creates the spinner.
+	 */
+	public setLoadingSpinner(spinner: LoadingSpinner): void {
+		this.loadingSpinner = spinner;
+		console.log('[SlotController] Loading spinner set from scene');
+	}
+
+	/**
+	 * Initialize the loading spinner if not already set by the scene
 	 */
 	private initializeLoadingSpinner(): void {
 		if (!this.scene) {
 			console.warn('[SlotController] Cannot initialize spinner - scene not set');
 			return;
 		}
-
-		// Center horizontally on screen; keep existing Y offset
-		const centerX = this.scene.scale.width * 0.5;
-		const centerY = this.scene.scale.height * 0.445;
-
-		this.loadingSpinner = new LoadingSpinner(this.scene, centerX, centerY);
-		console.log('[SlotController] Loading spinner initialized');
-	}
-
-	/**
-	 * Start the spinner timer (shows spinner after 2 seconds if still loading)
-	 * Delayed to allow previous symbols to clear before showing
-	 */
-	private startSpinnerTimer(): void {
-		if (!this.loadingSpinner) {
+		if (this.loadingSpinner) {
+			// Already set by Game scene – position at reel center
+			const centerX = this.scene.scale.width * GRID_CENTER_X_RATIO + GRID_CENTER_X_OFFSET_PX;
+			const centerY = this.scene.scale.height * GRID_CENTER_Y_RATIO + GRID_CENTER_Y_OFFSET_PX;
+			this.loadingSpinner.updatePosition(centerX, centerY);
 			return;
 		}
-		this.loadingSpinner.startDelayedShow();
+
+		const centerX = this.scene.scale.width * GRID_CENTER_X_RATIO + GRID_CENTER_X_OFFSET_PX;
+		const centerY = this.scene.scale.height * GRID_CENTER_Y_RATIO + GRID_CENTER_Y_OFFSET_PX;
+		this.loadingSpinner = new LoadingSpinner(this.scene, centerX, centerY);
+		console.log('[SlotController] Loading spinner initialized');
 	}
 
 	/**
@@ -390,12 +393,12 @@ export class SlotController {
 		this.symbols = symbols;
 		console.log('[SlotController] Symbols component reference set');
 		
-		// Update loading spinner position at center of symbols grid
+		// Update loading spinner position at center of reel (symbols grid)
 		if (this.loadingSpinner && this.scene) {
-			const centerX = this.scene.scale.width * 0.5;
-			const centerY = this.scene.scale.height * 0.445; // Same as symbols center
+			const centerX = this.scene.scale.width * GRID_CENTER_X_RATIO + GRID_CENTER_X_OFFSET_PX;
+			const centerY = this.scene.scale.height * GRID_CENTER_Y_RATIO + GRID_CENTER_Y_OFFSET_PX;
 			this.loadingSpinner.updatePosition(centerX, centerY);
-			console.log('[SlotController] Loading spinner position updated to symbols center');
+			console.log('[SlotController] Loading spinner position updated to reel center');
 		}
 	}
 
@@ -421,7 +424,7 @@ export class SlotController {
 		
 		// Initialize loading spinner at center of symbols grid
 		this.initializeLoadingSpinner();
-		
+
 		// Get GameData from the scene
 		if (scene.scene.key === 'Game') {
 			this.gameData = (scene as any).gameData;
@@ -3466,7 +3469,7 @@ export class SlotController {
 						? (tumble as any).symbols.out
 						: [];
 					for (const out of outsArr) {
-						const ow = Number(out?.win ?? 0);
+						const ow = getOutWin(out as any);
 						total += Number.isFinite(ow) ? ow : 0;
 					}
 				}
@@ -3549,9 +3552,17 @@ export class SlotController {
 
 		try {
 			let spinData: SpinData;
+			const spinStartTime = Date.now();
 
-				// Start spinner timer - show spinner if fetch takes longer than 2 seconds (after symbols clear)
-				this.startSpinnerTimer();
+				// Show loading spinner only while fetching API and when enabled
+				if (LOADING_SPINNER_ENABLED && this.loadingSpinner) {
+					console.log('[SlotController] Showing loading spinner (dijoker_loading)');
+					this.loadingSpinner.showNow();
+				} else if (!LOADING_SPINNER_ENABLED) {
+					// no-op when disabled
+				} else {
+					console.warn('[SlotController] No loadingSpinner instance – spinner will not show');
+				}
 
 				// In bonus mode, free spins are driven by FreeSpinController via FREE_SPIN_AUTOPLAY.
 				// Do NOT simulate free spins here, otherwise fake freeSpin.items can advance twice
@@ -3572,8 +3583,16 @@ export class SlotController {
 					const isInitFreeRound = inInitFreeRoundContext;
 					spinData = await this.gameAPI.doSpin(currentBet, false, isEnhancedBet, isInitFreeRound);
 					
-					// Hide spinner immediately after receiving data
-					this.hideSpinner();
+					// Hide spinner: if simulating, keep it visible for at least LOADING_SPINNER_SIMULATE_MIN_DISPLAY_MS
+					const elapsed = Date.now() - spinStartTime;
+					const hideDelay = LOADING_SPINNER_SIMULATE_MIN_DISPLAY_MS > 0
+						? Math.max(0, LOADING_SPINNER_SIMULATE_MIN_DISPLAY_MS - elapsed)
+						: 0;
+					if (hideDelay > 0) {
+						setTimeout(() => this.hideSpinner(), hideDelay);
+					} else {
+						this.hideSpinner();
+					}
 					
 					console.log('[SlotController] Spin data:', spinData);
 					
@@ -3827,6 +3846,15 @@ export class SlotController {
 			console.log('[SlotController] Dialog animations completed - checking if free spin display should be shown');
 			console.log('[SlotController] Current pendingFreeSpinsData:', this.pendingFreeSpinsData);
 			const isFake = !!this.gameAPI?.isFakeDataEnabled?.();
+			const shouldShowFreeSpins = gameStateManager.isBonus || !!this.pendingFreeSpinsData;
+			if (!shouldShowFreeSpins) {
+				// Ensure free spin UI never appears in normal mode.
+				this.hideFreeSpinDisplay();
+				this.freeSpinDisplayOverride = null;
+				this.shouldSubtractOneFromServerFsDisplay = false;
+				this.uiFsDecrementApplied = false;
+				return;
+			}
 
 			// Fake-data mode: free spin remaining display must come only from the current SpinData item's spinsLeft.
 			// Do not use overrides, pending scatter counts, Symbols counters, or UI-side decrements.
