@@ -647,12 +647,7 @@ export class BonusHeader {
 	 * Format currency value for display
 	 */
 	private formatCurrency(amount: number): string {
-		// Check if demo mode is active - if so, use blank currency symbol
 		const isDemo = (this.scene as any)?.gameAPI?.getDemoState();
-		const prefix = isDemo ? '' : CurrencyManager.getInlinePrefix();
-		const formatted = amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-		return `${prefix}${formatted}`;
-	}
 
 	/**
 	 * Get current winnings amount
