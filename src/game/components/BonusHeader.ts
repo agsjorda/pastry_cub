@@ -648,6 +648,22 @@ export class BonusHeader {
 	 */
 	private formatCurrency(amount: number): string {
 		const isDemo = (this.scene as any)?.gameAPI?.getDemoState();
+		
+		// Format with commas for thousands and 2 decimal places
+		const formatted = new Intl.NumberFormat('en-US', {
+			minimumFractionDigits: 2,
+			maximumFractionDigits: 2
+		}).format(amount);
+		
+		if (isDemo) {
+			return formatted;
+		}
+		
+		// Get currency prefix with proper spacing
+		const prefix = CurrencyManager.getCurrencyCode();
+		const space = prefix && !prefix.endsWith(' ') ? ' ' : '';
+		return `${prefix}${space}${formatted}`;
+	}
 
 	/**
 	 * Get current winnings amount
