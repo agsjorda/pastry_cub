@@ -1,10 +1,9 @@
 import { Scene } from 'phaser';
 import { SpinData } from '../../backend/SpinData';
 import { ensureSpineFactory } from '../../utils/SpineGuard';
-import { QUALIFYING_CLUSTER_COUNT } from './Spin';
+import { QUALIFYING_CLUSTER_COUNT, getOutCount, getOutWin } from './Spin';
 import { MIN_CLUSTER_SIZE, UI_CONFIG } from '../../config/GameConfig';
 import { Logger } from '../../utils/Logger';
-import { getMultiplierValue, isMultiplierSymbol } from '../../types/SymbolTypes';
 import { CurrencyManager } from './CurrencyManager';
 
 interface WinTrackerLayoutOptions {
@@ -13,8 +12,6 @@ interface WinTrackerLayoutOptions {
   spacing?: number;
   iconScale?: number;
   innerGap?: number;
-  multiplierIconScale?: number;
-  multiplierIconGap?: number;
 }
 
 interface SymbolSummary {
@@ -22,8 +19,6 @@ interface SymbolSummary {
   totalWin: number;
   multiplier: number;
   baseValue: number;
-  multiplierIcons?: Array<{ symbol: number; count: number }>;
-  multiplierCount?: number;
 }
 
 export class WinTracker {
@@ -39,8 +34,6 @@ export class WinTracker {
   private iconScale: number = 0.01;
   private innerGap: number = 13;
   private horizontalGap: number = 20;
-  private multiplierIconScale: number = 2;
-  private multiplierIconGap: number = 0.5;
   private autoHideTimer: Phaser.Time.TimerEvent | null = null;
   private pageTimer: Phaser.Time.TimerEvent | null = null;
   private pagedItems: Array<[number, SymbolSummary]> | null = null;
@@ -267,37 +260,15 @@ export class WinTracker {
       const outs = Array.isArray((tumble as any)?.symbols?.out) ? (tumble as any).symbols.out as Array<{ symbol?: number; count?: number; win?: number }> : [];
       for (const out of outs) {
         const symbolId = Number(out?.symbol);
-        const count = Number(out?.count) || 0;
-        const win = Number(out?.win) || 0;
-        // Only include clusters meeting minimum size as winning symbols
+        const count = getOutCount(out as any);
+        const win = getOutWin(out as any);
         if (!isFinite(symbolId) || count <= 0 || count < MIN_CLUSTER_SIZE) continue;
-        const existing = summary.get(symbolId) || { lines: 0, totalWin: 0, multiplier: 1, baseValue: 0, multiplierIcons: [], multiplierCount: 1 };
+        const existing = summary.get(symbolId) || { lines: 0, totalWin: 0, multiplier: 1, baseValue: 0 };
         existing.lines += count;
         existing.totalWin += win;
         summary.set(symbolId, existing);
       }
     }
-
-    // Derive multipliers from the current grid (slot.area)
-    const multiplierIconMap = new Map<number, number>();
-    let multiplierSum = 0;
-    try {
-      const area: number[][] = Array.isArray((spinData.slot as any)?.area) ? (spinData.slot as any).area : [];
-      for (let col = 0; col < area.length; col++) {
-        const column = area[col] || [];
-        for (let row = 0; row < column.length; row++) {
-          const value = Number(column[row]);
-          if (!isFinite(value)) continue;
-          if (value >= 10 && value <= 22) {
-            multiplierIconMap.set(value, (multiplierIconMap.get(value) || 0) + 1);
-            multiplierSum += this.getMultiplierNumeric(value);
-          }
-        }
-      }
-    } catch {}
-    // Show multiplier numeric total in WinTracker
-    const multiplierIcons: Array<{ symbol: number; count: number }> = [];
-    const multiplierCount = multiplierSum;
 
     for (const [symbolId, data] of Array.from(summary.entries())) {
       if (data.totalWin > 0 && data.lines > 0) {
@@ -305,9 +276,6 @@ export class WinTracker {
       } else {
         data.baseValue = 0;
       }
-      // Attach multiplier count to the row (numeric total)
-      data.multiplierIcons = multiplierIcons;
-      data.multiplierCount = multiplierCount > 0 ? multiplierCount : 0;
       summary.set(symbolId, data);
     }
 
@@ -343,28 +311,6 @@ export class WinTracker {
       }
     );
     countLabel.setOrigin(0.5, 0.5);
-    //countLabel.setShadow(1, .5, '#E7441E', 1, true, true);
-
-    // Display multiplier numeric total when present
-    const hasMultiplierText = Number.isFinite(data.multiplierCount) && (data.multiplierCount as number) > 0;
-    const multiplierLabel = hasMultiplierText
-      ? this.scene.add.text(
-          0,
-          0,
-          `x${data.multiplierCount}`,
-          {
-            fontSize: `${this.labelFontSize}px`,
-            color: '#ffffff',
-            fontFamily: this.labelFontFamily,
-            stroke: '#004D00',
-            strokeThickness: 4,
-            align: 'center'
-          }
-        )
-      : null;
-    if (multiplierLabel) {
-      multiplierLabel.setOrigin(0.5, 0.5);
-    }
 
     const eqLabel = this.scene.add.text(
       0,
@@ -404,38 +350,11 @@ export class WinTracker {
 
     const baseGap = this.innerGap;
     const gap = Math.max(6, Math.floor(baseGap * 0.6));
-    const iconGapBase = Math.max(2, Math.floor(gap * 0.5));
-    const iconGap = Math.max(1, Math.floor(iconGapBase * (this.multiplierIconGap || 1)));
 
-    const mulIcons: Phaser.GameObjects.Image[] = [];
-    let mulIconsWidth = 0;
-    const iconsArr: any[] = Array.isArray(data.multiplierIcons) ? (data.multiplierIcons as any[]) : [];
-    const hasMulIcons = iconsArr.length > 0;
-    if (hasMulIcons) {
-      const mulIconTargetH = Math.max(16, this.labelFontSize + 2);
-      for (const it of iconsArr) {
-        for (let i = 0; i < Math.max(0, Math.floor(it.count || 0)); i++) {
-          const mk = `symbol_${it.symbol}`;
-          const img = this.scene.add.image(0, 0, mk);
-          img.setOrigin(0.5, 0.5);
-          const srcH = (img as any).height || 0;
-          if (srcH > 0) {
-            const baseScale = mulIconTargetH / srcH;
-            img.setScale(baseScale * (this.multiplierIconScale || 1));
-          } else {
-            img.setScale(this.iconScale * 0.25 * (this.multiplierIconScale || 1));
-          }
-          mulIcons.push(img);
-        }
-      }
-      mulIconsWidth = mulIcons.reduce((acc, img) => acc + img.displayWidth, 0) + iconGap * Math.max(0, mulIcons.length - 1);
-    }
     const totalWidth =
       countLabel.displayWidth +
       gap +
       iconDW +
-      (hasMulIcons && mulIconsWidth > 0 ? (gap + mulIconsWidth) : 0) +
-      (multiplierLabel ? (gap + multiplierLabel.displayWidth) : 0) +
       gap +
       eqLabel.displayWidth +
       gap +
@@ -450,24 +369,7 @@ export class WinTracker {
     if (shadow) {
       shadow.setPosition(icon.x + this.shadowOffsetX, icon.y + this.shadowOffsetY);
     }
-    cursor += iconDW;
-
-    if (mulIcons.length > 0) {
-      cursor += gap;
-      for (let i = 0; i < mulIcons.length; i++) {
-        const img = mulIcons[i];
-        img.setPosition(cursor + img.displayWidth * 0.5, 0);
-        cursor += img.displayWidth + (i < mulIcons.length - 1 ? iconGap : 0);
-      }
-    }
-
-    if (multiplierLabel) {
-      cursor += gap;
-      multiplierLabel.setPosition(cursor + multiplierLabel.displayWidth * 0.5, 0);
-      cursor += multiplierLabel.displayWidth;
-    }
-
-    cursor += gap;
+    cursor += iconDW + gap;
 
     eqLabel.setPosition(cursor + eqLabel.displayWidth * 0.5, 0);
     cursor += eqLabel.displayWidth + gap;
@@ -479,8 +381,6 @@ export class WinTracker {
     }
     itemContainer.add(icon);
     itemContainer.add(countLabel);
-    for (const img of mulIcons) { itemContainer.add(img); }
-    if (multiplierLabel) { itemContainer.add(multiplierLabel); }
     itemContainer.add(eqLabel);
     itemContainer.add(valueLabel);
 
@@ -503,16 +403,14 @@ export class WinTracker {
     const summary = new Map<number, SymbolSummary>();
     for (const out of outs) {
       const symbolId = Number(out?.symbol);
-      const count = Number(out?.count) || 0;
-      const win = Number(out?.win) || 0;
+      const count = getOutCount(out as any);
+      const win = getOutWin(out as any);
       if (!isFinite(symbolId) || count < QUALIFYING_CLUSTER_COUNT || win <= 0) continue;
       const existing = summary.get(symbolId) || {
         lines: 0,
         totalWin: 0,
         multiplier: 1,
-        baseValue: 0,
-        multiplierIcons: [],
-        multiplierCount: 1
+        baseValue: 0
       };
       existing.lines += count;
       existing.totalWin += win;
@@ -520,31 +418,8 @@ export class WinTracker {
     }
     if (summary.size === 0) return null;
 
-    // Attach multipliers from current grid state
-    const multiplierIconMap = new Map<number, number>();
-    let multiplierSum = 0;
-    try {
-      const area: number[][] = Array.isArray((spinData as any)?.slot?.area) ? (spinData as any).slot.area : [];
-      for (let c = 0; c < area.length; c++) {
-        const col = area[c] || [];
-        for (let r = 0; r < col.length; r++) {
-          const v = Number(col[r]);
-          if (!isFinite(v)) continue;
-          if (v >= 10 && v <= 22) {
-            multiplierIconMap.set(v, (multiplierIconMap.get(v) || 0) + 1);
-            multiplierSum += this.getMultiplierNumeric(v);
-          }
-        }
-      }
-    } catch {}
-    // Show multiplier numeric total in WinTracker
-    const multiplierIcons: Array<{ symbol: number; count: number }> = [];
-    const multiplierCount = multiplierSum;
-
     for (const [symbolId, data] of Array.from(summary.entries())) {
       data.baseValue = data.totalWin > 0 && data.lines > 0 ? (data.totalWin / data.lines) : 0;
-      data.multiplierIcons = multiplierIcons;
-      data.multiplierCount = multiplierCount > 0 ? multiplierCount : 0;
       summary.set(symbolId, data);
     }
     return summary;
@@ -556,63 +431,35 @@ export class WinTracker {
       if (symbolId >= 0 && symbolId <= 7) {
         if (ensureSpineFactory(this.scene, 'WinTracker')) {
           const sugarKey = `symbol_${symbolId}_sugar_spine`;
-          const sugarAtlasKey = `${sugarKey}-atlas`;
-          const go: any = (this.scene.add as any).spine?.(0, 0, sugarKey, sugarAtlasKey);
-          if (go) {
-            try { go.setOrigin?.(0.5, 0.5); } catch {}
-            // Small icon scale
-            try { go.setScale?.(this.iconScale); } catch {}
-            // Play idle if present
-            try {
-              const idle = `Symbol${symbolId}_SW_Idle`;
-              if (go.animationState?.setAnimation) {
-                const entry = go.animationState.setAnimation(0, idle, true);
-                try {
-                  const duration = (go as any)?.skeleton?.data?.findAnimation?.(idle)?.duration;
-                  if (typeof duration === 'number' && duration > 0 && entry) {
-                    (entry as any).trackTime = Math.random() * duration;
-                  }
-                } catch {}
-                try {
-                  const speedJitter = 0.95 + Math.random() * 0.1;
-                  (go.animationState as any).timeScale = speedJitter;
-                } catch {}
-              }
-            } catch {}
-            return { icon: go, isSpine: true };
-          }
-        }
-      }
-    } catch {}
-
-    // Try multipliers (10–22) using Symbol10_BZ spine
-    try {
-      if (symbolId >= 10 && symbolId <= 22) {
-        if (ensureSpineFactory(this.scene, 'WinTracker')) {
-          const multiKey = `symbol_10_sugar_spine`;
-          const multiAtlasKey = `${multiKey}-atlas`;
-          const go: any = (this.scene.add as any).spine?.(0, 0, multiKey, multiAtlasKey);
-          if (go) {
-            try { go.setOrigin?.(0.5, 0.5); } catch {}
-            try { go.setScale?.(this.iconScale); } catch {}
-            try {
-              const base = this.getMultiplierAnimationBase(symbolId);
-              const idle = base ? `${base}_idle` : null;
-              if (idle && go.animationState?.setAnimation) {
-                const entry = go.animationState.setAnimation(0, idle, true);
-                try {
-                  const duration = (go as any)?.skeleton?.data?.findAnimation?.(idle)?.duration;
-                  if (typeof duration === 'number' && duration > 0 && entry) {
-                    (entry as any).trackTime = Math.random() * duration;
-                  }
-                } catch {}
-                try {
-                  const speedJitter = 0.95 + Math.random() * 0.1;
-                  (go.animationState as any).timeScale = speedJitter;
-                } catch {}
-              }
-            } catch {}
-            return { icon: go, isSpine: true };
+          // Check if the spine JSON is loaded before trying to create it
+          if (!this.scene.cache.json.has(sugarKey)) {
+            // Spine not loaded yet, fall through to PNG fallback
+          } else {
+            const sugarAtlasKey = `${sugarKey}-atlas`;
+            const go: any = (this.scene.add as any).spine?.(0, 0, sugarKey, sugarAtlasKey);
+            if (go) {
+              try { go.setOrigin?.(0.5, 0.5); } catch {}
+              // Small icon scale
+              try { go.setScale?.(this.iconScale); } catch {}
+              // Play idle if present
+              try {
+                const idle = `Symbol${symbolId}_SW_Idle`;
+                if (go.animationState?.setAnimation) {
+                  const entry = go.animationState.setAnimation(0, idle, true);
+                  try {
+                    const duration = (go as any)?.skeleton?.data?.findAnimation?.(idle)?.duration;
+                    if (typeof duration === 'number' && duration > 0 && entry) {
+                      (entry as any).trackTime = Math.random() * duration;
+                    }
+                  } catch {}
+                  try {
+                    const speedJitter = 0.95 + Math.random() * 0.1;
+                    (go.animationState as any).timeScale = speedJitter;
+                  } catch {}
+                }
+              } catch {}
+              return { icon: go, isSpine: true };
+            }
           }
         }
       }
@@ -620,25 +467,19 @@ export class WinTracker {
 
     // Fallback to PNG sprite
     const key = `symbol_${symbolId}`;
+    // Check if the texture exists before trying to create the image
+    if (!this.scene.textures.exists(key)) {
+      console.warn(`[WinTracker] Texture not found for symbol ${symbolId} (key: ${key}), creating placeholder`);
+      // Create a placeholder rectangle if texture doesn't exist
+      const placeholder = this.scene.add.rectangle(0, 0, 40, 40, 0x888888);
+      placeholder.setOrigin(0.5, 0.5);
+      placeholder.setScale(this.iconScale);
+      return { icon: placeholder, isSpine: false };
+    }
     const img = this.scene.add.image(0, 0, key);
     img.setOrigin(0.5, 0.5);
     img.setScale(this.iconScale);
     return { icon: img, isSpine: false };
-  }
-
-  private getMultiplierAnimationBase(value: number): string | null {
-    return (value >= 10 && value <= 22) ? 'Symbol10_BZ' : null;
-  }
-
-  private getMultiplierValueForSymbol(symbolId: number | undefined): number {
-    // Use centralized multiplier value function from SymbolTypes
-    return getMultiplierValue(Number(symbolId));
-  }
-
-  // Map multiplier symbol value (10–22) to numeric multiplier
-  // Delegates to centralized SymbolTypes utility
-  private getMultiplierNumeric(value: number): number {
-    return getMultiplierValue(value);
   }
 
   public setLayout(options: WinTrackerLayoutOptions): void {
@@ -656,12 +497,6 @@ export class WinTracker {
     }
     if (typeof options.innerGap === 'number' && options.innerGap >= 0) {
       this.innerGap = options.innerGap;
-    }
-    if (typeof options.multiplierIconScale === 'number' && options.multiplierIconScale > 0) {
-      this.multiplierIconScale = options.multiplierIconScale;
-    }
-    if (typeof options.multiplierIconGap === 'number' && options.multiplierIconGap > 0) {
-      this.multiplierIconGap = options.multiplierIconGap;
     }
 
     if (this.container) {

@@ -15,8 +15,6 @@ export enum SoundEffectType {
 	SCATTER_NOMNOM = 'scatter_nomnom',
 	MENU_CLICK = 'menu_click',
 	SPIN_CLICK = 'spin_click',
-	MULTIPLIER_TRIGGER = 'multitrigger',
-	TRANSITION_BZ = 'transition_bz',
 	WHISTLE_BB = 'whistle_bb',
 	SCATTER = 'scatter',
 	// Tumble-driven symbol-win SFX (play per tumble index)
@@ -210,15 +208,6 @@ export class AudioManager {
 				console.warn('[AudioManager] Failed to create coin_drop_bz SFX instance:', e);
 			}
 
-			// Create multiplier trigger / bomb SFX instance (bonus-mode multipliers)
-			try {
-				const bombSfx = this.scene.sound.add('bomb_bz', { volume: this.sfxVolume, loop: false });
-				this.sfxInstances.set(SoundEffectType.MULTIPLIER_TRIGGER, bombSfx);
-				console.log('[AudioManager] Multiplier trigger (bomb_bz) SFX instance created');
-			} catch (e) {
-				console.warn('[AudioManager] Failed to create bomb_bz SFX instance:', e);
-			}
-
 			// Tumble explosion SFX (after twin sounds)
 			try {
 				const tbombSfx = this.scene.sound.add('tbomb_bz', { volume: this.sfxVolume, loop: false });
@@ -226,15 +215,6 @@ export class AudioManager {
 				console.log('[AudioManager] Tumble bomb (tbomb_bz) SFX instance created');
 			} catch (e) {
 				console.warn('[AudioManager] Failed to create tbomb_bz SFX instance:', e);
-			}
-
-			// Transition_BZ SFX instance (anticipation_BB)
-			try {
-				const transitionBzSfx = this.scene.sound.add('ghost_whisper_bz', { volume: this.sfxVolume, loop: false });
-				this.sfxInstances.set(SoundEffectType.TRANSITION_BZ, transitionBzSfx);
-				console.log('[AudioManager] Transition_BZ (anticipation_BB) SFX instance created');
-			} catch (e) {
-				console.warn('[AudioManager] Failed to create Transition_BZ (anticipation_BB) SFX instance:', e);
 			}
 
 			// Radial light transition whistle SFX

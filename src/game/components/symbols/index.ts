@@ -19,7 +19,6 @@ export { SymbolOverlay } from './SymbolOverlay';
 
 // Specialized controllers
 export { FreeSpinController } from './FreeSpinController';
-export { MultiplierSymbols } from './MultiplierSymbols';
 
 // Types (for TypeScript consumers)
 export type {

@@ -12,9 +12,9 @@ export { CLOCK_DISPLAY_NAME, GAME_DISPLAY_NAME, CLOCK_DISPLAY_CONFIG } from './G
 /** WinTracker position and icon size (symbol win strip) */
 export const WIN_TRACKER_LAYOUT = {
   /** Vertical offset from base position (negative = up, positive = down) */
-  offsetY: -115,
+  offsetY: 220,
   /** Scale of symbol icons in the strip */
-  iconScale: 0.02,
+  iconScale: 0.3,
 } as const;
 
 /** Header layout (Header_SceneFrame and Header_WinBar position and scale) */
@@ -35,6 +35,10 @@ export const HEADER_CONFIG = {
   WIN_BAR_OFFSET_Y: -30,
   /** Scale multiplier for Header_WinBar. 1 = width-fit, < 1 = smaller, > 1 = larger. */
   WIN_BAR_SCALE: 1,
+  /** Conveyor top (inside frame): scale multiplier. 1 = same as width-fit, < 1 = smaller, > 1 = larger. */
+  CONVEYOR_TOP_SCALE: 0.6,
+  /** Conveyor top (inside frame): Y offset (px) from frame top. Positive = down, negative = up. */
+  CONVEYOR_TOP_OFFSET_Y: 115,
 } as const;
 
 // =============================================================================
@@ -70,6 +74,26 @@ export const PRELOADER_CONFIG = {
 } as const;
 
 // =============================================================================
+// LOADING SPINNER (in-game spin wait indicator)
+// =============================================================================
+/** When true, show the loading spinner while fetching spin API. When false, spinner never shows. */
+export const LOADING_SPINNER_ENABLED = false;
+/** Minimum time (ms) to show the loading spinner when spin is pressed (simulate slow network). Set to 0 to hide as soon as data arrives. */
+export const LOADING_SPINNER_SIMULATE_MIN_DISPLAY_MS = 2000;
+/** Target height of DI JOKER spine as ratio of scene height (e.g. 0.28 = 28%). Used to scale the spine for different screen sizes. */
+export const LOADING_SPINNER_SPINE_HEIGHT_RATIO = 0.28;
+/** Playback speed of DI JOKER spine animation (1 = normal, 0.5 = half speed, 2 = double speed). */
+export const LOADING_SPINNER_SPINE_TIME_SCALE = 0.5;
+/** Alpha of the loading spinner (1 = opaque, 0.75 = slightly transparent). */
+export const LOADING_SPINNER_ALPHA = 0.75;
+
+// =============================================================================
+// IDLE / SESSION TIMEOUT
+// =============================================================================
+/** Idle / session timeout (minutes); converted to ms where needed. */
+export const MAX_IDLE_TIME_MINUTES: number = 5; // 5 minutes (use 0.25 for 15 seconds during testing)
+
+// =============================================================================
 // GAME SCENE (main play scene)
 // =============================================================================
 /** Physics world height = scale.height - this offset */
@@ -93,28 +117,7 @@ export const SCATTER_SYMBOL: number[] = [0];
 export const SCATTER_SYMBOL_ID: number = 0;
 /** Regular pay symbols (cluster pays) */
 export const NORMAL_SYMBOLS: number[] = [1, 2, 3, 4, 5, 6, 7];
-/** Multiplier bomb symbols (15 symbols: IDs 8–22) */
-export const MULTIPLIER_SYMBOLS: number[] = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22];
-export const ALL_SYMBOLS: number[] = [...SCATTER_SYMBOL, ...NORMAL_SYMBOLS, ...MULTIPLIER_SYMBOLS];
-
-/** Maps multiplier symbol IDs (8–22) to their numeric multiplier values (2×–500×) */
-export const MULTIPLIER_VALUES: Record<number, number> = {
-  8: 2,
-  9: 3,
-  10: 4,
-  11: 5,
-  12: 6,
-  13: 8,
-  14: 10,
-  15: 12,
-  16: 15,
-  17: 20,
-  18: 25,
-  19: 50,
-  20: 100,
-  21: 250,
-  22: 500,
-};
+export const ALL_SYMBOLS: number[] = [...SCATTER_SYMBOL, ...NORMAL_SYMBOLS];
 
 /** Minimum cluster size to trigger a win (connected horizontally and vertically) */
 export const MIN_CLUSTER_SIZE: number = 5;
@@ -192,10 +195,6 @@ export const CONVEYOR_ANIMATION_TIME_SCALE: number = 1;
 // ANIMATION CONFIGURATION
 // =============================================================================
 export const ANIMATION_CONFIG = {
-  /** Multiplier visual scale boost (applied on top of base scale) */
-  MULTIPLIER_VISUAL_SCALE: 1.6,
-  /** Stagger between triggering multiplier symbols (ms) */
-  MULTIPLIER_TRIGGER_STAGGER_MS: 800,
   /** Symbol hop height for drop animation */
   SYMBOL_HOP_HEIGHT: 10,
   /** Symbol bounce after landing */
@@ -273,8 +272,6 @@ export const GRID_OVERLAY_PADDING = { x: 9, y: 8, offsetX: 1, offsetY: 0.7 } as 
 export const ANIMATION_STAGGER_MS = 50;
 export const SCALE_UP_DELAY_MS = 500;
 export const WIN_TEXT_DELAY_MS = 800;
-export const MULTIPLIER_STAGGER_MS = 800;
-export const MULTIPLIER_OVERLAY_DELAY_MS = 250;
 export const SCATTER_SHRINK_DURATION_MS = 350;
 export const SCATTER_MOVE_DURATION_MS = 500;
 export const SCATTER_GATHER_DURATION_MS = 800;
@@ -290,10 +287,19 @@ export const SPINE_SYMBOL_SCALES: Record<number, number> = {
 };
 export const DEFAULT_SPINE_SCALE = 0.6;
 export const SPINE_SCALE_ADJUSTMENT = 0.93;
-export const SYMBOL_MULTIPLIER_VISUAL_SCALE = 1.2;
 export const SCATTER_ANIMATION_SCALE = 1.8;
 export const SCATTER_GATHER_SCALE = 2.5;
 export const SCATTER_RETRIGGER_SCALE = 1.5;
+
+// =============================================================================
+// DEBUG / VISUAL (dev toggles – easy to find)
+// =============================================================================
+/** When true, draw a red border around symbols that are part of a win (cluster/tumble). */
+export const SHOW_WIN_BORDER_SYMBOLS: boolean = true;
+/** When true, draw a red border around the reel/grid container. */
+export const SHOW_REEL_BORDER: boolean = false;
+/** When true, draw hitboxes for controller buttons. */
+export const SHOW_BUTTON_HITBOXES: boolean = false;
 
 // =============================================================================
 // SYMBOL DEPTH (Z-ordering)
@@ -305,9 +311,3 @@ export const DEPTH_OVERLAY_CONTAINER = 930;
 export const DEPTH_RETRIGGER_SYMBOL = 931;
 export const DEPTH_WIN_LINES = 1000;
 
-// =============================================================================
-// SYMBOL ASSET MAPPING (spine base name → symbol IDs)
-// =============================================================================
-export const MULTIPLIER_ANIMATION_BASES: Record<string, number[]> = {
-  'Symbol10_BZ': [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22],
-};

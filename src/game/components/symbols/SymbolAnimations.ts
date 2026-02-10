@@ -16,9 +16,7 @@ import {
   DEFAULT_SPINE_SCALE,
   SPINE_SCALE_ADJUSTMENT,
   SCALE_UP_DELAY_MS,
-  SYMBOL_MULTIPLIER_VISUAL_SCALE,
 } from '../../../config/GameConfig';
-import { MultiplierSymbols } from './MultiplierSymbols';
 
 /**
  * Handles animations for symbol objects
@@ -215,11 +213,7 @@ export class SymbolAnimations {
             : null;
           
           if (value !== null) {
-            if (MultiplierSymbols.isMultiplier(value)) {
-              idleName = MultiplierSymbols.getIdleAnimationName(value);
-            } else {
-              idleName = `Symbol${value}_SW_Idle`;
-            }
+            idleName = `Symbol${value}_SW_Idle`;
           }
         } catch { /* ignore */ }
 
@@ -309,7 +303,7 @@ export class SymbolAnimations {
   /**
    * Schedule a scale-up effect after a delay
    */
-  public scheduleScaleUp(obj: any, delayMs: number = SCALE_UP_DELAY_MS, scaleFactor: number = SYMBOL_MULTIPLIER_VISUAL_SCALE): void {
+  public scheduleScaleUp(obj: any, delayMs: number = SCALE_UP_DELAY_MS, scaleFactor: number = 1.2): void {
     try {
       const baseX = obj?.scaleX ?? 1;
       const baseY = obj?.scaleY ?? 1;

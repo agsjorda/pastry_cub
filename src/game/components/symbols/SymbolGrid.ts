@@ -29,15 +29,13 @@ import {
   GRID_MASK_GRADIENT_FADE_HEIGHT,
   GRID_OVERLAY_PADDING,
   DEPTH_SYMBOL_DEFAULT,
+  SHOW_REEL_BORDER,
 } from '../../../config/GameConfig';
 
 /**
  * Manages the symbol grid for the slot game
  */
 export class SymbolGrid {
-  /** Set true to show a red border around the reel container (debug) */
-  public static SHOW_REEL_BORDER: boolean = false;
-
   /** Reference to the game scene */
   private scene: Game;
 
@@ -125,7 +123,7 @@ export class SymbolGrid {
     this.reelBorderGraphics.lineStyle(2, 0xff0000, 1);
     this.reelBorderGraphics.strokeRect(maskX, maskY, maskW, maskH);
     this.reelBorderGraphics.setDepth(10000);
-    this.reelBorderGraphics.setVisible(SymbolGrid.SHOW_REEL_BORDER);
+    this.reelBorderGraphics.setVisible(SHOW_REEL_BORDER);
 
     console.log(`[SymbolGrid] Mask created with padding - Left: ${GRID_MASK_PADDING.left}, Right: ${GRID_MASK_PADDING.right}, Top: ${GRID_MASK_PADDING.top}, Bottom: ${GRID_MASK_PADDING.bottom}, Gradient: ${GRID_MASK_GRADIENT_FADE_HEIGHT}px`);
   }
@@ -257,7 +255,6 @@ export class SymbolGrid {
 
   /** Show or hide the red debug border around the reel container */
   public setReelBorderVisible(visible: boolean): void {
-    SymbolGrid.SHOW_REEL_BORDER = visible;
     if (this.reelBorderGraphics) {
       this.reelBorderGraphics.setVisible(visible);
     }

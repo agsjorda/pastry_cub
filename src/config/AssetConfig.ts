@@ -35,30 +35,25 @@ export class AssetConfig {
 				'BG-Default': `${prefix}/background/NormalGame.webp`,
 				'normal-bg-cover': `${prefix}/background/ControllerNormal_PC.png`,
 				'meter': `${prefix}/background/Meter1.png`,
-				'loading-spinner': `assets/portrait/high/loading/loading-spinner.png`,
-				'shine': `assets/portrait/high/background/shine.png`
+				'shine': `assets/portrait/high/background/shine.png`,
+				'dijoker_loading': `${prefix}/dijoker_loading/DI JOKER.png`
 			},
 			spine: {
 				'BG_Conveyor_PC': {
 					atlas: `${prefix}/conveyor/BG_Conveyor_PC.atlas`,
 					json: `${prefix}/conveyor/BG_Conveyor_PC.json`
+				},
+				'di_joker': {
+					atlas: `${prefix}/dijoker_loading/DI JOKER.atlas`,
+					json: `${prefix}/dijoker_loading/DI JOKER.json`
 				}
 			}
 		};
 	}
 
 	getBonusBackgroundAssets(): AssetGroup {
-		const prefix = this.getAssetPrefix();
-
-		// Reuse normal game background and controller assets to minimize uploads (no bonus spine)
-		return {
-			images: {
-				'BG-Bonus': `${prefix}/background/NormalGame.webp`,
-				'bonus-bg-cover': `${prefix}/background/ControllerNormal_PC.png`,
-				'meter': `${prefix}/background/Meter1.png`,
-			},
-			spine: {}
-		};
+		// Same layout and assets as normal game
+		return this.getBackgroundAssets();
 	}
 
 	getHeaderAssets(): AssetGroup {
@@ -70,21 +65,18 @@ export class AssetConfig {
 				'Header_SceneFrame': `${prefix}/header/Header_SceneFrame.webp`,
 				'Header_WinBar': `${prefix}/header/Header_WinBar.webp`
 			},
-			spine: {}
+			spine: {
+				'BG_ConveyorTop_PC': {
+					atlas: `${prefix}/conveyor/BG_ConveyorTop_PC.atlas`,
+					json: `${prefix}/conveyor/BG_ConveyorTop_PC.json`
+				}
+			}
 		};
 	}
 
 	getBonusHeaderAssets(): AssetGroup {
-		const prefix = this.getAssetPrefix();
-
-		return {
-			images: {
-				'Header_Scene': `${prefix}/header/Header_Scene.webp`,
-				'Header_SceneFrame': `${prefix}/header/Header_SceneFrame.webp`,
-				'Header_WinBar': `${prefix}/header/Header_WinBar.webp`
-			},
-			spine: {}
-		};
+		// Same layout and assets as normal game (including conveyor top)
+		return this.getHeaderAssets();
 	}
 
 
@@ -136,9 +128,9 @@ export class AssetConfig {
 		const symbolImages: { [key: string]: string } = {};
 		const symbolSpine: { [key: string]: { atlas: string; json: string } } = {};
 
-		// Symbol Spine: 0-7 (scatter + regular), 10 (multiplier base). Symbols 8-9, 11-22 use Symbol10 as fallback.
+		// Symbol Spine: 0-7 (scatter + regular)
 		const pcPath = 'assets/symbols/high/pastry_cub_symbols';
-		for (const i of [0, 1, 2, 3, 4, 5, 6, 7, 10]) {
+		for (const i of [0, 1, 2, 3, 4, 5, 6, 7]) {
 			const spineKey = `symbol_${i}_sugar_spine`;
 			symbolSpine[spineKey] = { atlas: `${pcPath}/Symbol${i}_${suffix}.atlas`, json: `${pcPath}/Symbol${i}_${suffix}.json` };
 		}
@@ -150,19 +142,6 @@ export class AssetConfig {
 			symbolImages[`symbol_${i}`] = spritePath;
 		}
 
-		// Multiplier overlays: symbol ID -> overlay label (matches GameConfig.MULTIPLIER_VALUES)
-		const overlayMap: { [value: number]: string } = {
-			8: '2', 9: '3', 10: '4', 11: '5', 12: '6', 13: '8', 14: '10', 15: '12',
-			16: '15', 17: '20', 18: '25', 19: '50', 20: '100', 21: '250', 22: '500'
-		};
-		Object.entries(overlayMap).forEach(([valueStr, label]) => {
-			const value = Number(valueStr);
-			const key = `multiplier_overlay_${value}`;
-			const path = `assets/symbols/high/pastry_cub_symbols/multiplier_symbols/${label}.webp`;
-			symbolImages[key] = path;
-			console.log(`[AssetConfig] Multiplier overlay ${value}: ${path}`);
-		});
-		
 		// Symbol removal explosion VFX
 		symbolSpine['Explosion_BZ_VFX'] = {
 			atlas: `assets/symbols/high/pastry_cub_symbols/Explosion_BZ_VFX.atlas`,
@@ -329,10 +308,6 @@ export class AssetConfig {
 				'FreeSpinRetri_BZ': {
 					atlas: `${prefix}/dialogs/FreeSpinRetri_BZ.atlas`,
 					json: `${prefix}/dialogs/FreeSpinRetri_BZ.json`
-				},
-				'Transition_BZ': {
-					atlas: `${prefix}/dialogs/Transition_BZ.atlas`,
-					json: `${prefix}/dialogs/Transition_BZ.json`
 				}
 			}
 		};
@@ -431,10 +406,9 @@ export class AssetConfig {
 				'nomnom_bz': 'assets/sounds/SFX/nomnom_sw.ogg',
 				'coin_throw_bz': 'assets/sounds/SFX/coin_throw_ka.ogg',
 				'coin_drop_bz': 'assets/sounds/SFX/coin_drop_ka.ogg',
-				// Multiplier trigger / bomb SFX (bonus-mode multipliers)
+				// Tumble bomb SFX
 				'bomb_bz': 'assets/sounds/SFX/bomb_sw.ogg',
 				'tbomb_bz': 'assets/sounds/SFX/tbomb_BB.ogg',
-				// Transition_BZ SFX (anticipation_BB)
 				'ghost_whisper_bz': 'assets/sounds/SFX/anticipation_BB.ogg',
 				// Radial light transition whistle SFX
 				'whistle_bz': 'assets/sounds/SFX/whistle_BB.ogg',

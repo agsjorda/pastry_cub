@@ -15,12 +15,6 @@ export enum GameEventType {
   TUMBLE_COLUMNS_DONE = 'TUMBLE_COLUMNS_DONE',     // payload: { columns: number[] }
   TUMBLE_WIN_PROGRESS = 'TUMBLE_WIN_PROGRESS',     // payload: { cumulativeWin: number }
   TUMBLE_SEQUENCE_DONE = 'TUMBLE_SEQUENCE_DONE',   // payload: { totalWin: number }
-  // Bonus multiplier trigger
-  MULTIPLIERS_TRIGGERED = 'MULTIPLIERS_TRIGGERED', // payload: { spinTotal: number, multiplierSum: number }
-  // Emitted each time a multiplier PNG reaches the winnings display center
-  MULTIPLIER_ARRIVED = 'MULTIPLIER_ARRIVED', // payload: { spinTotal: number, weight: number }
-  // Emitted after all multiplier animations have completed (including overlay animations to center)
-  MULTIPLIER_ANIMATIONS_COMPLETE = 'MULTIPLIER_ANIMATIONS_COMPLETE',
   // Emitted after scatter retrigger animation sequence has completed
   SCATTER_RETRIGGER_ANIMATION_COMPLETE = 'SCATTER_RETRIGGER_ANIMATION_COMPLETE',
   // Emitted after Symbol0 retrigger animation sequence has completed

@@ -29,7 +29,13 @@ export function normalizeAreaToGameConfig(area: number[][] | undefined): number[
     const col: number[] = [];
     const srcCol = Array.isArray(area) && area[c] ? area[c] : [];
     for (let r = 0; r < rows; r++) {
-      col[r] = typeof srcCol[r] === 'number' ? srcCol[r] : PAD_SYMBOL;
+      let symbolValue = typeof srcCol[r] === 'number' ? srcCol[r] : PAD_SYMBOL;
+      // Replace symbols 8 and 9 (multiplier symbols 2x, 3x - not yet implemented) with symbol 0 (scatter)
+      // TODO: Remove this filter when multiplier functionality is implemented
+      if (symbolValue === 8 || symbolValue === 9) {
+        symbolValue = 0;
+      }
+      col[r] = symbolValue;
     }
     result.push(col);
   }

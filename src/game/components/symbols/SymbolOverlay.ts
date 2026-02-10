@@ -17,7 +17,6 @@ import {
   OVERLAY_FADE_IN_DURATION_MS,
   OVERLAY_FADE_OUT_DURATION_MS,
 } from '../../../config/GameConfig';
-import { MultiplierSymbols } from './MultiplierSymbols';
 import { CurrencyManager } from '../CurrencyManager';
 
 /**
@@ -264,70 +263,6 @@ export class SymbolOverlay {
     } catch { /* ignore */ }
     
     return text;
-  }
-
-  // ============================================================================
-  // MULTIPLIER OVERLAYS
-  // ============================================================================
-
-  /**
-   * Attach a multiplier number overlay to a symbol
-   */
-  public attachMultiplierOverlay(
-    symbol: SymbolObject,
-    symbolValue: number,
-    x: number,
-    y: number,
-    displayWidth: number,
-    container: Phaser.GameObjects.Container
-  ): void {
-    const overlayKey = MultiplierSymbols.getOverlayKey(symbolValue);
-    if (!overlayKey) return;
-    
-    try {
-      if (!this.scene.textures.exists(overlayKey)) {
-        return;
-      }
-      
-      const overlay = this.scene.add.image(x, y, overlayKey);
-      if (!overlay) return;
-      
-      overlay.setOrigin(0.5, 0.5);
-      // Hide multiplier number until its win animation triggers.
-      overlay.setVisible(false);
-      
-      // Scale overlay relative to symbol box (+50% larger)
-      const desiredWidth = Math.max(3, displayWidth * .9);
-      const textureWidth = Math.max(1, overlay.width);
-      const scale = desiredWidth / textureWidth;
-      overlay.setScale(scale);
-      
-      // Add bounce animation
-      try {
-        const bounceTween = this.scene.tweens.add({
-          targets: overlay,
-          scaleX: scale * 0.88,
-          scaleY: scale * 0.88,
-          duration: 300,
-          yoyo: true,
-          repeat: -1,
-          ease: Phaser.Math.Easing.Sine.InOut,
-        });
-        (overlay as any).__bounceTween = bounceTween;
-      } catch { /* ignore */ }
-      
-      // Set depth above base symbol
-      try {
-        const baseDepth = (symbol && typeof symbol.depth === 'number') ? symbol.depth : 0;
-        overlay.setDepth(baseDepth + 1);
-      } catch { /* ignore */ }
-      
-      // Add to container
-      container.add(overlay);
-      
-      // Store reference on symbol
-      (symbol as any).__overlayImage = overlay;
-    } catch { /* ignore */ }
   }
 
   /**

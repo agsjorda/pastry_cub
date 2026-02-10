@@ -5,6 +5,7 @@ import { gameEventManager, GameEventType } from '../../event/EventManager';
 import { gameStateManager } from '../../managers/GameStateManager';
 import { CurrencyManager } from './CurrencyManager';
 import { HEADER_CONFIG } from '../../config/GameConfig';
+import { ensureSpineFactory } from '../../utils/SpineGuard';
 
 export class BonusHeader {
 	private bonusHeaderContainer!: Phaser.GameObjects.Container;
@@ -12,6 +13,7 @@ export class BonusHeader {
 	private screenModeManager: ScreenModeManager;
 	private amountText!: Phaser.GameObjects.Text;
 	private youWonText!: Phaser.GameObjects.Text;
+	private conveyorTopSpine: any = null;
 	private currentWinnings: number = 0;
 	// Tracks cumulative total during bonus mode by incrementing each spin's subtotal
 	private cumulativeBonusWin: number = 0;
@@ -22,15 +24,7 @@ export class BonusHeader {
 	private skipNextSpinAccumulation: boolean = false;
 	// Track if we've already accumulated this spin's total (prevents double add with WIN_STOP)
 	private accumulatedThisSpin: boolean = false;
-	// Multiplier arrival progressive display
-	private multiplierCumulative: number = 0;
-	private multiplierSpinTotal: number = 0;
-	private multipliersActive: boolean = false; // Track if multipliers are currently animating
-	private hadMultipliersThisSpin: boolean = false; // Track if multipliers were triggered this spin (for WIN_STOP timing)
-	private expectedMultiplierCount: number = 0; // Expected number of multipliers for this spin
-	private receivedMultiplierCount: number = 0; // Number of multipliers that have arrived
-	private allMultipliersComplete: boolean = false; // Flag to confirm all multipliers are fully displayed and animated
-	private showingTotalWin: boolean = false; // Flag to prevent multipliers from overwriting TOTAL WIN
+	private showingTotalWin: boolean = false;
 	private scene: Scene | null = null;
 	private headerSceneImage?: Phaser.GameObjects.Image;
 	private headerSceneFrameImage?: Phaser.GameObjects.Image;
@@ -123,6 +117,10 @@ export class BonusHeader {
 			);
 			this.bonusHeaderContainer.add(this.headerSceneImage);
 		}
+
+		// Conveyor top (same as normal header): at top inside frame, above Header_Scene
+		this.createConveyorTopSpine(scene, centerXView);
+
 		if (scene.textures.exists('Header_WinBar')) {
 			const frameHeight = this.getHeaderImageDisplayHeight(scene, 'Header_SceneFrame');
 			const winBarY = HEADER_CONFIG.SCENE_FRAME_OFFSET_Y + frameHeight + HEADER_CONFIG.WIN_BAR_OFFSET_Y;
@@ -152,6 +150,46 @@ export class BonusHeader {
 		const scale = scene.scale.width / texture.width;
 		const scaleMultiplier = key === 'Header_SceneFrame' ? HEADER_CONFIG.SCENE_FRAME_SCALE : 1;
 		return texture.height * scale * scaleMultiplier;
+	}
+
+	/** Conveyor top spine at the top inside Header_SceneFrame (same as normal header). */
+	private createConveyorTopSpine(scene: Scene, centerXView: number): void {
+		if (!ensureSpineFactory(scene, '[BonusHeader] createConveyorTopSpine') || !scene.cache.json.has('BG_ConveyorTop_PC')) {
+			scene.time.delayedCall(300, () => this.createConveyorTopSpine(scene, centerXView));
+			return;
+		}
+		try {
+			const x = centerXView + HEADER_CONFIG.SCENE_FRAME_OFFSET_X;
+			const y = HEADER_CONFIG.SCENE_FRAME_OFFSET_Y + HEADER_CONFIG.CONVEYOR_TOP_OFFSET_Y;
+			this.conveyorTopSpine = scene.add.spine(x, y, 'BG_ConveyorTop_PC', 'BG_ConveyorTop_PC-atlas');
+			this.conveyorTopSpine.setOrigin(0.5, 0);
+			const spineRefWidth = 580;
+			const scale = (scene.scale.width / spineRefWidth) * HEADER_CONFIG.SCENE_FRAME_SCALE * HEADER_CONFIG.CONVEYOR_TOP_SCALE;
+			this.conveyorTopSpine.setScale(scale);
+			this.bonusHeaderContainer.add(this.conveyorTopSpine);
+		} catch (e) {
+			console.warn('[BonusHeader] Failed to create conveyor top spine:', e);
+		}
+	}
+
+	private playConveyorTopAnimation(): void {
+		if (!this.conveyorTopSpine?.animationState) return;
+		try {
+			const state: any = this.conveyorTopSpine.animationState;
+			if (state?.setAnimation) state.setAnimation(0, 'BG_ConveyorTop_PC', true);
+		} catch (e) {
+			console.warn('[BonusHeader] Failed to play conveyor top animation:', e);
+		}
+	}
+
+	private stopConveyorTopAnimation(): void {
+		if (!this.conveyorTopSpine?.animationState) return;
+		try {
+			const state: any = this.conveyorTopSpine.animationState;
+			if (state?.setEmptyAnimation) state.setEmptyAnimation(0, 0.2);
+		} catch (e) {
+			console.warn('[BonusHeader] Failed to stop conveyor top animation:', e);
+		}
 	}
 
 	private createPortraitBonusHeader(scene: Scene, assetScale: number): void {
@@ -196,10 +234,6 @@ export class BonusHeader {
 			strokeThickness: 3
 		}).setOrigin(0.5, 0.5).setDepth(BonusHeader.WIN_BAR_DEPTH); // Above radial light overlay (20000)
 		// Don't add to container - add directly to scene so depth works correctly
-		
-		// Store winbar center for multiplier flight target
-		(this as any).multiplierTargetY = y + 18;
-		(this as any).multiplierTargetX = x;
 		
 		// Hide by default - only show when bonus is triggered
 		this.youWonText.setVisible(false);
@@ -407,19 +441,6 @@ export class BonusHeader {
 				totalWin += itemsSum;
 			}
 
-			// Add multiplierValue if present (may live on freeSpin or freespin)
-			try {
-				const mvRaw =
-					(slot as any)?.freeSpin?.multiplierValue ??
-					(slot as any)?.freespin?.multiplierValue ??
-					(freespinData as any)?.multiplierValue ??
-					0;
-				const multiplierValue = Number(mvRaw) || 0;
-				if (multiplierValue > 0) {
-					totalWin += multiplierValue;
-				}
-			} catch { }
-
 			// As a last resort, include paylines/tumbles if we have no item totals.
 			// Avoid double-counting per-spin tumbles that are already included in item totals.
 			if (!hasItems || itemsSum <= 0) {
@@ -626,34 +647,7 @@ export class BonusHeader {
 	 * Format currency value for display
 	 */
 	private formatCurrency(amount: number): string {
-		// Check if demo mode is active - if so, use blank currency symbol
 		const isDemo = (this.scene as any)?.gameAPI?.getDemoState();
-		const prefix = isDemo ? '' : CurrencyManager.getInlinePrefix();
-		const formatted = amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-		return `${prefix}${formatted}`;
-	}
-
-	/**
-	 * Format base spin total for multiplier display (no currency).
-	 */
-	private formatMultiplierAmount(amount: number): string {
-		if (Number.isFinite(amount) && Math.abs(amount - Math.round(amount)) < 1e-6) {
-			return Math.round(amount).toString();
-		}
-		const formatted = amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-		return formatted;
-	}
-
-	/**
-	 * Format multiplied total without currency.
-	 * Drop decimals if the value is a whole number.
-	 */
-	private formatMultiplierTotal(amount: number): string {
-		if (Number.isFinite(amount) && Math.abs(amount - Math.round(amount)) < 1e-6) {
-			return Math.round(amount).toString();
-		}
-		return amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-	}
 
 	/**
 	 * Get current winnings amount
@@ -713,6 +707,7 @@ export class BonusHeader {
 
 		// Listen for tumble sequence completion (during bonus mode: accumulate spin total only)
 		gameEventManager.on(GameEventType.TUMBLE_SEQUENCE_DONE, (data: any) => {
+			this.stopConveyorTopAnimation();
 			try {
 				if (!gameStateManager.isBonus) return;
 				const symbolsComponent = (this.bonusHeaderContainer.scene as any).symbols;
@@ -770,177 +765,9 @@ export class BonusHeader {
 						this.cumulativeBonusWin += spinWin;
 						this.accumulatedThisSpin = true;
 					}
-					console.log(`[BonusHeader] TUMBLE_SEQUENCE_DONE: added spinWin=$${spinWin}, cumulativeBonusWin=$${this.cumulativeBonusWin}, multipliersActive=${this.multipliersActive}`);
+					console.log(`[BonusHeader] TUMBLE_SEQUENCE_DONE: added spinWin=$${spinWin}, cumulativeBonusWin=$${this.cumulativeBonusWin}`);
 				}
 			} catch {}
-		});
-
-		// When multipliers trigger during bonus, prepare progressive display and set text to "YOU WON"
-		gameEventManager.on(GameEventType.MULTIPLIERS_TRIGGERED, (data: any) => {
-			try {
-				if (!gameStateManager.isBonus) return;
-				const spinTotal = Number((data as any)?.spinTotal ?? 0);
-				this.multiplierSpinTotal = Math.max(0, spinTotal);
-				this.multiplierCumulative = 0;
-				this.multipliersActive = true; // Mark that multipliers are now active
-				this.hadMultipliersThisSpin = true; // Track that this spin had multipliers
-
-				// Count expected multipliers from spin data NOW, before any arrive
-				const symbolsComponent = (this.bonusHeaderContainer.scene as any).symbols;
-				const spinData = symbolsComponent?.currentSpinData;
-
-				// LOG SPIN DATA STRUCTURE for debugging
-				console.log('[BonusHeader] ========== SPIN DATA ==========');
-				console.log('[BonusHeader] Full spinData:', JSON.stringify(spinData, null, 2));
-				console.log('[BonusHeader] Area:', spinData?.slot?.area);
-				console.log('[BonusHeader] Freespin items:', spinData?.slot?.freespin?.items || spinData?.slot?.freeSpin?.items);
-
-				// Log multipliers array locations
-				console.log('[BonusHeader] Multipliers (slot):', spinData?.slot?.multipliers);
-				console.log('[BonusHeader] Multipliers (freespin):', spinData?.slot?.freespin?.multipliers || spinData?.slot?.freeSpin?.multipliers);
-				console.log('[BonusHeader] =====================================');
-
-				this.expectedMultiplierCount = this.countMultipliersFromSpinData(spinData);
-				this.receivedMultiplierCount = 0; // Reset counter before multipliers start arriving
-				console.log(`[BonusHeader] MULTIPLIERS_TRIGGERED: expecting ${this.expectedMultiplierCount} multipliers`);
-
-				// Immediately set text to "YOU WON" to prevent it from changing to "TOTAL WIN"
-				if (this.youWonText) this.youWonText.setText('YOU WON');
-				// Show the current spin total (not cumulative) when multipliers start
-				if (spinTotal > 0) {
-					this.showWinningsDisplay(spinTotal);
-				}
-				console.log(`[BonusHeader] MULTIPLIERS_TRIGGERED: primed progressive display with spinTotal=$${this.multiplierSpinTotal}, set text to "YOU WON", showing spin total`);
-			} catch {}
-		});
-
-		// Each time a multiplier PNG reaches the center, add to cumulative and show "YOU WON $total x cum"
-		gameEventManager.on(GameEventType.MULTIPLIER_ARRIVED, (data: any) => {
-			try {
-				if (!gameStateManager.isBonus) return;
-				const weight = Number((data as any)?.weight ?? 0);
-				let spinTotal = Number((data as any)?.spinTotal ?? 0);
-				if (!(spinTotal > 0)) {
-					// Fallback to primed value from MULTIPLIERS_TRIGGERED
-					spinTotal = this.multiplierSpinTotal || 0;
-				}
-				// Final fallback: derive from current spin data if still missing
-				if (!(spinTotal > 0)) {
-					try {
-						const symbolsComponent = (this.bonusHeaderContainer.scene as any).symbols;
-						const spinData = symbolsComponent?.currentSpinData;
-						const slotAny: any = spinData?.slot || {};
-						const fs = slotAny.freespin || slotAny.freeSpin;
-						const items = Array.isArray(fs?.items) ? fs.items : [];
-						const area = slotAny.area;
-						let derived = 0;
-						if (items.length > 0 && Array.isArray(area)) {
-							const areaJson = JSON.stringify(area);
-							const currentFreeSpinItem = items.find((item: any) =>
-								Array.isArray(item?.area) && JSON.stringify(item.area) === areaJson
-							);
-							if (currentFreeSpinItem) {
-								const rawItemTotal =
-									(currentFreeSpinItem as any).totalWin ??
-									(currentFreeSpinItem as any).subTotalWin ??
-									0;
-								const itemTotal = Number(rawItemTotal);
-								if (!isNaN(itemTotal) && itemTotal > 0) {
-									derived = itemTotal;
-								}
-							}
-						}
-						if (derived === 0) {
-							if (slotAny?.paylines && Array.isArray(slotAny.paylines)) {
-								derived += this.calculateTotalWinFromPaylines(slotAny.paylines);
-							}
-							if (Array.isArray(slotAny?.tumbles)) {
-								derived += this.calculateTotalWinFromTumbles(slotAny.tumbles);
-							}
-						}
-						if (derived > 0) {
-							spinTotal = derived;
-						}
-					} catch { }
-				} else {
-					// Keep a consistent spin total if not primed yet
-					if (this.multiplierSpinTotal === 0) this.multiplierSpinTotal = spinTotal;
-				}
-				if (weight > 0 && spinTotal > 0) {
-					this.multiplierCumulative += weight;
-					this.receivedMultiplierCount++; // Track that a multiplier has arrived
-					console.log(`[BonusHeader] MULTIPLIER_ARRIVED: ${this.receivedMultiplierCount}/${this.expectedMultiplierCount} multipliers received (weight: x${weight})`);
-
-					// Check if this is the last multiplier and animations are already complete
-					if (this.receivedMultiplierCount >= this.expectedMultiplierCount && !this.multipliersActive) {
-						this.allMultipliersComplete = true;
-						console.log(`[BonusHeader] MULTIPLIER_ARRIVED: ✅ Last multiplier arrived and animations already complete (${this.receivedMultiplierCount}/${this.expectedMultiplierCount})`);
-					}
-
-					// Don't update display if we're already showing TOTAL WIN
-					if (this.showingTotalWin) {
-						console.log('[BonusHeader] MULTIPLIER_ARRIVED: skipping display update, already showing TOTAL WIN');
-						return;
-					}
-
-					if (this.youWonText) this.youWonText.setText('YOU WON');
-					const formatted = this.formatMultiplierAmount(spinTotal);
-					const total = spinTotal * this.multiplierCumulative;
-					const formattedTotal = this.formatMultiplierTotal(total);
-					if (this.amountText && this.youWonText) {
-						// Stop any existing tweens
-						if (this.scene) {
-							this.scene.tweens.killTweensOf(this.youWonText);
-							this.scene.tweens.killTweensOf(this.amountText);
-						}
-
-						this.youWonText.setVisible(true);
-						this.amountText.setVisible(true);
-						this.amountText.setText(`${formatted} x${this.multiplierCumulative} = ${formattedTotal}`);
-
-						// Pulse animation when updating multiplier display
-						if (this.scene) {
-							this.scene.tweens.add({
-								targets: [this.youWonText, this.amountText],
-								scaleX: 1.2,
-								scaleY: 1.2,
-								duration: 150,
-								ease: 'Power2',
-								yoyo: true,
-								repeat: 0,
-								onComplete: () => {
-									// Ensure scale is exactly 1 after animation
-									this.youWonText.setScale(1);
-									this.amountText.setScale(1);
-								}
-							});
-						}
-					} else {
-						this.showWinningsDisplay(spinTotal);
-					}
-					console.log(`[BonusHeader] MULTIPLIER_ARRIVED: updated "${formatted} x ${this.multiplierCumulative} = ${formattedTotal}" (added ${weight})`);
-				}
-			} catch {}
-		});
-
-		// Reset multiplier active flag when all multiplier animations complete
-		gameEventManager.on(GameEventType.MULTIPLIER_ANIMATIONS_COMPLETE, () => {
-			if (gameStateManager.isBonus) {
-				this.multipliersActive = false;
-				// Mark multipliers as complete ONLY when this event fires AND we've received all expected multipliers
-				// This ensures all multipliers have arrived and finished animating before showing TOTAL WIN
-				if (this.expectedMultiplierCount > 0) {
-					if (this.receivedMultiplierCount >= this.expectedMultiplierCount) {
-						this.allMultipliersComplete = true;
-						console.log(`[BonusHeader] MULTIPLIER_ANIMATIONS_COMPLETE: ✅ All ${this.expectedMultiplierCount} multipliers complete (received ${this.receivedMultiplierCount})`);
-					} else {
-						console.log(`[BonusHeader] MULTIPLIER_ANIMATIONS_COMPLETE: fired but not all multipliers received yet (${this.receivedMultiplierCount}/${this.expectedMultiplierCount}) - waiting for more`);
-					}
-				} else {
-					console.log('[BonusHeader] MULTIPLIER_ANIMATIONS_COMPLETE: fired but expectedMultiplierCount is 0');
-				}
-				console.log('[BonusHeader] MULTIPLIER_ANIMATIONS_COMPLETE: reset multipliersActive flag');
-			}
 		});
 
 		// Listen for spin events to hide winnings display at start of manual spin
@@ -977,18 +804,11 @@ export class BonusHeader {
 		// Listen for reels start to reset per-spin bonus state
 		gameEventManager.on(GameEventType.REELS_START, () => {
 			console.log('[BonusHeader] Reels started');
+			this.playConveyorTopAnimation();
 			if (gameStateManager.isBonus) {
 				// Reset per-spin accumulation flag
 				this.accumulatedThisSpin = false;
-				// Reset multiplier progressive display
-				this.multiplierCumulative = 0;
-				this.multiplierSpinTotal = 0;
-				this.multipliersActive = false; // Reset multiplier active flag at start of new spin
-				this.hadMultipliersThisSpin = false; // Reset multiplier tracking for new spin
-				this.expectedMultiplierCount = 0; // Reset expected multiplier count
-				this.receivedMultiplierCount = 0; // Reset received multiplier count
-				this.allMultipliersComplete = false; // Reset completion flag
-				this.showingTotalWin = false; // Reset total win display flag
+				this.showingTotalWin = false;
 				// Initialize tracking on first spin in bonus mode
 				if (!this.hasStartedBonusTracking) {
 					this.cumulativeBonusWin = this.scatterBaseWin || 0;
@@ -1113,12 +933,12 @@ export class BonusHeader {
 			const symbolsComponent = (this.bonusHeaderContainer.scene as any).symbols;
 			const spinData = symbolsComponent?.currentSpinData;
 
-			// Calculate the total win for this spin (includes paylines + tumbles + multipliers)
+			// Calculate the total win for this spin (includes paylines + tumbles)
 			let spinWin = 0;
 			try {
 				const currentItem = this.getCurrentFreeSpinItem(spinData);
 				if (currentItem) {
-					// Use totalWin if available (includes multipliers), otherwise use subTotalWin
+					// Use totalWin if available, otherwise use subTotalWin
 					const rawWin = (currentItem as any).totalWin ?? (currentItem as any).subTotalWin;
 					if (typeof rawWin === 'number' && rawWin > 0) {
 						spinWin = rawWin;
@@ -1162,7 +982,6 @@ export class BonusHeader {
 			}
 
 			console.log(`[BonusHeader] WIN_STOP (bonus): finalized cumulativeBonusWin=$${this.cumulativeBonusWin} (spinWin=$${spinWin})`);
-			console.log(`[BonusHeader] WIN_STOP (bonus): multiplier status - expected=${this.expectedMultiplierCount}, received=${this.receivedMultiplierCount}, complete=${this.allMultipliersComplete}`);
 
 			// If this was the last free spin, align the cumulative total to backend totalWin
 			try {
@@ -1192,24 +1011,12 @@ export class BonusHeader {
 				}
 			} catch { }
 
-			// Show "TOTAL WIN" with the cumulative total (all spins including scatter trigger) after multipliers complete
+			// Show "TOTAL WIN" with the cumulative total (all spins including scatter trigger)
 			const showTotalWinForSpin = () => {
-				console.log(`[BonusHeader] showTotalWinForSpin called: spinWin=${spinWin}, cumulativeBonusWin=$${this.cumulativeBonusWin}, expectedMultipliers=${this.expectedMultiplierCount}, received=${this.receivedMultiplierCount}, complete=${this.allMultipliersComplete}`);
-
-				// SAFETY: Only show TOTAL WIN if all multipliers are truly complete
-				if (this.expectedMultiplierCount > 0 && !this.allMultipliersComplete) {
-					console.warn('[BonusHeader] BLOCKED: Attempted to show TOTAL WIN before multipliers complete!');
-					return;
-				}
-
-				// Mark that we're showing TOTAL WIN to prevent multipliers from overwriting
+				console.log(`[BonusHeader] showTotalWinForSpin: spinWin=${spinWin}, cumulativeBonusWin=$${this.cumulativeBonusWin}`);
 				this.showingTotalWin = true;
 
-				// Add a short delay after last multiplier before showing TOTAL WIN
-				// This gives players a moment to see the final multiplier calculation
-				const displayDelay = this.expectedMultiplierCount > 0 ? 300 : 0;
-
-				this.scene?.time.delayedCall(displayDelay, () => {
+				this.scene?.time.delayedCall(0, () => {
 					// Always show cumulative total (includes scatter trigger win + all bonus spins)
 					if (this.cumulativeBonusWin > 0) {
 						// Stop any existing tweens to prevent conflicts
@@ -1239,122 +1046,8 @@ export class BonusHeader {
 				});
 			};
 
-			// If there are multipliers, wait for the completion flag before showing TOTAL WIN
-			if (this.expectedMultiplierCount > 0) {
-				console.log(`[BonusHeader] WIN_STOP (bonus): waiting for ${this.expectedMultiplierCount} multipliers to fully complete`);
-
-				// Check if all multipliers are already complete
-				if (this.allMultipliersComplete) {
-					console.log('[BonusHeader] WIN_STOP (bonus): ✅ all multipliers already complete, showing TOTAL WIN NOW');
-					showTotalWinForSpin();
-				} else {
-					// Set up a recurring check to see when all multipliers are complete
-					console.log('[BonusHeader] WIN_STOP (bonus): setting up check for multiplier completion');
-					let checkCompleted = false;
-					const checkInterval = this.scene?.time.addEvent({
-						delay: 50, // Check every 50ms
-						repeat: -1, // Repeat indefinitely
-						callback: () => {
-							if (!checkCompleted && this.allMultipliersComplete) {
-								checkCompleted = true;
-								if (checkInterval) checkInterval.destroy();
-								console.log(`[BonusHeader] WIN_STOP (bonus): ✅ all ${this.expectedMultiplierCount} multipliers complete, showing TOTAL WIN`);
-								showTotalWinForSpin();
-							}
-						}
-					});
-
-					// Add a timeout in case completion flag is never set
-					this.scene?.time.delayedCall(5000, () => {
-						if (!checkCompleted) {
-							checkCompleted = true;
-							if (checkInterval) checkInterval.destroy();
-							console.warn(`[BonusHeader] WIN_STOP (bonus): TIMEOUT waiting for completion flag (received ${this.receivedMultiplierCount}/${this.expectedMultiplierCount}), showing TOTAL WIN anyway`);
-							showTotalWinForSpin();
-						}
-					});
-				}
-			} else {
-				// No multipliers - show TOTAL WIN immediately
-				console.log('[BonusHeader] WIN_STOP (bonus): no multipliers this spin, showing TOTAL WIN immediately');
-				showTotalWinForSpin();
-			}
+			showTotalWinForSpin();
 		});
-	}
-
-	/**
-	 * Count multipliers from the multipliers array in spin data
-	 */
-	private countMultipliersFromSpinData(spinData: any): number {
-		try {
-			// First, try to find the multipliers array in various locations
-			let multipliersArray: any[] | undefined;
-
-			// Check slot.multipliers
-			if (Array.isArray(spinData?.slot?.multipliers)) {
-				multipliersArray = spinData.slot.multipliers;
-				console.log('[BonusHeader] Found multipliers array in slot.multipliers:', multipliersArray);
-			}
-			// Check slot.freespin.multipliers or slot.freeSpin.multipliers
-			else if (Array.isArray(spinData?.slot?.freespin?.multipliers)) {
-				multipliersArray = spinData.slot.freespin.multipliers;
-				console.log('[BonusHeader] Found multipliers array in slot.freespin.multipliers:', multipliersArray);
-			}
-			else if (Array.isArray(spinData?.slot?.freeSpin?.multipliers)) {
-				multipliersArray = spinData.slot.freeSpin.multipliers;
-				console.log('[BonusHeader] Found multipliers array in slot.freeSpin.multipliers:', multipliersArray);
-			}
-			// Check current freespin item
-			else {
-				const fs = spinData?.slot?.freespin || spinData?.slot?.freeSpin;
-				if (fs?.items && Array.isArray(fs.items)) {
-					const slotAny: any = spinData?.slot || {};
-					const area = slotAny.area;
-					if (Array.isArray(area)) {
-						const areaJson = JSON.stringify(area);
-						const currentFreeSpinItem = fs.items.find((item: any) =>
-							Array.isArray(item?.area) && JSON.stringify(item.area) === areaJson
-						);
-						if (currentFreeSpinItem && Array.isArray(currentFreeSpinItem.multipliers)) {
-							multipliersArray = currentFreeSpinItem.multipliers;
-							console.log('[BonusHeader] Found multipliers array in current freespin item:', multipliersArray);
-						}
-					}
-				}
-			}
-
-			// If we found the multipliers array, return its length
-			if (multipliersArray && Array.isArray(multipliersArray)) {
-				const count = multipliersArray.length;
-				console.log(`[BonusHeader] Counted ${count} multipliers from multipliers array:`, multipliersArray);
-				return count;
-			}
-
-			// Fallback: count multiplier symbols in area by symbol ID
-			console.warn('[BonusHeader] Multipliers array not found, falling back to counting symbol IDs in area');
-			const area = spinData?.slot?.area;
-			if (!Array.isArray(area)) return 0;
-
-			let count = 0;
-			// Multiplier symbol IDs: 20, 21, 22, 23, 24, 25, 26, 27, 28, 29 (x2 through x100)
-			const multiplierIds = [20, 21, 22, 23, 24, 25, 26, 27, 28, 29];
-
-			for (const row of area) {
-				if (Array.isArray(row)) {
-					for (const symbolId of row) {
-						if (multiplierIds.includes(Number(symbolId))) {
-							count++;
-						}
-					}
-				}
-			}
-
-			console.log(`[BonusHeader] Counted ${count} multipliers from area symbol IDs`);
-			return count;
-		} catch (e) {
-			console.warn('[BonusHeader] Failed to count multipliers from spin data:', e);
-			return 0;
-		}
 	}
 
 	/**
