@@ -1148,6 +1148,11 @@ export class GameAPI {
                 }).catch(err => {
                 });
             }
+
+            // Ensure bet is included in the response data (server might not return it)
+            if (!responseData.bet) {
+                responseData.bet = bet.toString();
+            }
             
             // 3. Store the spin data to SpinData.ts
             // If this response contains free spin data, save it for bonus mode

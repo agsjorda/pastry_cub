@@ -3,6 +3,7 @@ import { NetworkManager } from "../../managers/NetworkManager";
 import { ScreenModeManager } from "../../managers/ScreenModeManager";
 import { ensureSpineFactory } from "../../utils/SpineGuard";
 import { CurrencyManager } from "./CurrencyManager";
+import { startAnimation } from "../../utils/SpineAnimationHelper";
 
 export interface BetOptionsConfig {
 	position?: { x: number; y: number };
@@ -297,14 +298,14 @@ export class BetOptions {
 		}
 		this.enhanceBetIdleAnimation.setVisible(true);
 		const idleName = 'animation';
-		if (this.enhanceBetIdleAnimation.skeleton?.data.findAnimation(idleName)) {
-			this.enhanceBetIdleAnimation.animationState.setAnimation(0, idleName, true);
-		} else {
-			const animations = this.enhanceBetIdleAnimation.skeleton?.data.animations || [];
-			if (animations.length > 0) {
-				this.enhanceBetIdleAnimation.animationState.setAnimation(0, animations[0].name, true);
-			}
-		}
+		const animations = this.enhanceBetIdleAnimation.skeleton?.data.animations || [];
+		startAnimation(this.enhanceBetIdleAnimation, {
+			animationName: idleName,
+			fallbackAnimationName: animations[0]?.name,
+			fallbackToFirstAvailable: true,
+			loop: true,
+			logWhenMissing: false
+		});
 	}
 
 	private hideEnhanceBetIdleLoop(): void {

@@ -7,6 +7,7 @@ import { PaylineData } from '../../backend/SpinData';
 import { CurrencyManager } from './CurrencyManager';
 import { HEADER_CONFIG } from '../../config/GameConfig';
 import { ensureSpineFactory } from '../../utils/SpineGuard';
+import { startAnimation, stopAnimation } from '../../utils/SpineAnimationHelper';
 
 
 export class Header {
@@ -138,24 +139,17 @@ export class Header {
 
 	/** Play conveyor top animation (during spin). */
 	private playConveyorTopAnimation(): void {
-		if (!this.conveyorTopSpine?.animationState) return;
-		try {
-			const state: any = this.conveyorTopSpine.animationState;
-			if (state?.setAnimation) state.setAnimation(0, 'BG_ConveyorTop_PC', true);
-		} catch (e) {
-			console.warn('[Header] Failed to play conveyor top animation:', e);
-		}
+		startAnimation(this.conveyorTopSpine, {
+			animationName: 'BG_ConveyorTop_PC',
+			loop: true,
+			trackIndex: 0,
+			logWhenMissing: true
+		});
 	}
 
 	/** Stop conveyor top animation (spin/tumbles done). */
 	private stopConveyorTopAnimation(): void {
-		if (!this.conveyorTopSpine?.animationState) return;
-		try {
-			const state: any = this.conveyorTopSpine.animationState;
-			if (state?.setEmptyAnimation) state.setEmptyAnimation(0, 0.2);
-		} catch (e) {
-			console.warn('[Header] Failed to stop conveyor top animation:', e);
-		}
+		stopAnimation(this.conveyorTopSpine, { fadeOut: 0.2, trackIndex: 0 });
 	}
 
 	// private createCharacterSpineAnimation(scene: Scene, assetScale: number): void {}

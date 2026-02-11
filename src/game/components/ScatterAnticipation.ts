@@ -1,5 +1,6 @@
 import { Scene } from 'phaser';
 import { ensureSpineFactory } from '../../utils/SpineGuard';
+import { startAnimation } from '../../utils/SpineAnimationHelper';
 
 export class ScatterAnticipation {
 	private scene: Scene;
@@ -14,19 +15,19 @@ export class ScatterAnticipation {
 			// Ensure track is clean and running
 			this.spineObject.animationState.clearTracks();
 			this.spineObject.animationState.timeScale = Math.max(0.0001, this.spineObject.animationState.timeScale || 1);
-			// Try required default name first
-			this.spineObject.animationState.setAnimation(0, 'default', true);
-			console.log('[ScatterAnticipation] Playing animation: default (loop)');
-			return;
-		} catch {}
-
-		// Fallback to first available animation if default missing
-		try {
-			const animations = this.spineObject?.skeleton?.data?.animations || [];
-			const first = animations[0]?.name;
-			if (first) {
-				this.spineObject.animationState.setAnimation(0, first, true);
-				console.log(`[ScatterAnticipation] 'default' not found. Playing first animation: ${first} (loop)`);
+			const played = startAnimation(this.spineObject, {
+				animationName: 'default',
+				fallbackToFirstAvailable: true,
+				loop: true,
+				logWhenMissing: false
+			});
+			if (played) {
+				if (played === 'default') {
+					console.log('[ScatterAnticipation] Playing animation: default (loop)');
+				} else {
+					console.log(`[ScatterAnticipation] 'default' not found. Playing first animation: ${played} (loop)`);
+				}
+				return;
 			}
 		} catch {}
 	}

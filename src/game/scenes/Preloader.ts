@@ -11,7 +11,6 @@ import { ensureSpineFactory } from '../../utils/SpineGuard';
 import { StudioLoadingScreen } from '../components/StudioLoadingScreen';
 import { ClockDisplay } from '../components/ClockDisplay';
 import { CLOCK_DISPLAY_NAME, GAME_DISPLAY_NAME, CLOCK_DISPLAY_CONFIG, PRELOADER_CONFIG } from '../../config/GameConfig';
-import { playRadialDimmerTransition } from '../../utils/playRadialDimmerTransition';
 import { CurrencyManager } from '../components/CurrencyManager';
 
 export class Preloader extends Scene
@@ -220,14 +219,12 @@ export class Preloader extends Scene
 
 		// Start game on click
         this.buttonSpin?.once('pointerdown', () => {
-            playRadialDimmerTransition(this, () => {
-                console.log('[Preloader] Starting Game scene after radial dimmer');
-                this.scene.start('Game', { 
-                    networkManager: this.networkManager, 
-                    screenModeManager: this.screenModeManager,
-                    // Pass the same GameAPI instance so initialization data is shared
-                    gameAPI: this.gameAPI
-                });
+            console.log('[Preloader] Starting Game scene');
+            this.scene.start('Game', { 
+                networkManager: this.networkManager, 
+                screenModeManager: this.screenModeManager,
+                // Pass the same GameAPI instance so initialization data is shared
+                gameAPI: this.gameAPI
             });
         });
 

@@ -4,6 +4,7 @@ import { ScreenModeManager } from "../../managers/ScreenModeManager";
 import { gameStateManager } from "../../managers/GameStateManager";
 import { ensureSpineFactory } from "../../utils/SpineGuard";
 import { CurrencyManager } from "./CurrencyManager";
+import { startAnimation } from "../../utils/SpineAnimationHelper";
 
 export interface AutoplayOptionsConfig {
 	position?: { x: number; y: number };
@@ -231,7 +232,7 @@ export class AutoplayOptions {
 		
 		// "Balance" label
 		const balanceLabel = scene.add.text(-150, 1, 'Balance', {
-			fontSize: '24px',
+			fontSize: '20px',
 			color: '#ffffff',
 			fontFamily: 'Poppins-Regular'
 		});
@@ -243,7 +244,7 @@ export class AutoplayOptions {
 		const isDemo = (scene as any).gameAPI?.getDemoState();
 		const prefix = isDemo ? '' : CurrencyManager.getInlinePrefix();
 		const balanceAmount = scene.add.text(150, 1, `${prefix}${this.currentBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, {
-			fontSize: '24px',
+			fontSize: '20px',
 			color: '#00ff00',
 			fontFamily: 'Poppins-Bold'
 		});
@@ -431,14 +432,14 @@ export class AutoplayOptions {
 		}
 		this.enhanceBetIdleAnimation.setVisible(true);
 		const idleName = 'animation';
-		if (this.enhanceBetIdleAnimation.skeleton?.data.findAnimation(idleName)) {
-			this.enhanceBetIdleAnimation.animationState.setAnimation(0, idleName, true);
-		} else {
-			const animations = this.enhanceBetIdleAnimation.skeleton?.data.animations || [];
-			if (animations.length > 0) {
-				this.enhanceBetIdleAnimation.animationState.setAnimation(0, animations[0].name, true);
-			}
-		}
+		const animations = this.enhanceBetIdleAnimation.skeleton?.data.animations || [];
+		startAnimation(this.enhanceBetIdleAnimation, {
+			animationName: idleName,
+			fallbackAnimationName: animations[0]?.name,
+			fallbackToFirstAvailable: true,
+			loop: true,
+			logWhenMissing: false
+		});
 	}
 
 	private hideEnhanceBetIdleLoop(): void {

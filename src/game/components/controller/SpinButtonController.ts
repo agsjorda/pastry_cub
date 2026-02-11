@@ -10,6 +10,7 @@ import { gameEventManager, GameEventType } from '../../../event/EventManager';
 import { gameStateManager } from '../../../managers/GameStateManager';
 import { ensureSpineFactory } from '../../../utils/SpineGuard';
 import { Logger } from '../../../utils/Logger';
+import { startAnimation } from '../../../utils/SpineAnimationHelper';
 
 const log = Logger.slot;
 
@@ -172,12 +173,18 @@ export class SpinButtonController {
     // Play main animation
     if (this.spinButtonAnimation) {
       try {
+        const animationName = 'animation';
         this.spinButtonAnimation.setVisible(true);
-        this.spinButtonAnimation.animationState.setAnimation(0, 'animation', false);
+        startAnimation(this.spinButtonAnimation, {
+          animationName,
+          loop: false,
+          fallbackToFirstAvailable: true,
+          logWhenMissing: false
+        });
         
         this.spinButtonAnimation.animationState.addListener({
           complete: (entry: any) => {
-            if (entry.animation.name === 'animation') {
+            if (entry.animation.name === animationName) {
               this.spinButtonAnimation.setVisible(false);
               // Ensure icon alpha is correct based on disabled state
               if (this.spinIcon) {
@@ -217,11 +224,18 @@ export class SpinButtonController {
     if (!this.freeRoundSpinButtonAnimation) return;
     
     try {
+      const animationName = 'animation';
       this.freeRoundSpinButtonAnimation.setVisible(true);
-      this.freeRoundSpinButtonAnimation.animationState.setAnimation(0, 'animation', false);
+      startAnimation(this.freeRoundSpinButtonAnimation, {
+        animationName,
+        loop: false,
+        fallbackToFirstAvailable: true,
+        logWhenMissing: false
+      });
       
       this.freeRoundSpinButtonAnimation.animationState.addListener({
-        complete: () => {
+        complete: (entry: any) => {
+          if (entry?.animation?.name !== animationName) return;
           this.freeRoundSpinButtonAnimation.setVisible(false);
         }
       });

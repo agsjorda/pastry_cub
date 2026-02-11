@@ -8,8 +8,8 @@ import {
 	GRID_CENTER_Y_RATIO,
 	GRID_CENTER_Y_OFFSET_PX,
 	TIMING_CONFIG,
-	CONVEYOR_ANIMATION_TIME_SCALE,
 } from "../../config/GameConfig";
+import { startAnimation, stopAnimation } from "../../utils/SpineAnimationHelper";
 
 export class Background {
 	private bgContainer!: Phaser.GameObjects.Container;
@@ -170,14 +170,14 @@ export class Background {
 			const initialScale = assetScale * Phaser.Math.Clamp(this.spineBaseScaleMultiplier, 0, 5);
 			this.normalGameSpine.setScale(initialScale);
 			console.log(`[Background] Spine initial scale set to: ${initialScale} (assetScale: ${assetScale})`);
-			try {
-				const state: any = this.normalGameSpine.animationState;
-				if (state && typeof state.setAnimation === 'function') {
-					state.setAnimation(0, 'NormalGame_BZ_idle', true);
-					console.log('[Background] Playing NormalGame_BZ_idle animation');
-				}
-			} catch (e) {
-				console.warn('[Background] Failed to start NormalGame_BZ_idle animation:', e);
+			const started = startAnimation(this.normalGameSpine, {
+				animationName: 'NormalGame_BZ_idle',
+				loop: true,
+				trackIndex: 0,
+				logWhenMissing: true
+			});
+			if (started) {
+				console.log(`[Background] Playing ${started} animation`);
 			}
 
 			// Add to container
@@ -277,13 +277,7 @@ export class Background {
 			if (!spine?.visible) continue;
 			const delayMs = staggerMs * col;
 			const startOne = () => {
-				try {
-					const state: any = spine?.animationState;
-					if (state?.setAnimation) state.setAnimation(0, 'animation', true);
-					if (state) (state as any).timeScale = CONVEYOR_ANIMATION_TIME_SCALE;
-				} catch (e) {
-					console.warn('[Background] Failed to play conveyor animation:', e);
-				}
+				startAnimation(spine, 'animation');
 			};
 			if (delayMs <= 0) {
 				startOne();
@@ -303,12 +297,7 @@ export class Background {
 			if (!colSet.has(col)) continue;
 			const spine = this.conveyorSpines[col];
 			if (!spine?.visible) continue;
-			try {
-				const state: any = spine.animationState;
-				if (state?.setEmptyAnimation) state.setEmptyAnimation(0, 0.2);
-			} catch (e) {
-				console.warn('[Background] Failed to stop conveyor animation:', e);
-			}
+			stopAnimation(spine);
 		}
 	}
 

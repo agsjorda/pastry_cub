@@ -5,6 +5,7 @@ import { QUALIFYING_CLUSTER_COUNT, getOutCount, getOutWin } from './Spin';
 import { MIN_CLUSTER_SIZE, UI_CONFIG } from '../../config/GameConfig';
 import { Logger } from '../../utils/Logger';
 import { CurrencyManager } from './CurrencyManager';
+import { startAnimationWithEntry } from '../../utils/SpineAnimationHelper';
 
 interface WinTrackerLayoutOptions {
   offsetX?: number;
@@ -445,7 +446,12 @@ export class WinTracker {
               try {
                 const idle = `Symbol${symbolId}_SW_Idle`;
                 if (go.animationState?.setAnimation) {
-                  const entry = go.animationState.setAnimation(0, idle, true);
+                  const startResult = startAnimationWithEntry(go, {
+                    animationName: idle,
+                    loop: true,
+                    logWhenMissing: false
+                  });
+                  const entry = startResult?.entry;
                   try {
                     const duration = (go as any)?.skeleton?.data?.findAnimation?.(idle)?.duration;
                     if (typeof duration === 'number' && duration > 0 && entry) {

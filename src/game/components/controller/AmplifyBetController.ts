@@ -3,6 +3,7 @@ import { EventBus } from '../../EventBus';
 import { gameStateManager } from '../../../managers/GameStateManager';
 import { NetworkManager } from '../../../managers/NetworkManager';
 import { ensureSpineFactory } from '../../../utils/SpineGuard';
+import { startAnimation } from '../../../utils/SpineAnimationHelper';
 import type { GameData } from '../GameData';
 
 export interface AmplifyBetCallbacks {
@@ -216,15 +217,14 @@ export class AmplifyBetController {
 
     this.enhanceBetIdleAnimation.setVisible(true);
     const idleName = 'animation';
-
-    if (this.enhanceBetIdleAnimation.skeleton?.data.findAnimation(idleName)) {
-      this.enhanceBetIdleAnimation.animationState.setAnimation(0, idleName, true);
-    } else {
-      const animations = this.enhanceBetIdleAnimation.skeleton?.data.animations || [];
-      if (animations.length > 0) {
-        this.enhanceBetIdleAnimation.animationState.setAnimation(0, animations[0].name, true);
-      }
-    }
+    const animations = this.enhanceBetIdleAnimation.skeleton?.data.animations || [];
+    startAnimation(this.enhanceBetIdleAnimation, {
+      animationName: idleName,
+      fallbackAnimationName: animations[0]?.name,
+      fallbackToFirstAvailable: true,
+      loop: true,
+      logWhenMissing: false
+    });
   }
 
   public hideEnhanceBetIdleLoop(): void {
@@ -401,43 +401,33 @@ export class AmplifyBetController {
     }
 
     const animationName = 'animation';
+    const animations = this.amplifyBetAnimation.skeleton?.data.animations || [];
+    const playedAnimation = startAnimation(this.amplifyBetAnimation, {
+      animationName,
+      fallbackAnimationName: animations[0]?.name,
+      fallbackToFirstAvailable: true,
+      loop: false,
+      logWhenMissing: false
+    });
 
-    if (this.amplifyBetAnimation.skeleton && this.amplifyBetAnimation.skeleton.data.findAnimation(animationName)) {
-      this.amplifyBetAnimation.animationState.setAnimation(0, animationName, false);
-      this.amplifyBetAnimation.animationState.addListener({
-        complete: (entry: any) => {
-          if (entry.animation.name === animationName) {
-            this.amplifyBetAnimation.setVisible(false);
-            console.log('[SlotController] Amplify bet animation completed and hidden');
-            const gameData = this.callbacks.getGameData();
-            if (gameData && gameData.isEnhancedBet) {
-              this.showEnhanceBetIdleLoop();
-            }
+    if (!playedAnimation) {
+      console.warn('[SlotController] No animations found for amplify bet spine');
+      return;
+    }
+
+    this.amplifyBetAnimation.animationState.addListener({
+      complete: (entry: any) => {
+        if (entry.animation.name === playedAnimation) {
+          this.amplifyBetAnimation.setVisible(false);
+          console.log('[SlotController] Amplify bet animation completed and hidden');
+          const gameData = this.callbacks.getGameData();
+          if (gameData && gameData.isEnhancedBet) {
+            this.showEnhanceBetIdleLoop();
           }
         }
-      });
-      console.log('[SlotController] Playing amplify bet animation once:', animationName);
-    } else {
-      const animations = this.amplifyBetAnimation.skeleton?.data.animations || [];
-      if (animations.length > 0) {
-        console.log('[SlotController] Using fallback animation:', animations[0].name);
-        this.amplifyBetAnimation.animationState.setAnimation(0, animations[0].name, false);
-        this.amplifyBetAnimation.animationState.addListener({
-          complete: (entry: any) => {
-            if (entry.animation.name === animations[0].name) {
-              this.amplifyBetAnimation.setVisible(false);
-              console.log('[SlotController] Amplify bet fallback animation completed and hidden');
-              const gameData = this.callbacks.getGameData();
-              if (gameData && gameData.isEnhancedBet) {
-                this.showEnhanceBetIdleLoop();
-              }
-            }
-          }
-        });
-      } else {
-        console.warn('[SlotController] No animations found for amplify bet spine');
       }
-    }
+    });
+    console.log('[SlotController] Playing amplify bet animation once:', playedAnimation);
   }
 
   public hideAmplifyBetAnimation(): void {

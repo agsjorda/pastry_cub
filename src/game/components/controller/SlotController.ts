@@ -13,6 +13,7 @@ import { Symbols } from '../symbols/index';
 import { SoundEffectType } from '../../../managers/AudioManager';
 import { LoadingSpinner } from '../LoadingSpinner';
 import { ensureSpineFactory } from '../../../utils/SpineGuard';
+import { startAnimation, startAnimationWithEntry } from '../../../utils/SpineAnimationHelper';
 import { getOutWin } from '../Spin';
 import { AmplifyBetController } from './AmplifyBetController';
 import { TurboButtonController } from './TurboButtonController';
@@ -1142,12 +1143,17 @@ export class SlotController {
 			this.autoplayButtonAnimation.setVisible(true);
 			
 			// Play animation once following the same pattern as spin button
-			this.autoplayButtonAnimation.animationState.setAnimation(0, "animation", false);
+			const animationName = startAnimation(this.autoplayButtonAnimation, {
+				animationName: 'animation',
+				loop: false,
+				fallbackToFirstAvailable: true,
+				logWhenMissing: false
+			}) ?? 'animation';
 			
 			// Listen for animation completion to hide it
 			this.autoplayButtonAnimation.animationState.addListener({
 				complete: (entry: any) => {
-					if (entry.animation.name === "animation") {
+					if (entry.animation.name === animationName) {
 						this.autoplayButtonAnimation.setVisible(false);
 					}
 				}
@@ -1226,14 +1232,21 @@ export class SlotController {
 
 			// Start the animation and obtain the track entry so we can adjust
 			// its effective duration for the free-round Spine.
-			const trackEntry: any = targetAnimation.animationState.setAnimation(0, animationName, false);
+			const startResult = startAnimationWithEntry(targetAnimation, {
+				animationName,
+				loop: false,
+				fallbackToFirstAvailable: true,
+				logWhenMissing: false
+			});
+			const playedAnimationName = startResult?.animationName ?? animationName;
+			const trackEntry: any = startResult?.entry;
 
 			// For the free-round Spine, stop the animation 0.5s before the end so
 			// the last few frames are not played.
 			if (targetAnimation === this.freeRoundSpinButtonAnimation && trackEntry) {
 				try {
 					const anySpine: any = targetAnimation as any;
-					const animData = anySpine?.skeleton?.data?.findAnimation?.(animationName);
+					const animData = anySpine?.skeleton?.data?.findAnimation?.(playedAnimationName);
 					const duration: number | undefined = animData?.duration;
 					if (typeof duration === 'number' && duration > 0.01) {
 						trackEntry.animationEnd = Math.max(0, duration - 0.01);
@@ -1251,7 +1264,7 @@ export class SlotController {
 			// Listen for animation completion to hide it
 			targetAnimation.animationState.addListener({
 				complete: (entry: any) => {
-				if (entry.animation.name === animationName) {
+				if (entry.animation.name === playedAnimationName) {
 						targetAnimation.setVisible(false);
 				}
 				}

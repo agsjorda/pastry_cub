@@ -4,6 +4,7 @@ import { gameEventManager, GameEventType } from '../../../event/EventManager';
 import { NetworkManager } from '../../../managers/NetworkManager';
 import { ensureSpineFactory } from '../../../utils/SpineGuard';
 import { gameStateManager } from '../../../managers/GameStateManager';
+import { startAnimation } from '../../../utils/SpineAnimationHelper';
 import type { GameData } from '../GameData';
 
 export interface TurboButtonCallbacks {
@@ -123,7 +124,12 @@ export class TurboButtonController {
 
     try {
       this.turboButtonAnimation.setVisible(true);
-      this.turboButtonAnimation.animationState.setAnimation(0, 'animation', true);
+      startAnimation(this.turboButtonAnimation, {
+        animationName: 'animation',
+        loop: true,
+        fallbackToFirstAvailable: true,
+        logWhenMissing: false
+      });
       console.log('[SlotController] Turbo button spine animation started (looping)');
     } catch (error) {
       console.error('[SlotController] Error starting turbo button animation:', error);

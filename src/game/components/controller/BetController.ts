@@ -9,6 +9,7 @@ import type { Scene } from 'phaser';
 import { gameEventManager, GameEventType } from '../../../event/EventManager';
 import { ensureSpineFactory } from '../../../utils/SpineGuard';
 import { Logger } from '../../../utils/Logger';
+import { startAnimation } from '../../../utils/SpineAnimationHelper';
 
 const log = Logger.slot;
 
@@ -378,15 +379,14 @@ export class BetController {
     
     this.enhanceBetIdleAnimation.setVisible(true);
     const idleName = 'animation';
-    
-    if (this.enhanceBetIdleAnimation.skeleton?.data.findAnimation(idleName)) {
-      this.enhanceBetIdleAnimation.animationState.setAnimation(0, idleName, true);
-    } else {
-      const animations = this.enhanceBetIdleAnimation.skeleton?.data.animations || [];
-      if (animations.length > 0) {
-        this.enhanceBetIdleAnimation.animationState.setAnimation(0, animations[0].name, true);
-      }
-    }
+    const animations = this.enhanceBetIdleAnimation.skeleton?.data.animations || [];
+    startAnimation(this.enhanceBetIdleAnimation, {
+      animationName: idleName,
+      fallbackAnimationName: animations[0]?.name,
+      fallbackToFirstAvailable: true,
+      loop: true,
+      logWhenMissing: false
+    });
   }
 
   /**
@@ -407,7 +407,12 @@ export class BetController {
     
     try {
       this.amplifyBetAnimation.setVisible(true);
-      this.amplifyBetAnimation.animationState.setAnimation(0, 'animation', false);
+      startAnimation(this.amplifyBetAnimation, {
+        animationName: 'animation',
+        loop: false,
+        fallbackToFirstAvailable: true,
+        logWhenMissing: false
+      });
       
       this.amplifyBetAnimation.animationState.addListener({
         complete: () => {

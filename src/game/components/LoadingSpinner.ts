@@ -1,6 +1,7 @@
 import { Scene } from 'phaser';
 import { ensureSpineFactory } from '../../utils/SpineGuard';
 import { LOADING_SPINNER_ALPHA, LOADING_SPINNER_SPINE_HEIGHT_RATIO, LOADING_SPINNER_SPINE_TIME_SCALE } from '../../config/GameConfig';
+import { startAnimation } from '../../utils/SpineAnimationHelper';
 
 /**
  * LoadingSpinner Component
@@ -51,10 +52,13 @@ export class LoadingSpinner {
 				if (typeof spine.setAlpha === 'function') spine.setAlpha(LOADING_SPINNER_ALPHA);
 				this.container.add(spine);
 				this.spinnerContent = spine;
-				try {
-					(spine as any).animationState?.setAnimation(0, 'animation', true);
-					if (typeof (spine as any).animationState?.timeScale === 'number') (spine as any).animationState.timeScale = LOADING_SPINNER_SPINE_TIME_SCALE;
-				} catch {}
+				startAnimation(spine, {
+					animationName: 'animation',
+					loop: true,
+					trackIndex: 0,
+					timeScale: LOADING_SPINNER_SPINE_TIME_SCALE,
+					logWhenMissing: false
+				});
 				console.log('[LoadingSpinner] DI JOKER spine created at', this.centerX, this.centerY);
 				return;
 			} catch (e) {
@@ -122,10 +126,14 @@ export class LoadingSpinner {
 		}
 
 		// Ensure DI JOKER Spine animation is playing (restart so it runs when visible)
-		const state = this.spinnerContent?.animationState;
-		if (state) {
-			state.setAnimation(0, 'animation', true);
-			if (typeof state.timeScale === 'number') state.timeScale = LOADING_SPINNER_SPINE_TIME_SCALE;
+		const playedAnimation = startAnimation(this.spinnerContent, {
+			animationName: 'animation',
+			loop: true,
+			trackIndex: 0,
+			timeScale: LOADING_SPINNER_SPINE_TIME_SCALE,
+			logWhenMissing: false
+		});
+		if (playedAnimation) {
 			// Drive spine animation manually so it advances when inside a container (spine-phaser may not update it otherwise)
 			this.removeSpineUpdateListener();
 			this.spineUpdateListener = (time: number, delta: number) => {

@@ -371,7 +371,7 @@ export class BuyFeature {
 		const screenHeight = scene.cameras.main.height;
 		const backgroundTop = screenHeight - 736;
 		
-		const featureName = scene.add.text(screenWidth / 2, backgroundTop + 100, "Pastry Cub Bonus", {
+		const featureName = scene.add.text(screenWidth / 2, backgroundTop + 100, "Chef's Big Meaty Surprise", {
 			fontSize: '24px',
 			fontFamily: 'Poppins-Regular',
 			color: '#ffffff',

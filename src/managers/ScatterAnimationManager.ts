@@ -135,11 +135,6 @@ export class ScatterAnimationManager {
       this.showFreeSpinsDialog(data);
 
       if (isBuyFeature) {
-        try {
-          if (typeof this.dialogsComponent?.hideRadialDimmerTransition === 'function') {
-            this.dialogsComponent.hideRadialDimmerTransition();
-          }
-        } catch {}
         gameStateManager.isBuyFeatureSpin = false;
       }
       

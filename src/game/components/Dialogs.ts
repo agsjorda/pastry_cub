@@ -4,12 +4,12 @@ import { ScreenModeManager } from '../../managers/ScreenModeManager';
 import { SoundEffectType } from '../../managers/AudioManager';
 import { NumberDisplay, NumberDisplayConfig } from './NumberDisplay';
 // import { SymbolExplosionTransition } from './SymbolExplosionTransition';
-import { RadialDimmerTransition } from './RadialDimmerTransition';
 import { RadialLightTransition } from './RadialLightTransition';
 import { gameStateManager } from '../../managers/GameStateManager';
 import { gameEventManager, GameEventType } from '../../event/EventManager';
 import { UI_CONFIG, WIN_THRESHOLDS, TIMING_CONFIG } from '../../config/GameConfig';
 import { Logger } from '../../utils/Logger';
+import { queueAnimation, startAnimation } from '../../utils/SpineAnimationHelper';
 import { CurrencyManager } from './CurrencyManager';
 
 export interface DialogConfig {
@@ -98,7 +98,6 @@ export class Dialogs {
 
 	// Symbol explosion transition for free spin dialog dismissal
 	// private candyTransition: SymbolExplosionTransition | null = null;
-	private radialDimmerTransition: RadialDimmerTransition | null = null;
 	private radialLightTransition: RadialLightTransition | null = null;
 
 	// Dialog configuration
@@ -174,7 +173,6 @@ export class Dialogs {
 
 		// Initialize symbol explosion transition for free spin dialog dismissal
 			   // this.candyTransition = new SymbolExplosionTransition(scene);
-		this.radialDimmerTransition = new RadialDimmerTransition(scene);
 		this.radialLightTransition = new RadialLightTransition(scene);
 
 		// Create main dialog overlay container
@@ -576,11 +574,11 @@ export class Dialogs {
 
 			try {
 				console.log(`[Dialogs] Playing idle animation: ${animations.idle}`);
-				this.currentDialog.animationState.setAnimation(0, animations.idle, shouldLoop);
+				startAnimation(this.currentDialog, { animationName: animations.idle, loop: shouldLoop });
 				this.applyDialogScalePop(scene);
 			} catch (error) {
 				console.log(`[Dialogs] Idle animation failed, retrying: ${animations.idle}`);
-				this.currentDialog.animationState.setAnimation(0, animations.idle, shouldLoop);
+				startAnimation(this.currentDialog, { animationName: animations.idle, loop: shouldLoop });
 				this.applyDialogScalePop(scene);
 			}
 		} catch (error) {
@@ -609,7 +607,7 @@ export class Dialogs {
 					this.currentDialogOverlay.setScale(scaleX, scaleY);
 					this.currentDialogOverlay.setDepth(104);
 					if (this.currentDialogOverlay.animationState) {
-						this.currentDialogOverlay.animationState.setAnimation(0, overlayAnimation, true);
+						startAnimation(this.currentDialogOverlay, { animationName: overlayAnimation, loop: true });
 					}
 					this.dialogOverlay.add(this.currentDialogOverlay);
 					this.dialogOverlay.bringToTop(this.currentDialogOverlay);
@@ -1361,44 +1359,6 @@ export class Dialogs {
 		});
 	}
 
-	public async playRadialDimmerCloseTransition(options?: {
-		durationMs?: number;
-		centerX?: number;
-		centerY?: number;
-		startRadius?: number;
-		endRadius?: number;
-	}): Promise<void> {
-		const scene = this.currentScene;
-		if (!scene || !this.radialDimmerTransition) {
-			return;
-		}
-
-		const centerX = options?.centerX ?? scene.scale.width * 0.5;
-		const centerY = options?.centerY ?? scene.scale.height * 0.5;
-		const maxRadius = Math.max(
-			Math.hypot(centerX, centerY),
-			Math.hypot(scene.scale.width - centerX, centerY),
-			Math.hypot(centerX, scene.scale.height - centerY),
-			Math.hypot(scene.scale.width - centerX, scene.scale.height - centerY)
-		);
-		const startRadius = options?.startRadius ?? Math.ceil(maxRadius);
-		const endRadius = options?.endRadius ?? 0;
-		const durationMs = options?.durationMs ?? 1200;
-
-		this.radialDimmerTransition.setCenter(centerX, centerY);
-		this.radialDimmerTransition.setRadiusImmediate(startRadius);
-		this.radialDimmerTransition.show();
-		this.radialDimmerTransition.zoomInToRadius(endRadius, durationMs);
-
-		await new Promise<void>((resolve) => {
-			scene.time.delayedCall(durationMs, () => resolve());
-		});
-	}
-
-	public hideRadialDimmerTransition(): void {
-		this.radialDimmerTransition?.hide();
-	}
-
 	public async playRadialLightTransition(options?: {
 		durationMs?: number;
 		centerX?: number;
@@ -1590,7 +1550,7 @@ export class Dialogs {
 			console.log(`[Dialogs] Playing outro animation: ${animations.outro}`);
 			try {
 				// Play outro animation, then fade out after it completes
-				this.currentDialog.animationState.setAnimation(0, animations.outro!, false);
+				startAnimation(this.currentDialog, { animationName: animations.outro!, loop: false });
 
 				// Get animation duration (estimate 1 second if we can't get it)
 				const outroTrack = this.currentDialog.animationState.getCurrent(0);
@@ -2173,10 +2133,10 @@ export class Dialogs {
 					console.log('[Dialogs] Staged win: initializing spine animation to first stage', animations);
 					try {
 						if (this.disableIntroAnimations) {
-							this.currentDialog.animationState.setAnimation(0, animations.idle, shouldLoop);
+							startAnimation(this.currentDialog, { animationName: animations.idle, loop: shouldLoop });
 						} else {
-							this.currentDialog.animationState.setAnimation(0, animations.intro, false);
-							this.currentDialog.animationState.addAnimation(0, animations.idle, shouldLoop, 0);
+							startAnimation(this.currentDialog, { animationName: animations.intro, loop: false });
+							queueAnimation(this.currentDialog, { animationName: animations.idle, loop: shouldLoop, delay: 0 });
 						}
 						// Apply scale pop whenever we transition into idle
 						const sceneRef = this.currentScene;
@@ -2185,7 +2145,7 @@ export class Dialogs {
 						}
 					} catch (err) {
 						console.warn('[Dialogs] Staged win: failed to play intro/idle for first stage, using idle only', err);
-						this.currentDialog.animationState.setAnimation(0, animations.idle, shouldLoop);
+						startAnimation(this.currentDialog, { animationName: animations.idle, loop: shouldLoop });
 						const sceneRef = this.currentScene;
 						if (sceneRef) {
 							this.applyDialogScalePop(sceneRef);
@@ -2304,10 +2264,10 @@ export class Dialogs {
 					console.log('[Dialogs] Staged win: switching spine animation to', animations);
 					try {
 						if (this.disableIntroAnimations) {
-							this.currentDialog.animationState.setAnimation(0, animations.idle, shouldLoop);
+							startAnimation(this.currentDialog, { animationName: animations.idle, loop: shouldLoop });
 						} else {
-							this.currentDialog.animationState.setAnimation(0, animations.intro, false);
-							this.currentDialog.animationState.addAnimation(0, animations.idle, shouldLoop, 0);
+							startAnimation(this.currentDialog, { animationName: animations.intro, loop: false });
+							queueAnimation(this.currentDialog, { animationName: animations.idle, loop: shouldLoop, delay: 0 });
 						}
 						// Apply scale pop whenever we transition into idle
 						const sceneRef = this.currentScene || scene;
@@ -2316,7 +2276,7 @@ export class Dialogs {
 						}
 					} catch (err) {
 						console.warn('[Dialogs] Staged win: intro/idle animation failed, using idle only', err);
-						this.currentDialog.animationState.setAnimation(0, animations.idle, shouldLoop);
+						startAnimation(this.currentDialog, { animationName: animations.idle, loop: shouldLoop });
 						const sceneRef = this.currentScene || scene;
 						if (sceneRef) {
 							this.applyDialogScalePop(sceneRef);

@@ -8,8 +8,8 @@ import {
 	GRID_CENTER_Y_RATIO,
 	GRID_CENTER_Y_OFFSET_PX,
 	TIMING_CONFIG,
-	CONVEYOR_ANIMATION_TIME_SCALE,
 } from "../../config/GameConfig";
+import { startAnimation, stopAnimation } from "../../utils/SpineAnimationHelper";
 
 export class BonusBackground {
 	private bonusContainer!: Phaser.GameObjects.Container;
@@ -371,13 +371,7 @@ export class BonusBackground {
 			if (!spine?.visible) continue;
 			const delayMs = staggerMs * col;
 			const startOne = () => {
-				try {
-					const state: any = spine?.animationState;
-					if (state?.setAnimation) state.setAnimation(0, 'animation', true);
-					if (state) (state as any).timeScale = CONVEYOR_ANIMATION_TIME_SCALE;
-				} catch (e) {
-					console.warn('[BonusBackground] Failed to play conveyor animation:', e);
-				}
+				startAnimation(spine, 'animation');
 			};
 			if (delayMs <= 0) {
 				startOne();
@@ -397,12 +391,7 @@ export class BonusBackground {
 			if (!colSet.has(col)) continue;
 			const spine = this.conveyorSpines[col];
 			if (!spine?.visible) continue;
-			try {
-				const state: any = spine.animationState;
-				if (state?.setEmptyAnimation) state.setEmptyAnimation(0, 0.2);
-			} catch (e) {
-				console.warn('[BonusBackground] Failed to stop conveyor animation:', e);
-			}
+			stopAnimation(spine);
 		}
 	}
 }

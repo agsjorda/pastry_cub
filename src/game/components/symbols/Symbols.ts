@@ -48,6 +48,7 @@ import {
 } from '../../../config/GameConfig';
 import { SoundEffectType } from '../../../managers/AudioManager';
 import { normalizeAreaToGameConfig } from '../../../utils/GridTransform';
+import { startAnimationWithEntry } from '../../../utils/SpineAnimationHelper';
 import {
   getHighCountSymbolsFromOuts,
   getOutCount,
@@ -3329,10 +3330,6 @@ export class Symbols {
     const tumbleActiveColumns = Array.from({ length: numCols }, (_, c) => c).filter(
       (c) => insCountByCol[c] > 0 || removedPerCol[c] > 0
     );
-    if (tumbleActiveColumns.length > 0) {
-      gameEventManager.emit(GameEventType.TUMBLE_COLUMNS_START, { columns: tumbleActiveColumns } as any);
-    }
-
     // Debug: per-column removal vs incoming
     try {
       console.log('[Symbols] Tumble per-column removal vs incoming:', removedPerCol.map((r, c) => ({ col: c, removed: r, incoming: insCountByCol[c] })));
@@ -3594,7 +3591,11 @@ export class Symbols {
                       } as any;
                       obj.animationState.addListener(listener);
                     }
-                    const entry = obj.animationState.setAnimation(0, sugarWinAnim as string, false);
+                    const entry = startAnimationWithEntry(obj, {
+                      animationName: sugarWinAnim as string,
+                      loop: false,
+                      logWhenMissing: false
+                    })?.entry;
                     const timeScale = (self.scene?.gameData as { symbolWinAnimTimeScale?: number })?.symbolWinAnimTimeScale ?? 1;
                     if (entry && typeof (entry as any).timeScale === 'number' && timeScale > 0) (entry as any).timeScale = timeScale;
                     // Safety fallback only: wait for animation to finish (duration scales with timeScale)
@@ -3671,7 +3672,11 @@ export class Symbols {
                         } as any;
                         obj.animationState.addListener(listener);
                       }
-                      const animEntry = obj.animationState.setAnimation(0, winAnim, false);
+                      const animEntry = startAnimationWithEntry(obj, {
+                        animationName: winAnim,
+                        loop: false,
+                        logWhenMissing: false
+                      })?.entry;
                       const timeScale = (self.scene?.gameData as { symbolWinAnimTimeScale?: number })?.symbolWinAnimTimeScale ?? 1;
                       if (animEntry && typeof (animEntry as any).timeScale === 'number' && timeScale > 0) (animEntry as any).timeScale = timeScale;
                       console.log(`[Symbols] Playing win animation "${winAnim}" for tumble index: ${tumbleIndex}`);
@@ -3742,6 +3747,11 @@ export class Symbols {
         }
       }
     } catch { }
+
+    // Start conveyor only when actual tumble movement begins (after win-symbol animations).
+    if (tumbleActiveColumns.length > 0) {
+      gameEventManager.emit(GameEventType.TUMBLE_COLUMNS_START, { columns: tumbleActiveColumns } as any);
+    }
 
     // Compress each column downwards and compute target indices for remaining symbols
     const symbolTotalHeight = self.displayHeight + self.verticalSpacing;

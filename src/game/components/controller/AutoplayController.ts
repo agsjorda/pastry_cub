@@ -11,6 +11,7 @@ import { gameStateManager } from '../../../managers/GameStateManager';
 import { TurboConfig } from '../../../config/TurboConfig';
 import { ensureSpineFactory } from '../../../utils/SpineGuard';
 import { Logger } from '../../../utils/Logger';
+import { startAnimation } from '../../../utils/SpineAnimationHelper';
 
 const log = Logger.slot;
 
@@ -440,7 +441,11 @@ export class AutoplayController {
     
     try {
       this.autoplayButtonAnimation.setVisible(true);
-      this.autoplayButtonAnimation.animationState.setAnimation(0, 'animation', true);
+      startAnimation(this.autoplayButtonAnimation, {
+        animationName: 'animation',
+        loop: true,
+        logWhenMissing: false
+      });
     } catch (error) {
       log.warn('Failed to start autoplay animation:', error);
     }
