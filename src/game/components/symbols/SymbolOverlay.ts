@@ -222,14 +222,16 @@ export class SymbolOverlay {
   // ============================================================================
 
   /**
-   * Create a win text display at the specified position
+   * Create a win text display at the specified position.
+   * @param scale Optional scale for the text (e.g. 0.7 for bonus game). Default 1.
    */
   public createWinText(
     amount: number,
     x: number,
     y: number,
     displayHeight: number,
-    isDemo: boolean = false
+    isDemo: boolean = false,
+    scale: number = 1
   ): Phaser.GameObjects.Text {
     const fontSize = Math.max(40, Math.round(displayHeight * 0.5));
     const currencyPrefix = isDemo ? '' : CurrencyManager.getInlinePrefix();
@@ -261,6 +263,10 @@ export class SymbolOverlay {
       (text as any).setStroke?.('#FA2A55', Math.max(2, Math.round(fontSize * 0.12)));
       (text as any).setShadow?.(0, 2, '#000000', Math.max(2, Math.round(fontSize * 0.15)), true, true);
     } catch { /* ignore */ }
+    
+    if (scale !== 1) {
+      try { text.setScale(scale); } catch { /* ignore */ }
+    }
     
     return text;
   }

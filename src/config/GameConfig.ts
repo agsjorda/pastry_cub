@@ -201,6 +201,10 @@ export const ANIMATION_CONFIG = {
   SYMBOL_BOUNCE_HEIGHT: 5,
   /** Filler symbol bounce after landing */
   FILLER_BOUNCE_HEIGHT: 40,
+  /** Time scale for symbol win animations (1 = normal, 0.5 = half speed). Use < 1 to slow down and see the animation clearly. */
+  SYMBOL_WIN_ANIM_TIME_SCALE: 0.7,
+  /** Delay in ms before playing win animations on cluster win (then win anim → destroy → tumble). */
+  CLUSTER_WIN_PRE_ANIM_DELAY_MS: 400,
 } as const;
 
 // =============================================================================
@@ -272,6 +276,8 @@ export const GRID_OVERLAY_PADDING = { x: 9, y: 8, offsetX: 1, offsetY: 0.7 } as 
 export const ANIMATION_STAGGER_MS = 50;
 export const SCALE_UP_DELAY_MS = 500;
 export const WIN_TEXT_DELAY_MS = 800;
+/** Scale for the win amount text that appears on cluster wins during bonus (e.g. 0.7 = 70% size). */
+export const WIN_TEXT_SCALE_BONUS = 0.7;
 export const SCATTER_SHRINK_DURATION_MS = 350;
 export const SCATTER_MOVE_DURATION_MS = 500;
 export const SCATTER_GATHER_DURATION_MS = 800;
@@ -296,6 +302,8 @@ export const SCATTER_RETRIGGER_SCALE = 1.5;
 // =============================================================================
 /** When true, draw a red border around symbols that are part of a win (cluster/tumble). */
 export const SHOW_WIN_BORDER_SYMBOLS: boolean = true;
+/** Line width (px) for the win border when SHOW_WIN_BORDER_SYMBOLS is true. Use a smaller value for thinner lines. */
+export const WIN_BORDER_LINE_WIDTH = 2;
 /** When true, draw a red border around the reel/grid container. */
 export const SHOW_REEL_BORDER: boolean = false;
 /** When true, draw hitboxes for controller buttons. */

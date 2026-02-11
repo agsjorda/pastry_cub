@@ -54,7 +54,7 @@ export class SlotController {
 	private autoplaySpinsRemainingText!: Phaser.GameObjects.Text;
 	private baseBetAmount: number = 0.2;
 	private betAmountText!: Phaser.GameObjects.Text;
-	private betDollarText!: Phaser.GameObjects.Text;
+	private betLabelText!: Phaser.GameObjects.Text;
 	
 	// UI elements not managed by controllers
 	private featureAmountText!: Phaser.GameObjects.Text;
@@ -1529,18 +1529,20 @@ export class SlotController {
 		// Bet background is visual only; bet options open via bet amount text
 		
 
-		// "BET" label (1st line)
-		const betLabel = scene.add.text(
+		// "BET (USD)" label (1st line)
+		const currencyCode = isDemoBet ? '' : CurrencyManager.getCurrencyCode();
+		const betLabelString = currencyCode ? `BET (${currencyCode})` : 'BET';
+		this.betLabelText = scene.add.text(
 			betX,
 			betY - 8,
-			'BET',
+			betLabelString,
 			{
 				fontSize: '12px',
 				color: '#00ff00', // Green color
 				fontFamily: 'poppins-bold'
 			}
 		).setOrigin(0.5, 0.5).setDepth(9);
-		this.controllerContainer.add(betLabel);
+		this.controllerContainer.add(this.betLabelText);
 
 		// "0.60" amount (2nd line, right part)
 		this.betAmountText = scene.add.text(
@@ -1594,22 +1596,6 @@ export class SlotController {
 
 		// Initialize base bet amount
 		this.baseBetAmount = 0.20;
-
-		// "$" symbol (2nd line, left part) - positioned dynamically
-		this.betDollarText = scene.add.text(
-			betX,
-			betY + 8,
-			CurrencyManager.getCurrencyGlyph(),
-			{
-				fontSize: '14px',
-				color: '#ffffff', // White color
-				fontFamily: 'poppins-regular'
-			}
-		).setOrigin(0.5, 0.5).setDepth(9);
-		// Hide currency symbol in demo mode
-		this.betDollarText.setVisible(!isDemoBet);
-		this.controllerContainer.add(this.betDollarText);
-		this.layoutCurrencyPair(betX, betY + 8, this.betDollarText, this.betAmountText, !!isDemoBet, 5);
 
 		// Decrease bet button (left side within container)
 		const decreaseBetButton = scene.add.image(
@@ -1966,14 +1952,6 @@ export class SlotController {
 			if (gameData && gameData.isEnhancedBet && this.betAmountText) {
 				const increasedBet = betAmount * 1.25;
 				this.betAmountText.setText(increasedBet.toFixed(2));
-
-				// Update currency symbol position based on new bet amount width
-				const isDemo = this.gameAPI?.getDemoState();
-				if (this.betDollarText && this.scene) {
-					const betX = this.scene.scale.width * 0.81;
-					const betY = this.betAmountText.y;
-					this.layoutCurrencyPair(betX, betY, this.betDollarText, this.betAmountText, !!isDemo, 5);
-				}
 			}
 		} finally {
 			this.isInternalBetChange = false;
@@ -1983,13 +1961,6 @@ export class SlotController {
 	updateBetAmount(betAmount: number): void {
 		if (this.betAmountText) {
 			this.betAmountText.setText(betAmount.toFixed(2));
-
-			const isDemo = this.gameAPI?.getDemoState();
-			if (this.scene && this.betDollarText) {
-				const betX = this.scene.scale.width * 0.81;
-				const betY = this.betAmountText.y;
-				this.layoutCurrencyPair(betX, betY, this.betDollarText, this.betAmountText, !!isDemo, 5);
-			}
 		}
 
 		// Update base bet amount when changed externally (not by amplify bet)
@@ -2029,11 +2000,11 @@ export class SlotController {
 
 	public refreshCurrencySymbols(): void {
 		this.balanceController?.refreshCurrencySymbols();
-		if (this.scene && this.betAmountText && this.betDollarText) {
+		// Bet label includes currency code (amount remains centered).
+		if (this.scene && this.betLabelText) {
 			const isDemo = this.gameAPI?.getDemoState();
-			const betX = this.scene.scale.width * 0.81;
-			const betY = this.betAmountText.y;
-			this.layoutCurrencyPair(betX, betY, this.betDollarText, this.betAmountText, !!isDemo, 5);
+			const currencyCode = isDemo ? '' : CurrencyManager.getCurrencyCode();
+			this.betLabelText.setText(currencyCode ? `BET (${currencyCode})` : 'BET');
 		}
 		if (this.scene && this.featureAmountText && this.featureDollarText) {
 			const isDemo = this.gameAPI?.getDemoState();
@@ -2907,14 +2878,6 @@ export class SlotController {
 		// Only update the display, keep baseBetAmount unchanged for API calls
 		if (this.betAmountText) {
 			this.betAmountText.setText(increasedBet.toFixed(2));
-			
-			// Update dollar sign position based on new bet amount width
-			if (this.betDollarText) {
-				const betY = this.betAmountText.y;
-				const betX = this.scene ? this.scene.scale.width * 0.81 : this.betAmountText.x;
-				const isDemo = this.gameAPI?.getDemoState();
-				this.layoutCurrencyPair(betX, betY, this.betDollarText, this.betAmountText, !!isDemo, 5);
-			}
 		}
 		
 		// Even though base bet doesn't change, price uses base bet x100
@@ -2930,14 +2893,6 @@ export class SlotController {
 		// Restore display to base bet amount
 		if (this.betAmountText) {
 			this.betAmountText.setText(this.baseBetAmount.toFixed(2));
-			
-			// Update dollar sign position based on new bet amount width
-			if (this.betDollarText) {
-				const betY = this.betAmountText.y;
-				const betX = this.scene ? this.scene.scale.width * 0.81 : this.betAmountText.x;
-				const isDemo = this.gameAPI?.getDemoState();
-				this.layoutCurrencyPair(betX, betY, this.betDollarText, this.betAmountText, !!isDemo, 5);
-			}
 		}
 		
 		// Keep Buy Feature price in sync

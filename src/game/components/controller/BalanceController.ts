@@ -15,8 +15,8 @@ export interface BalanceControllerCallbacks {
 export class BalanceController {
   private controllerContainer: Phaser.GameObjects.Container;
   private callbacks: BalanceControllerCallbacks;
+  private balanceLabelText!: Phaser.GameObjects.Text;
   private balanceAmountText!: Phaser.GameObjects.Text;
-  private balanceDollarText!: Phaser.GameObjects.Text;
   private pendingBalanceUpdate: { balance: number; bet: number; winnings?: number } | null = null;
 
   constructor(
@@ -47,17 +47,19 @@ export class BalanceController {
     balanceBg.setDepth(8);
     this.controllerContainer.add(balanceBg);
 
-    const balanceLabel = scene.add.text(
+    const currencyCode = isDemoBalance ? '' : CurrencyManager.getCurrencyCode();
+    const balanceLabelString = currencyCode ? `BALANCE (${currencyCode})` : 'BALANCE';
+    this.balanceLabelText = scene.add.text(
       balanceX,
       balanceY - 8,
-      'BALANCE',
+      balanceLabelString,
       {
         fontSize: '12px',
         color: '#00ff00',
         fontFamily: 'poppins-bold'
       }
     ).setOrigin(0.5, 0.5).setDepth(9);
-    this.controllerContainer.add(balanceLabel);
+    this.controllerContainer.add(this.balanceLabelText);
 
     this.balanceAmountText = scene.add.text(
       balanceX,
@@ -70,21 +72,6 @@ export class BalanceController {
       }
     ).setOrigin(0.5, 0.5).setDepth(9);
     this.controllerContainer.add(this.balanceAmountText);
-
-    this.balanceDollarText = scene.add.text(
-      balanceX,
-      balanceY + 8,
-      CurrencyManager.getCurrencyGlyph(),
-      {
-        fontSize: '14px',
-        color: '#ffffff',
-        fontFamily: 'poppins-regular'
-      }
-    ).setOrigin(0.5, 0.5).setDepth(9);
-    this.balanceDollarText.setVisible(!isDemoBalance);
-    this.controllerContainer.add(this.balanceDollarText);
-
-    this.layoutCurrencyPair(balanceX, balanceY + 8, this.balanceDollarText, this.balanceAmountText, !!isDemoBalance, 6);
   }
 
   public updateBalanceAmount(balanceAmount: number): void {
@@ -92,14 +79,6 @@ export class BalanceController {
       this.balanceAmountText.setText(
         balanceAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
       );
-
-      const isDemo = this.callbacks.getGameAPI()?.getDemoState();
-      const scene = this.callbacks.getScene();
-      if (scene) {
-        const balanceX = scene.scale.width * 0.19;
-        const balanceY = this.balanceAmountText.y;
-        this.layoutCurrencyPair(balanceX, balanceY, this.balanceDollarText, this.balanceAmountText, !!isDemo, 6);
-      }
     }
   }
 
@@ -143,12 +122,10 @@ export class BalanceController {
 
   public refreshCurrencySymbols(): void {
     const scene = this.callbacks.getScene();
-    if (!scene || !this.balanceAmountText || !this.balanceDollarText) return;
+    if (!scene || !this.balanceLabelText) return;
     const isDemo = this.callbacks.getGameAPI()?.getDemoState();
-    const balanceX = scene.scale.width * 0.19;
-    const balanceY = this.balanceAmountText.y;
-    this.balanceDollarText.setText(CurrencyManager.getCurrencyGlyph());
-    this.layoutCurrencyPair(balanceX, balanceY, this.balanceDollarText, this.balanceAmountText, !!isDemo, 6);
+    const currencyCode = isDemo ? '' : CurrencyManager.getCurrencyCode();
+    this.balanceLabelText.setText(currencyCode ? `BALANCE (${currencyCode})` : 'BALANCE');
   }
 
   private layoutCurrencyPair(

@@ -117,10 +117,6 @@ export function findClusters(area: GridArea): Cluster[] {
 
   const isClusterSymbol = (s: number) => CLUSTER_PAY_SYMBOLS.includes(s as any);
 
-  /** True if p and q are diagonal neighbors (and not 4-adjacent). */
-  const isDiagonalPair = (p: { col: number; row: number }, q: { col: number; row: number }) =>
-    Math.abs(p.col - q.col) === 1 && Math.abs(p.row - q.row) === 1;
-
   /** Get 4-connected components of a set of positions (4-adjacency only). */
   function getFourConnectedComponents(positions: { col: number; row: number }[]): { col: number; row: number }[][] {
     const set = new Set(positions.map((p) => key(p.col, p.row)));
@@ -147,14 +143,6 @@ export function findClusters(area: GridArea): Cluster[] {
     return components;
   }
 
-  /** Remove positions that have a diagonal neighbor in the set; return 4-connected components of size >= 5. */
-  function filterDiagonalFree(positions: { col: number; row: number }[]): { col: number; row: number }[][] {
-    const hasDiagonal = (p: { col: number; row: number }) =>
-      positions.some((q) => p !== q && isDiagonalPair(p, q));
-    const diagonalFree = positions.filter((p) => !hasDiagonal(p));
-    return getFourConnectedComponents(diagonalFree).filter((comp) => comp.length >= QUALIFYING_CLUSTER_COUNT);
-  }
-
   for (let c = 0; c < cols; c++) {
     const rows = area[c]?.length ?? 0;
     for (let r = 0; r < rows; r++) {
@@ -163,12 +151,10 @@ export function findClusters(area: GridArea): Cluster[] {
       const positions: { col: number; row: number }[] = [];
       dfs(c, r, sym, positions);
       if (positions.length < QUALIFYING_CLUSTER_COUNT) continue;
-      const diagonalFreeComponents = filterDiagonalFree(positions);
-      for (const comp of diagonalFreeComponents) {
-        if (comp.length >= QUALIFYING_CLUSTER_COUNT) {
-          clusters.push({ symbol: sym, count: comp.length, positions: comp });
-        }
-      }
+      const components = getFourConnectedComponents(positions).filter(
+        (comp) => comp.length >= QUALIFYING_CLUSTER_COUNT
+      );
+      for (const comp of components) clusters.push({ symbol: sym, count: comp.length, positions: comp });
       for (const p of positions) visited.add(key(p.col, p.row));
     }
   }

@@ -9,6 +9,7 @@
  * - SymbolFactory: Creates symbol objects (Spine/PNG)
  * - SymbolAnimations: Handles animations and tweens
  * - SymbolOverlay: Manages overlays and win text
+ * - SymbolMultiplier: Bonus multiplier cell markers (x1, x2, ... x128)
  * - FreeSpinController: Manages free spin autoplay
  * 
  * For new code, prefer importing specific modules directly:
@@ -35,6 +36,7 @@ import {
   SYMBOL_CONFIG,
   DEPTH_WINNING_SYMBOL,
   DEPTH_WIN_LINES,
+  WIN_TEXT_SCALE_BONUS,
   SCATTER_ANIMATION_SCALE,
   SCATTER_GATHER_SCALE,
   SCATTER_RETRIGGER_SCALE,
@@ -42,6 +44,7 @@ import {
   SCATTER_SHRINK_DURATION_MS,
   SCATTER_MOVE_DURATION_MS,
   SHOW_WIN_BORDER_SYMBOLS,
+  WIN_BORDER_LINE_WIDTH,
 } from '../../../config/GameConfig';
 import { SoundEffectType } from '../../../managers/AudioManager';
 import { normalizeAreaToGameConfig } from '../../../utils/GridTransform';
@@ -62,6 +65,7 @@ import { SymbolGrid } from './SymbolGrid';
 import { SymbolAnimations } from './SymbolAnimations';
 import { SymbolFactory, resolveSymbolAnimationName } from './SymbolFactory';
 import { SymbolOverlay } from './SymbolOverlay';
+import { SymbolMultiplier } from './SymbolMultiplier';
 import { FreeSpinController } from './FreeSpinController';
 import type {
   SymbolObject,
@@ -100,6 +104,7 @@ export class Symbols {
   private animationsModule!: SymbolAnimations;
   private factory!: SymbolFactory;
   private overlayModule!: SymbolOverlay;
+  private symbolMultiplier!: SymbolMultiplier;
   private freeSpinController!: FreeSpinController;
 
   // ============================================================================
@@ -195,6 +200,8 @@ export class Symbols {
   private tumbleDropInProgress: boolean = false;
   private readonly skipTweenTimeScale: number = 1;
   private explosionVfxInProgress: number = 0;
+  // Tracks whether the persistent bonus multiplier grid has been initialized for the current bonus session (so retriggers don't reset it).
+  private bonusGridInitializedForSession: boolean = false;
   /** Win border graphics (scene layer) for SHOW_WIN_BORDER_SYMBOLS - cleared on new spin */
   private winBorderGraphics: Phaser.GameObjects.Graphics[] = [];
 
@@ -232,6 +239,19 @@ export class Symbols {
       this.grid.displayHeight
     );
     this.overlayModule = new SymbolOverlay(scene);
+    this.symbolMultiplier = new SymbolMultiplier(scene);
+    this.symbolMultiplier.setLayout({
+      displayWidth: this.grid.displayWidth,
+      displayHeight: this.grid.displayHeight,
+      slotX: this.grid.slotX,
+      slotY: this.grid.slotY,
+      totalGridWidth: this.grid.totalGridWidth,
+      totalGridHeight: this.grid.totalGridHeight,
+      horizontalSpacing: this.grid.horizontalSpacing,
+      verticalSpacing: this.grid.verticalSpacing,
+      numCols: SLOT_COLUMNS,
+      numRows: SLOT_ROWS,
+    });
     this.factory = new SymbolFactory(
       scene,
       this.animationsModule,
@@ -291,6 +311,20 @@ export class Symbols {
     // Create overlay
     this.overlayModule.createOverlayRect(this.grid.getGridBounds());
     this.createSkipHitbox();
+
+    // Initialize / reset persistent bonus multipliers on bonus start & bonus end.
+    // Only reset once per bonus session; retriggers should preserve the grid.
+    this.scene.events.on('setBonusMode', (isBonus: boolean) => {
+      if (isBonus) {
+        if (!this.bonusGridInitializedForSession) {
+          this.symbolMultiplier.reset();
+          this.bonusGridInitializedForSession = true;
+        }
+      } else {
+        this.symbolMultiplier.reset();
+        this.bonusGridInitializedForSession = false;
+      }
+    });
   }
 
   // ============================================================================
@@ -915,7 +949,7 @@ export class Symbols {
     // Clear any win border graphics from the scene
     for (const g of this.winBorderGraphics) {
       try {
-        if (g && !g.destroyed && g.destroy) g.destroy();
+        if (g && g.destroy) g.destroy();
       } catch { /* ignore */ }
     }
     this.winBorderGraphics = [];
@@ -3324,7 +3358,7 @@ export class Symbols {
 
     // Optional: draw red borders around winning symbols for visualization (scene layer, use grid cell position)
     if (SHOW_WIN_BORDER_SYMBOLS && self.grid) {
-      const borderThickness = 4;
+      const borderThickness = WIN_BORDER_LINE_WIDTH;
       const borderColor = 0xff0000;
       const w = self.displayWidth ?? 62;
       const h = self.displayHeight ?? 62;
@@ -3433,8 +3467,9 @@ export class Symbols {
               }
             }
           } catch { }
-          // Create and place text
-          const txt = this.overlayModule.createWinText(amount, baseX, baseY, this.displayHeight);
+          // Create and place text (smaller scale during bonus)
+          const winTextScale = gameStateManager.isBonus ? WIN_TEXT_SCALE_BONUS : 1;
+          const txt = this.overlayModule.createWinText(amount, baseX, baseY, this.displayHeight, false, winTextScale);
           try { txt.setDepth(700); } catch { }
           self.container.add(txt);
           try { (obj as any).__winText = txt; } catch { }
@@ -3482,12 +3517,18 @@ export class Symbols {
       }
     } catch { }
 
+    // Short delay before playing win animations on cluster win (then win anim → destroy → tumble)
+    if (anyRemoval && !skipTumble) {
+      const gd = self.scene?.gameData as { clusterWinPreAnimDelayMs?: number } | undefined;
+      const preAnimDelayMs = gd?.clusterWinPreAnimDelayMs ?? 400;
+      await this.delay(preAnimDelayMs);
+    }
+
     // Animate removal: for high-count sugar symbols (1..7), play SW_Win before destroy; otherwise fade out
     const removalPromises: Promise<void>[] = [];
     const STAGGER_MS = 50; // match drop sequence stagger (shortened)
     // Track first win animation notification (we now trigger on animation start for better SFX sync)
     let firstWinNotified = false;
-    let explosionSfxPlayed = false;
     function notifyFirstWinIfNeeded() {
       if (!firstWinNotified) {
           firstWinNotified = true;
@@ -3497,10 +3538,7 @@ export class Symbols {
           if (typeof onFirstWinComplete === 'function') {
             onFirstWinComplete(tumbleTotal);
           }
-            // (moved win animation trigger to tumble win detection below)
         } catch { }
-      } else {
-        console.log(`[Symbols] notifyFirstWinIfNeeded called again for tumble index: ${tumbleIndex} (already notified, skipping)`);
       }
     }
 
@@ -3512,12 +3550,13 @@ export class Symbols {
         }
       } catch { }
       
-      // Still apply animations but at high speed
+      // Turbo: play win animation first (at turbo speed), then hide/destroy
       const removalPromises: Promise<void>[] = [];
       const TurboConfig = (window as any)?.TurboConfig || { TURBO_SPEED_MULTIPLIER: 0.25 };
       const speedMultiplier = TurboConfig.TURBO_SPEED_MULTIPLIER || 0.25;
       const animationDuration = Math.max(100, (self.scene?.gameData?.winUpDuration || 400) * speedMultiplier);
-      
+      const winAnimHoldMs = Math.max(80, animationDuration);
+
       for (let col = 0; col < numCols; col++) {
         for (let row = 0; row < numRows; row++) {
           if (!removeMask[col][row]) continue;
@@ -3525,30 +3564,63 @@ export class Symbols {
           if (obj) {
             removalPromises.push(new Promise<void>((resolve) => {
               try {
-                // Apply fast fade animation
-                self.scene.tweens.killTweensOf(obj);
-                const tweenTargets: any = this.getSymbolTweenTargets(obj);
-                self.scene.tweens.add({
-                  targets: tweenTargets,
-                  alpha: 0,
-                  duration: animationDuration,
-                  ease: Phaser.Math.Easing.Cubic.In,
-                  onComplete: () => {
-                    try { this.destroySymbolOverlays(obj); } catch { }
-                    try { obj.destroy(); } catch { }
-                    self.symbols[col][row] = null as any;
-                    if (self.currentSymbolData && self.currentSymbolData[row]) {
-                      (self.currentSymbolData[row] as any)[col] = null;
-                    }
+                const value = self.currentSymbolData?.[row]?.[col];
+                const isSugarWin = typeof value === 'number' && value >= 1 && value <= 7;
+                const skeletonData = (obj as any)?.skeleton?.data;
+                const sugarWinAnim = isSugarWin && skeletonData ? resolveSymbolAnimationName(skeletonData, value, 'win') : null;
+                const canPlaySugarWin = !!(sugarWinAnim && obj.animationState && obj.animationState.setAnimation);
+
+                if (canPlaySugarWin) {
+                  // Play win animation first, then destroy after turbo-speed hold
+                  let completed = false;
+                  const finish = () => {
+                    if (completed) return;
+                    completed = true;
+                    this.clearSymbolCell(obj, col, row);
                     resolve();
-                  }
-                });
-              } catch {
-                try { obj.destroy(); } catch { }
-                self.symbols[col][row] = null as any;
-                if (self.currentSymbolData && self.currentSymbolData[row]) {
-                  (self.currentSymbolData[row] as any)[col] = null;
+                  };
+                  try {
+                    if (typeof obj.setDepth === 'function') obj.setDepth(DEPTH_WINNING_SYMBOL);
+                    if (obj.animationState.clearTracks) obj.animationState.clearTracks();
+                    this.setSymbolWinDrawOrderSymbolInsideBox(obj);
+                    if (obj.animationState.addListener) {
+                      const listener = {
+                        complete: (entry: any) => {
+                          try {
+                            if (!entry || entry.animation?.name !== sugarWinAnim) return;
+                          } catch { }
+                          finish();
+                        }
+                      } as any;
+                      obj.animationState.addListener(listener);
+                    }
+                    const entry = obj.animationState.setAnimation(0, sugarWinAnim as string, false);
+                    const timeScale = (self.scene?.gameData as { symbolWinAnimTimeScale?: number })?.symbolWinAnimTimeScale ?? 1;
+                    if (entry && typeof (entry as any).timeScale === 'number' && timeScale > 0) (entry as any).timeScale = timeScale;
+                    // Safety fallback only: wait for animation to finish (duration scales with timeScale)
+                    const animDurationSec = (entry as any)?.animation?.duration;
+                    const safetyMs = animDurationSec != null
+                      ? (animDurationSec * 1000) / Math.max(0.1, timeScale) + 1500
+                      : Math.max(3000, winAnimHoldMs * 4);
+                    self.scene.time.delayedCall(safetyMs, () => finish());
+                  } catch { }
+                } else {
+                  // No win animation: fast fade then destroy
+                  self.scene.tweens.killTweensOf(obj);
+                  const tweenTargets: any = this.getSymbolTweenTargets(obj);
+                  self.scene.tweens.add({
+                    targets: tweenTargets,
+                    alpha: 0,
+                    duration: animationDuration,
+                    ease: Phaser.Math.Easing.Cubic.In,
+                    onComplete: () => {
+                      this.clearSymbolCell(obj, col, row);
+                      resolve();
+                    }
+                  });
                 }
+              } catch {
+                this.clearSymbolCell(obj, col, row);
                 resolve();
               }
             }));
@@ -3565,49 +3637,24 @@ export class Symbols {
             if (obj) {
               removalPromises.push(new Promise<void>((resolve) => {
               const value = self.currentSymbolData?.[row]?.[col];
-              const isSugarWin = typeof value === 'number' && value >= 1 && value <= 7 && highCountSymbols.has(value);
-              const sugarWinAnim = isSugarWin ? `Symbol${value}_BZ_win` : null;
-              const hasSugarWinAnim = !!(sugarWinAnim && (obj as any)?.skeleton?.data?.findAnimation?.(sugarWinAnim));
-              const canPlaySugarWin = !!(isSugarWin && hasSugarWinAnim && obj.animationState && obj.animationState.setAnimation);
-              const shouldExplode = !!isSugarWin;
-              let vfxTriggered = false;
-              const triggerRemovalVfx = () => {
-                if (!shouldExplode || vfxTriggered) return;
-                vfxTriggered = true;
-                try {
-                  let x = typeof (obj as any)?.x === 'number' ? (obj as any).x : null;
-                  let y = typeof (obj as any)?.y === 'number' ? (obj as any).y : null;
-                  const matrix = (obj as any)?.getWorldTransformMatrix?.();
-                  if (matrix && typeof matrix.tx === 'number' && typeof matrix.ty === 'number') {
-                    x = matrix.tx;
-                    y = matrix.ty;
-                  }
-                  if (x === null || y === null) return;
-                  this.playExplosionVfx(x, y, false);
-                } catch { }
-              };
+              const isSugarWin = typeof value === 'number' && value >= 1 && value <= 7;
+              const skeletonData = (obj as any)?.skeleton?.data;
+              const sugarWinAnim = isSugarWin && skeletonData ? resolveSymbolAnimationName(skeletonData, value, 'win') : null;
+              const canPlaySugarWin = !!(sugarWinAnim && obj.animationState && obj.animationState.setAnimation);
+
+              if (isSugarWin && gameStateManager.isBonus) {
+                this.symbolMultiplier.markCell(col, row);
+              }
 
               const startRemoval = () => {
                 try {
-                  // Fire win notification before explosion so twin SFX leads the blast
                   notifyFirstWinIfNeeded();
-                  if (shouldExplode && !explosionSfxPlayed) {
-                    explosionSfxPlayed = true;
-                    try {
-                      const am = (window as any)?.audioManager;
-                      if (am && typeof am.playSoundEffect === 'function') {
-                        // Small delay to ensure twin SFX leads
-                        self.scene.time.delayedCall(60, () => {
-                          try { am.playSoundEffect(SoundEffectType.TUMBLE_BOMB); } catch { }
-                        });
-                      }
-                    } catch { }
-                  }
-                  if (shouldExplode) {
-                    triggerRemovalVfx();
-                  }
                   if (canPlaySugarWin) {
-                    try { if (obj.animationState.clearTracks) obj.animationState.clearTracks(); } catch { }
+                    try {
+                      if (typeof obj.setDepth === 'function') obj.setDepth(DEPTH_WINNING_SYMBOL);
+                      if (obj.animationState.clearTracks) obj.animationState.clearTracks();
+                      this.setSymbolWinDrawOrderSymbolInsideBox(obj);
+                    } catch { }
                     const winAnim = sugarWinAnim as string;
                     let completed = false;
                     try {
@@ -3618,98 +3665,62 @@ export class Symbols {
                               if (!entry || entry.animation?.name !== winAnim) return;
                             } catch { }
                             if (completed) return; completed = true;
-                            try { this.destroySymbolOverlays(obj); } catch { }
-                            try { obj.destroy(); } catch { }
-                            if (self.symbols[col]) {
-                              self.symbols[col][row] = null as any;
-                            }
-                            if (self.currentSymbolData && self.currentSymbolData[row]) {
-                              (self.currentSymbolData[row] as any)[col] = null;
-                            }
+                            this.clearSymbolCell(obj, col, row);
                             resolve();
                           }
                         } as any;
                         obj.animationState.addListener(listener);
                       }
-                      obj.animationState.setAnimation(0, winAnim, false);
-                      // Log the tumble index when win animation starts
+                      const animEntry = obj.animationState.setAnimation(0, winAnim, false);
+                      const timeScale = (self.scene?.gameData as { symbolWinAnimTimeScale?: number })?.symbolWinAnimTimeScale ?? 1;
+                      if (animEntry && typeof (animEntry as any).timeScale === 'number' && timeScale > 0) (animEntry as any).timeScale = timeScale;
                       console.log(`[Symbols] Playing win animation "${winAnim}" for tumble index: ${tumbleIndex}`);
-                      if (!shouldExplode && !disableScaling) {
-                        this.animationsModule.scheduleScaleUp(obj, 500);
-                      }
-                      // Safety timeout in case complete isn't fired
-                      self.scene.time.delayedCall(self.scene.gameData.winUpDuration + 700, () => {
+                      // Match bonus game: no scale-up during symbol win animation (disableScaling is true in bonus; same behavior for normal so win anim looks correct).
+                      // Safety fallback only: destroy after animation would have finished (duration / timeScale + buffer). Primary is animation complete event.
+                      const animDurationSec = (animEntry as any)?.animation?.duration;
+                      const safetyMs = animDurationSec != null
+                        ? (animDurationSec * 1000) / Math.max(0.1, timeScale) + 1500
+                        : (self.scene.gameData.winUpDuration + 700) / Math.max(0.1, timeScale) + 1000;
+                      self.scene.time.delayedCall(safetyMs, () => {
                         if (completed) return; completed = true;
-                        try { this.destroySymbolOverlays(obj); } catch { }
-                        try { obj.destroy(); } catch { }
-                        if (self.symbols[col]) {
-                          self.symbols[col][row] = null as any;
-                        }
-                        if (self.currentSymbolData && self.currentSymbolData[row]) {
-                          (self.currentSymbolData[row] as any)[col] = null;
-                        }
+                        this.clearSymbolCell(obj, col, row);
                         resolve();
                       });
                     } catch {
-                      // Fallback to fade if animation fails
                       try { self.scene.tweens.killTweensOf(obj); } catch { }
                       const tweenTargets: any = this.getSymbolTweenTargets(obj);
                       self.scene.tweens.add({
                         targets: tweenTargets,
                         alpha: 0,
-                        // No scale change to avoid perceived scale-up/down
                         duration: self.scene.gameData.winUpDuration,
                         ease: Phaser.Math.Easing.Cubic.In,
                         onComplete: () => {
-                          try { this.destroySymbolOverlays(obj); } catch { }
-                          try { obj.destroy(); } catch { }
-                          if (self.symbols[col]) {
-                            self.symbols[col][row] = null as any;
-                          }
-                          if (self.currentSymbolData && self.currentSymbolData[row]) {
-                            (self.currentSymbolData[row] as any)[col] = null;
-                          }
+                          this.clearSymbolCell(obj, col, row);
                           resolve();
                         }
                       });
                     }
                   } else {
-                    // Non-sugar or low-count: soft fade without scale change
                     try { self.scene.tweens.killTweensOf(obj); } catch { }
                     const tweenTargets: any = this.getSymbolTweenTargets(obj);
                     self.scene.tweens.add({
                       targets: tweenTargets,
                       alpha: 0,
-                      // No scale change
                       duration: self.scene.gameData.winUpDuration,
                       ease: Phaser.Math.Easing.Cubic.In,
                       onComplete: () => {
-                        try { this.destroySymbolOverlays(obj); } catch { }
-                        try { obj.destroy(); } catch { }
-                        // Leave null placeholder for compression step
-                        self.symbols[col][row] = null as any;
-                        if (self.currentSymbolData && self.currentSymbolData[row]) {
-                          (self.currentSymbolData[row] as any)[col] = null;
-                        }
+                        this.clearSymbolCell(obj, col, row);
                         resolve();
                       }
                     });
                   }
                 } catch {
-                  try { obj.destroy(); } catch { }
-                  self.symbols[col][row] = null as any;
-                  if (self.currentSymbolData && self.currentSymbolData[row]) {
-                    (self.currentSymbolData[row] as any)[col] = null;
-                  }
+                  this.clearSymbolCell(obj, col, row);
                   resolve();
                 }
               };
 
-              if (shouldExplode && !disableScaling) {
-                this.playPreExplosionPulse(obj, startRemoval);
-              } else {
-                startRemoval();
-              }
+              startRemoval();
             }));
             } else {
               self.symbols[col][row] = null as any;
@@ -4234,6 +4245,24 @@ export class Symbols {
     this.scene.time.delayedCall(fallbackMs, destroyVfx);
   }
 
+  /**
+   * Restore Symbol7_PC (and similar) draw order from the asset: slots are defined in JSON as
+   * [BoxTB2, Symbol7E1, Symbol7E2, Symbol7, BoxTB1, Top] so the hotdog sits between box parts.
+   * We do not override draw order; the skeleton's default order and the win animation's drawOrder
+   * timeline are used as exported. Call after clearTracks so setup pose order is applied.
+   */
+  private setSymbolWinDrawOrderSymbolInsideBox(spineObj: any): void {
+    try {
+      const sk = spineObj?.skeleton;
+      const slots = sk?.slots;
+      const order = sk?.drawOrder;
+      if (!slots || !order || !Array.isArray(slots) || !Array.isArray(order) || slots.length === 0) return;
+      // Restore asset order: drawOrder = copy of slots in default order (BoxTB2, symbol parts, BoxTB1, Top)
+      order.length = 0;
+      for (let i = 0; i < slots.length; i++) order.push(slots[i]);
+    } catch { /* ignore */ }
+  }
+
   private playPreExplosionPulse(target: any, onComplete: () => void): void {
     try {
       if (!this.scene || !target) {
@@ -4384,6 +4413,19 @@ export class Symbols {
         winBorder.destroy();
         (baseObj as any).__winBorder = null;
       }
+    } catch { }
+  }
+
+  /**
+   * Clear a symbol from the grid: destroy overlays, destroy object, null out cell and symbol data.
+   * Safe to call multiple times (no-op if already cleared).
+   */
+  private clearSymbolCell(obj: any, col: number, row: number): void {
+    try { this.destroySymbolOverlays(obj); } catch { }
+    try { if (obj && typeof obj.destroy === 'function' && !obj.destroyed) obj.destroy(); } catch { }
+    try {
+      if (this.symbols[col]) this.symbols[col][row] = null as any;
+      if (this.currentSymbolData && this.currentSymbolData[row]) (this.currentSymbolData[row] as any)[col] = null;
     } catch { }
   }
 }

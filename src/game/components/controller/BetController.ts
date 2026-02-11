@@ -42,7 +42,6 @@ export class BetController {
   
   // UI Elements
   private betAmountText: Phaser.GameObjects.Text | null = null;
-  private betDollarText: Phaser.GameObjects.Text | null = null;
   private decreaseBetButton: Phaser.GameObjects.Image | null = null;
   private increaseBetButton: Phaser.GameObjects.Image | null = null;
   
@@ -110,30 +109,13 @@ export class BetController {
     }).setOrigin(0.5, 0.5).setDepth(9);
     this.container.add(betLabel);
 
-    // Calculate x offset for bet amount (centered in demo, offset for currency)
-    const betXOffset = isDemoMode ? 0 : 5;
-
     // Bet amount text
-    this.betAmountText = this.scene.add.text(betX + betXOffset, betY + 8, '0.00', {
+    this.betAmountText = this.scene.add.text(betX, betY + 8, '0.00', {
       fontSize: '14px',
       color: '#ffffff',
       fontFamily: 'poppins-bold'
     }).setOrigin(0.5, 0.5).setDepth(9);
     this.container.add(this.betAmountText);
-
-    // Currency symbol
-    this.betDollarText = this.scene.add.text(
-      betX - (this.betAmountText.width / 2) - 3,
-      betY + 8,
-      isDemoMode ? '' : '$',
-      {
-        fontSize: '14px',
-        color: '#ffffff',
-        fontFamily: 'poppins-regular'
-      }
-    ).setOrigin(0.5, 0.5).setDepth(9);
-    this.betDollarText.setVisible(!isDemoMode);
-    this.container.add(this.betDollarText);
 
     // Decrease bet button
     this.decreaseBetButton = this.scene.add.image(betX - 42, betY + 8, 'decrease_bet')
@@ -188,13 +170,6 @@ export class BetController {
         ? amount.toString() 
         : amount.toFixed(2);
       this.betAmountText.setText(formattedAmount);
-      
-      // Reposition currency symbol
-      if (this.betDollarText) {
-        this.betDollarText.setX(
-          this.betAmountText.x - (this.betAmountText.width / 2) - 3
-        );
-      }
     }
     
     this.updateBetLimitButtons(amount);

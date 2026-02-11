@@ -149,6 +149,16 @@ export class AssetConfig {
 		};
 		console.log('[AssetConfig] Explosion VFX spine: Explosion_BZ_VFX');
 
+		// Multiplier overlays for bonus grid (x1, x2, x4, ..., x128)
+		// Files expected in: assets/symbols/high/pastry_cub/multiplier_symbols/x1.webp, x2.webp, ...
+		const bonusMultipliers = [1, 2, 4, 8, 16, 32, 64, 128];
+		bonusMultipliers.forEach((mult) => {
+			const key = `bonus_multiplier_x${mult}`;
+			const path = `assets/symbols/high/pastry_cub/multiplier_symbols/x${mult}.webp`;
+			symbolImages[key] = path;
+			console.log(`[AssetConfig] Bonus multiplier ${mult}x: ${path}`);
+		});
+
 		return {
 			images: symbolImages,
 			spine: symbolSpine

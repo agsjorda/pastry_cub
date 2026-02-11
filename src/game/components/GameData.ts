@@ -33,6 +33,10 @@ export class GameData {
 	public tumbleDropStartDelayMs: number = 0;
 	public tumbleSkipPreHop: boolean = true;
 	public tumbleOverlapDropsDuringCompression: boolean = true;
+	/** Delay in ms before playing win animations on cluster win (then win anim → destroy → tumble). From GameConfig ANIMATION_CONFIG. */
+	public clusterWinPreAnimDelayMs: number = ANIMATION_CONFIG.CLUSTER_WIN_PRE_ANIM_DELAY_MS;
+	/** Time scale for symbol win animations (1 = normal, 0.5 = half speed). From GameConfig ANIMATION_CONFIG. */
+	public symbolWinAnimTimeScale: number = ANIMATION_CONFIG.SYMBOL_WIN_ANIM_TIME_SCALE;
 
 	public constructor() {
 		setSpeed(this, 1.0);
