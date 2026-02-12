@@ -263,10 +263,10 @@ export class ScatterAnimationManager {
     // Update game state to reflect bonus mode
     gameStateManager.isBonus = true;
 
-    // Show the FreeSpin_BZ with all effects - this will trigger bonus mode when clicked
+    // Show the FreeSpin dialog with all effects - this will trigger bonus mode when clicked
     try {
       this.dialogsComponent.showDialog(this.scene, {
-        type: 'FreeSpin_BZ',
+        type: 'FreeSpin',
         freeSpins: freeSpins,
         suppressBlackOverlay: options.suppressBlackOverlay
       });
@@ -325,7 +325,7 @@ export class ScatterAnimationManager {
     
     try {
       this.dialogsComponent.showDialog(this.scene, {
-        type: 'FreeSpinRetri_BZ',
+        type: 'FreeSpinRetrigger',
         freeSpins: spins,
         isRetrigger: true
       });

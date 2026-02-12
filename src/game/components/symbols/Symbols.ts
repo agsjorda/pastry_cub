@@ -9,7 +9,7 @@
  * - SymbolFactory: Creates symbol objects (Spine/PNG)
  * - SymbolAnimations: Handles animations and tweens
  * - SymbolOverlay: Manages overlays and win text
- * - SymbolMultiplier: Bonus multiplier cell markers (x1, x2, ... x128)
+ * - SymbolMarker: Bonus multiplier cell markers (x1, x2, ... x128)
  * - FreeSpinController: Manages free spin autoplay
  * 
  * For new code, prefer importing specific modules directly:
@@ -45,11 +45,13 @@ import {
   SCATTER_MOVE_DURATION_MS,
   SHOW_WIN_BORDER_SYMBOLS,
   WIN_BORDER_LINE_WIDTH,
+  BONUS_MULTIPLIER_LAYOUT,
 } from '../../../config/GameConfig';
 import { SoundEffectType } from '../../../managers/AudioManager';
 import { normalizeAreaToGameConfig } from '../../../utils/GridTransform';
 import { startAnimationWithEntry } from '../../../utils/SpineAnimationHelper';
 import {
+  findClusters,
   getHighCountSymbolsFromOuts,
   getOutCount,
   getOutWin,
@@ -59,6 +61,7 @@ import {
   getTotalCountFromOuts,
   getSpinTotalFromSpinData,
   getSpinTotalWithFallback,
+  QUALIFYING_CLUSTER_COUNT,
 } from '../Spin';
 
 // Import new modular components
@@ -66,7 +69,7 @@ import { SymbolGrid } from './SymbolGrid';
 import { SymbolAnimations } from './SymbolAnimations';
 import { SymbolFactory, resolveSymbolAnimationName } from './SymbolFactory';
 import { SymbolOverlay } from './SymbolOverlay';
-import { SymbolMultiplier } from './SymbolMultiplier';
+import { SymbolMarker } from './SymbolMarker';
 import { FreeSpinController } from './FreeSpinController';
 import type {
   SymbolObject,
@@ -105,7 +108,7 @@ export class Symbols {
   private animationsModule!: SymbolAnimations;
   private factory!: SymbolFactory;
   private overlayModule!: SymbolOverlay;
-  private symbolMultiplier!: SymbolMultiplier;
+  private symbolMarker!: SymbolMarker;
   private freeSpinController!: FreeSpinController;
 
   // ============================================================================
@@ -199,6 +202,8 @@ export class Symbols {
   private tumbleInProgress: boolean = false;
   private reelDropInProgress: boolean = false;
   private tumbleDropInProgress: boolean = false;
+  // Column-major snapshots used to validate cluster checks at WIN_STOP.
+  private clusterWinGridSnapshots: number[][][] = [];
   private readonly skipTweenTimeScale: number = 1;
   private explosionVfxInProgress: number = 0;
   // Tracks whether the persistent bonus multiplier grid has been initialized for the current bonus session (so retriggers don't reset it).
@@ -212,6 +217,21 @@ export class Symbols {
   }
   public set freeSpinAutoplayActive(value: boolean) {
     // Legacy setter - controller manages this internally
+  }
+
+  /**
+   * Get immutable copies of cluster-check grid snapshots captured during the current spin.
+   * Snapshot format is column-major: grid[col][row].
+   */
+  public getClusterWinGridSnapshots(): number[][][] {
+    return this.clusterWinGridSnapshots.map((grid) => grid.map((col) => [...col]));
+  }
+
+  /**
+   * Clear cached cluster-check snapshots.
+   */
+  public clearClusterWinGridSnapshots(): void {
+    this.clusterWinGridSnapshots = [];
   }
 
   // ============================================================================
@@ -240,8 +260,8 @@ export class Symbols {
       this.grid.displayHeight
     );
     this.overlayModule = new SymbolOverlay(scene);
-    this.symbolMultiplier = new SymbolMultiplier(scene);
-    this.symbolMultiplier.setLayout({
+    this.symbolMarker = new SymbolMarker(scene);
+    this.symbolMarker.setLayout({
       displayWidth: this.grid.displayWidth,
       displayHeight: this.grid.displayHeight,
       slotX: this.grid.slotX,
@@ -252,6 +272,9 @@ export class Symbols {
       verticalSpacing: this.grid.verticalSpacing,
       numCols: SLOT_COLUMNS,
       numRows: SLOT_ROWS,
+      offsetX: BONUS_MULTIPLIER_LAYOUT.offsetX,
+      offsetY: BONUS_MULTIPLIER_LAYOUT.offsetY,
+      scale: BONUS_MULTIPLIER_LAYOUT.scale,
     });
     this.factory = new SymbolFactory(
       scene,
@@ -318,11 +341,11 @@ export class Symbols {
     this.scene.events.on('setBonusMode', (isBonus: boolean) => {
       if (isBonus) {
         if (!this.bonusGridInitializedForSession) {
-          this.symbolMultiplier.reset();
+          this.symbolMarker.reset();
           this.bonusGridInitializedForSession = true;
         }
       } else {
-        this.symbolMultiplier.reset();
+        this.symbolMarker.reset();
         this.bonusGridInitializedForSession = false;
       }
     });
@@ -1602,6 +1625,9 @@ export class Symbols {
       ? freeSpinItem.area
       : symbols;
 
+    // Start each spin with a fresh snapshot set for cluster verification at WIN_STOP.
+    this.clearClusterWinGridSnapshots();
+
     console.log('[Symbols] Processing SpinData symbols:', symbolsToUse);
 
     // Reset per-item win tracker
@@ -1663,6 +1689,9 @@ export class Symbols {
     this.disposeSymbols(this.symbols);
     this.symbols = this.newSymbols;
     this.newSymbols = [];
+
+    // Capture the settled grid after reel drop and before any tumble removals.
+    this.captureClusterWinGridSnapshot('postSpinDrop');
 
     gameStateManager.isReelSpinning = false;
 
@@ -2441,6 +2470,46 @@ export class Symbols {
     return null;
   }
 
+  /**
+   * Build a cluster-check snapshot from the live symbol objects.
+   * Snapshot format is column-major: snapshot[col][row].
+   */
+  private buildClusterWinGridSnapshotFromSymbols(): number[][] | null {
+    try {
+      if (!this.symbols || !this.symbols.length || !this.symbols[0]?.length) return null;
+      const numCols = this.symbols.length;
+      const numRows = this.symbols[0].length;
+      const snapshot: number[][] = Array.from(
+        { length: numCols },
+        () => Array<number>(numRows).fill(-1)
+      );
+
+      for (let col = 0; col < numCols; col++) {
+        for (let row = 0; row < numRows; row++) {
+          const obj = this.symbols[col]?.[row];
+          const val = this.getSymbolValueFromObject(obj);
+          if (typeof val === 'number' && !isNaN(val)) {
+            snapshot[col][row] = val;
+          }
+        }
+      }
+      return snapshot;
+    } catch {
+      return null;
+    }
+  }
+
+  private captureClusterWinGridSnapshot(reason: string): void {
+    const snapshot = this.buildClusterWinGridSnapshotFromSymbols();
+    if (!snapshot) return;
+    this.clusterWinGridSnapshots.push(snapshot);
+    try {
+      const cols = snapshot.length;
+      const rows = snapshot[0]?.length ?? 0;
+      console.log(`[Symbols] Captured cluster grid snapshot (${reason}): ${cols}x${rows}`);
+    } catch { }
+  }
+
   private syncCurrentSymbolDataFromSymbols(): void {
     try {
       if (!this.symbols || !this.symbols.length || !this.symbols[0]?.length) return;
@@ -3106,6 +3175,54 @@ export class Symbols {
     }
   }
 
+  /**
+   * Sugar Rush-style bonus multiplier resolution for the current tumble:
+   * - Use existing sticky cell multipliers on winning sugar cells for the current tumble multiplier.
+   * - Then advance those winning sugar cells to their next tier for subsequent tumbles.
+   * - First hit is a marker only; active multipliers start at x2 and can grow up to x128.
+   * - Final multiplier is additive sum of contributing cell values, with minimum x1.
+   */
+  private computeAndAdvanceBonusTumbleMultiplier(removeMask: boolean[][]): number {
+    if (!gameStateManager.isBonus || !removeMask?.length) {
+      return 1;
+    }
+
+    const numCols = removeMask.length;
+    const numRows = removeMask[0]?.length ?? 0;
+    const winningSugarCells: Array<{ col: number; row: number }> = [];
+    let contributingSum = 0;
+
+    for (let col = 0; col < numCols; col++) {
+      for (let row = 0; row < numRows; row++) {
+        if (!removeMask[col]?.[row]) continue;
+        const value = this.currentSymbolData?.[row]?.[col];
+        const isSugarSymbol = typeof value === 'number' && value >= 1 && value <= 7;
+        if (!isSugarSymbol) continue;
+
+        winningSugarCells.push({ col, row });
+        const existing = this.symbolMarker.getCellContribution(col, row);
+        if (existing > 0) {
+          contributingSum += existing;
+        }
+      }
+    }
+
+    for (const cell of winningSugarCells) {
+      this.symbolMarker.markCell(cell.col, cell.row);
+    }
+
+    const multiplier = contributingSum > 0 ? contributingSum : 1;
+    try {
+      console.log('[Symbols] Bonus tumble multiplier', {
+        multiplier,
+        contributingSum,
+        winningSugarCells: winningSugarCells.length
+      });
+    } catch { }
+
+    return multiplier;
+  }
+
   // Tumble processing methods
   private async applyTumbles(tumbles: any[]): Promise<void> {
     let cumulativeWin = 0;
@@ -3116,15 +3233,11 @@ export class Symbols {
     try {
       for (const tumble of tumbles) {
         tumbleIndex++;
-
-      const tumbleTotal = getTumbleTotal(tumble);
-
-      const currentTumbleIndex = tumbleIndex;
-
-        await this.applySingleTumble(tumble, currentTumbleIndex, () => {
+        const currentTumbleIndex = tumbleIndex;
+        await this.applySingleTumble(tumble, currentTumbleIndex, (tumbleWin: number) => {
         // Track cumulative wins
         try {
-          cumulativeWin += tumbleTotal;
+          cumulativeWin += tumbleWin;
           if (cumulativeWin > 0) {
             gameEventManager.emit(GameEventType.TUMBLE_WIN_PROGRESS, { cumulativeWin } as any);
           }
@@ -3155,6 +3268,7 @@ export class Symbols {
     const skipTumble = this.skipTumblesActive;
     // Keep currentSymbolData in sync with live grid to avoid removal mismatches
     this.syncCurrentSymbolDataFromSymbols();
+    this.captureClusterWinGridSnapshot(`beforeTumble#${tumbleIndex}`);
     const outs = (tumble?.symbols?.out || []) as any[];
     const ins = (tumble?.symbols?.in || []) as number[][]; // per real column (x index)
 
@@ -3193,10 +3307,39 @@ export class Symbols {
     const removeMask: boolean[][] = Array.from({ length: numCols }, () => Array<boolean>(numRows).fill(false));
 
     const highCountSymbols = getHighCountSymbolsFromOuts(outs);
+    const clusterCellKey = (col: number, row: number): string => `${col},${row}`;
+
+    // Validate removals against the live grid: only symbols that belong to an
+    // actual qualifying cluster (5+ connected) can be removed for this tumble.
+    const validClusterCellsBySymbol: { [key: number]: Set<string> } = {};
+    try {
+      const colMajorGrid: number[][] = Array.from({ length: numCols }, () => Array<number>(numRows).fill(-1));
+      for (let col = 0; col < numCols; col++) {
+        for (let row = 0; row < numRows; row++) {
+          const value = self.currentSymbolData?.[row]?.[col];
+          if (typeof value === 'number' && !isNaN(value)) {
+            colMajorGrid[col][row] = value;
+          }
+        }
+      }
+
+      const clusters = findClusters(colMajorGrid);
+      for (const cluster of clusters) {
+        if (!validClusterCellsBySymbol[cluster.symbol]) {
+          validClusterCellsBySymbol[cluster.symbol] = new Set<string>();
+        }
+        const bucket = validClusterCellsBySymbol[cluster.symbol];
+        for (const pos of cluster.positions) {
+          bucket.add(clusterCellKey(pos.col, pos.row));
+        }
+      }
+    } catch (e) {
+      console.warn('[Symbols] Failed deriving valid cluster cells for tumble:', e);
+    }
 
     // Apply explicit removal positions from tumble outs (if provided)
-    const outsWithPositions = new Set<number>();
     const preMarkedByCol: number[] = Array.from({ length: numCols }, () => 0);
+    const preMarkedByOut: number[] = Array.from({ length: outs.length }, () => 0);
     const parseOutPositions = (raw: any): Array<{ col: number; row: number }> => {
       if (!Array.isArray(raw)) return [];
       const list: Array<{ col: number; row: number }> = [];
@@ -3238,29 +3381,55 @@ export class Symbols {
       return inBounds.map(p => ({ col: p.col, row: numRows - 1 - p.row }));
     };
     outs.forEach((out, idx) => {
+      const requestedCount = getOutCount(out);
       const targetSymbol = Number(out?.symbol);
       if (gameStateManager.isBonus && targetSymbol === SCATTER_SYMBOL_ID) return;
+      if (!Number.isFinite(requestedCount) || requestedCount < QUALIFYING_CLUSTER_COUNT) {
+        if (requestedCount > 0) {
+          console.warn('[Symbols] Ignoring out.positions below qualifying cluster count', {
+            targetSymbol,
+            requestedCount
+          });
+        }
+        return;
+      }
       const positions = resolveOutPositions(out);
       if (!positions.length) return;
-      outsWithPositions.add(idx);
+      const validSet = validClusterCellsBySymbol[targetSymbol];
+      if (!validSet || validSet.size === 0) {
+        console.warn('[Symbols] Ignoring out.positions for non-cluster symbol during tumble', { targetSymbol, count: positions.length });
+        return;
+      }
+      let markedForOut = 0;
       for (const p of positions) {
         if (p.col < 0 || p.col >= numCols || p.row < 0 || p.row >= numRows) continue;
+        const liveSymbol = self.currentSymbolData?.[p.row]?.[p.col];
+        if (liveSymbol !== targetSymbol) continue;
+        if (!validSet.has(clusterCellKey(p.col, p.row))) continue;
         if (!removeMask[p.col][p.row]) {
           removeMask[p.col][p.row] = true;
           preMarkedByCol[p.col] += 1;
+          markedForOut += 1;
         }
       }
+      preMarkedByOut[idx] = markedForOut;
     });
 
-    // Build position indices by symbol (topmost-first per column)
+    // Build position indices by symbol from validated cluster cells only.
     const positionsBySymbol: { [key: number]: Array<{ col: number; row: number }> } = {};
     let sequenceIndex = 0; // ensures 1-by-1 ordering across columns left-to-right
-    for (let col = 0; col < numCols; col++) {
-      for (let row = 0; row < numRows; row++) {
-        const val = self.currentSymbolData?.[row]?.[col];
-        if (typeof val !== 'number') continue;
-        if (!positionsBySymbol[val]) positionsBySymbol[val] = [];
-        positionsBySymbol[val].push({ col, row });
+    for (const symbolKey of Object.keys(validClusterCellsBySymbol)) {
+      const symbol = Number(symbolKey);
+      const set = validClusterCellsBySymbol[symbol];
+      if (!set || set.size === 0) continue;
+      positionsBySymbol[symbol] = [];
+      for (const key of set) {
+        const [colRaw, rowRaw] = key.split(',');
+        const col = Number(colRaw);
+        const row = Number(rowRaw);
+        if (!Number.isFinite(col) || !Number.isFinite(row)) continue;
+        if (col < 0 || col >= numCols || row < 0 || row >= numRows) continue;
+        positionsBySymbol[symbol].push({ col, row });
       }
     }
     // Sort each symbol's positions top-to-bottom (row asc), then left-to-right (col asc)
@@ -3290,12 +3459,18 @@ export class Symbols {
     // First pass: satisfy per-column targets using outs composition
     for (let outIndex = 0; outIndex < outs.length; outIndex++) {
       const out = outs[outIndex];
-      if (outsWithPositions.has(outIndex)) continue;
-      let remaining = getOutCount(out);
+      const requestedCount = getOutCount(out);
+      let remaining = Math.max(0, requestedCount - (preMarkedByOut[outIndex] || 0));
       const targetSymbol = Number(out?.symbol);
       if (isNaN(remaining) || isNaN(targetSymbol) || remaining <= 0) continue;
+      if (!Number.isFinite(requestedCount) || requestedCount < QUALIFYING_CLUSTER_COUNT) continue;
       // In bonus, never remove Symbol0 (scatter) so 3+ can trigger retrigger; no clearing.
       if (gameStateManager.isBonus && targetSymbol === SCATTER_SYMBOL_ID) continue;
+      const validSet = validClusterCellsBySymbol[targetSymbol];
+      if (!validSet || validSet.size === 0) {
+        console.warn('[Symbols] Ignoring non-cluster out during tumble', { targetSymbol, requestedCount: remaining });
+        continue;
+      }
       // Try to allocate removals in columns that expect incoming symbols first
       while (remaining > 0) {
         let allocated = false;
@@ -3327,6 +3502,8 @@ export class Symbols {
         if (removeMask[col][row]) removedPerCol[col]++;
       }
     }
+    const totalRemovedCells = removedPerCol.reduce((sum, n) => sum + n, 0);
+    anyRemoval = totalRemovedCells > 0;
     const tumbleActiveColumns = Array.from({ length: numCols }, (_, c) => c).filter(
       (c) => insCountByCol[c] > 0 || removedPerCol[c] > 0
     );
@@ -3352,6 +3529,8 @@ export class Symbols {
       }
       console.log('[Symbols] Tumble removal mask summary:', { totalRemoved, removedBySymbol });
     } catch { }
+
+    const bonusTumbleMultiplier = this.computeAndAdvanceBonusTumbleMultiplier(removeMask);
 
     // Optional: draw red borders around winning symbols for visualization (scene layer, use grid cell position)
     if (SHOW_WIN_BORDER_SYMBOLS && self.grid) {
@@ -3424,7 +3603,10 @@ export class Symbols {
         const pick = pool[Math.floor(Math.random() * pool.length)];
         const obj = self.symbols[pick.col][pick.row];
         if (!obj) continue;
-        const amount = (winBySymbol[sym] !== undefined) ? winBySymbol[sym] : (tumbleWin > 0 ? tumbleWin : 0);
+        const baseAmount = (winBySymbol[sym] !== undefined) ? winBySymbol[sym] : (tumbleWin > 0 ? tumbleWin : 0);
+        const amount = (gameStateManager.isBonus && bonusTumbleMultiplier > 1)
+          ? (baseAmount * bonusTumbleMultiplier)
+          : baseAmount;
         if (amount <= 0) continue;
         // Remove any previous win text on this symbol
         try {
@@ -3449,7 +3631,23 @@ export class Symbols {
                 try { gameEventManager.emit(GameEventType.WIN_START); } catch { }
                 // Show only the current tumble's wins
                 try {
-                  const outsArr = Array.isArray((tumble as any)?.symbols?.out) ? (tumble as any).symbols.out : [];
+                  const originalOutsArr = Array.isArray((tumble as any)?.symbols?.out) ? (tumble as any).symbols.out : [];
+                  const outsArr = (gameStateManager.isBonus && bonusTumbleMultiplier > 1)
+                    ? originalOutsArr.map((out: any) => {
+                      const baseWin = getOutWin(out);
+                      if (!Number.isFinite(baseWin) || baseWin <= 0) return out;
+                      const scaledWin = Number((baseWin * bonusTumbleMultiplier).toFixed(2));
+                      const rawWin = out?.win;
+                      if (rawWin && typeof rawWin === 'object') {
+                        const nextWin = { ...(rawWin as any) };
+                        nextWin.total = scaledWin;
+                        if (!Number.isFinite(Number(nextWin.base))) nextWin.base = baseWin;
+                        nextWin.multiplier = bonusTumbleMultiplier;
+                        return { ...out, win: nextWin };
+                      }
+                      return { ...out, win: scaledWin };
+                    })
+                    : originalOutsArr;
                   if (typeof wt.showPagedForTumble === 'function') {
                     wt.showPagedForTumble(outsArr, self.currentSpinData || null, 2, 1200, 200);
                   } else {
@@ -3526,14 +3724,17 @@ export class Symbols {
     const STAGGER_MS = 50; // match drop sequence stagger (shortened)
     // Track first win animation notification (we now trigger on animation start for better SFX sync)
     let firstWinNotified = false;
+    const baseTumbleTotal = getTumbleTotal(tumble);
+    const effectiveTumbleTotal = (gameStateManager.isBonus && bonusTumbleMultiplier > 1)
+      ? Number((baseTumbleTotal * bonusTumbleMultiplier).toFixed(2))
+      : baseTumbleTotal;
     function notifyFirstWinIfNeeded() {
       if (!firstWinNotified) {
           firstWinNotified = true;
         console.log(`[Symbols] notifyFirstWinIfNeeded called for tumble index: ${tumbleIndex} (first win animation started)`);
         try {
-          const tumbleTotal = getTumbleTotal(tumble);
           if (typeof onFirstWinComplete === 'function') {
-            onFirstWinComplete(tumbleTotal);
+            onFirstWinComplete(effectiveTumbleTotal);
           }
         } catch { }
       }
@@ -3541,8 +3742,7 @@ export class Symbols {
 
     if (skipTumble) {
       try {
-        const tumbleTotal = getTumbleTotal(tumble);
-        if (tumbleTotal > 0 || anyRemoval) {
+        if (effectiveTumbleTotal > 0 || anyRemoval) {
           notifyFirstWinIfNeeded();
         }
       } catch { }
@@ -3643,10 +3843,6 @@ export class Symbols {
               const sugarWinAnim = isSugarWin && skeletonData ? resolveSymbolAnimationName(skeletonData, value, 'win') : null;
               const canPlaySugarWin = !!(sugarWinAnim && obj.animationState && obj.animationState.setAnimation);
 
-              if (isSugarWin && gameStateManager.isBonus) {
-                this.symbolMultiplier.markCell(col, row);
-              }
-
               const startRemoval = () => {
                 try {
                   notifyFirstWinIfNeeded();
@@ -3741,8 +3937,7 @@ export class Symbols {
     await Promise.all(removalPromises);
     try {
       if (!firstWinNotified) {
-        const tumbleTotal = getTumbleTotal(tumble);
-        if (tumbleTotal > 0 || anyRemoval) {
+        if (effectiveTumbleTotal > 0 || anyRemoval) {
           notifyFirstWinIfNeeded();
         }
       }
@@ -4114,6 +4309,7 @@ export class Symbols {
 
     // Sync data to match live symbols after compression/drop
     this.syncCurrentSymbolDataFromSymbols();
+    this.captureClusterWinGridSnapshot(`afterTumble#${tumbleIndex}`);
 
     // Check for scatter hits from the updated grid after this tumble (both normal and bonus mode)
     try {

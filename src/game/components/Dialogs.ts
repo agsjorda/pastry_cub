@@ -13,10 +13,10 @@ import { queueAnimation, startAnimation } from '../../utils/SpineAnimationHelper
 import { CurrencyManager } from './CurrencyManager';
 
 export interface DialogConfig {
-	type: 'Congrats_BZ' | 'FreeSpin_BZ' | 'FreeSpinRetri_BZ' | 'BigW_BZ' | 'MegaW_BZ' | 'EpicW_BZ' | 'SuperW_BZ' | 'TotalW_BZ';
+	type: 'Congrats' | 'FreeSpin' | 'FreeSpinRetrigger' | 'BigWin' | 'MegaWin' | 'EpicWin' | 'SuperWin' | 'TotalWin';
 	position?: { x: number; y: number };
 	scale?: number;
-	// Non-uniform scale/offsets are intended for TotalW_BZ only.
+	// Non-uniform scale/offsets are intended for TotalWin only.
 	scaleX?: number;
 	scaleY?: number;
 	positionOffset?: { x?: number; y?: number };
@@ -24,7 +24,7 @@ export interface DialogConfig {
 	onComplete?: () => void;
 	winAmount?: number; // Amount to display in the dialog
 	freeSpins?: number; // Number of free spins won
-	isRetrigger?: boolean; // For FreeSpin_BZ: whether this is a retrigger case
+	isRetrigger?: boolean; // For FreeSpin: whether this is a retrigger case
 	betAmount?: number; // Base bet amount for staged win animations
 	suppressBlackOverlay?: boolean;
 	autoClose?: boolean;
@@ -67,7 +67,7 @@ export class Dialogs {
 
 	// Current dialog state
 	private currentDialog: any = null; // Spine object type
-	private currentDialogOverlay: any = null; // Optional overlay spine (e.g., TotalW_BZ notes)
+	private currentDialogOverlay: any = null; // Optional overlay spine (e.g., TotalWin notes)
 	private isDialogActive: boolean = false;
 	private currentDialogType: string | null = null;
 	private currentDialogAssetType: DialogConfig['type'] | null = null;
@@ -92,7 +92,7 @@ export class Dialogs {
 
 	// Staged win animation state (Big -> Mega -> Epic -> Super with incremental number steps)
 	private isStagedWinNumberAnimation: boolean = false;
-	private stagedWinStages: Array<{ type: 'BigW_BZ' | 'MegaW_BZ' | 'EpicW_BZ' | 'SuperW_BZ'; target: number }> = [];
+	private stagedWinStages: Array<{ type: 'BigWin' | 'MegaWin' | 'EpicWin' | 'SuperWin'; target: number }> = [];
 	private stagedWinCurrentStageIndex: number = 0;
 	private stagedWinStageTimer: Phaser.Time.TimerEvent | null = null;
 
@@ -102,52 +102,52 @@ export class Dialogs {
 
 	// Dialog configuration
 	private dialogScales: Record<string, number> = {
-		'Congrats_BZ': 0.45,
-		'FreeSpin_BZ': 0.45,
-		'FreeSpinRetri_BZ': 0.45,
-		'BigW_BZ': 0.45,
-		'MegaW_BZ': 0.45,
-		'EpicW_BZ': 0.45,
-		'SuperW_BZ': 0.45,
-		'TotalW_BZ': 0.45
+		'Congrats': 0.45,
+		'FreeSpin': 0.45,
+		'FreeSpinRetrigger': 0.45,
+		'BigWin': 1,
+		'MegaWin': 1,
+		'EpicWin': 1,
+		'SuperWin': 1,
+		'TotalWin': 0.45
 	};
 
-	// Adjust TotalW_BZ scale
+	// Adjust TotalWin scale
 	private dialogScaleXY: Record<string, { x: number; y: number }> = {
-		'TotalW_BZ': { x: 0.3, y: 0.27 }
+		'TotalWin': { x: 0.3, y: 0.27 }
 	};
 
 	// Dialog positions (relative: 0.0 = left/top, 0.5 = center, 1.0 = right/bottom)
 	private dialogPositions: Record<string, { x: number; y: number }> = {
-		'Congrats_BZ': { x: 0.5, y: 0.4 },
-		'FreeSpin_BZ': { x: 0.5, y: 0.4 },
-		'FreeSpinRetri_BZ': { x: 0.5, y: 0.4 },
-		'BigW_BZ': { x: 0.5, y: 0.4 },
-		'MegaW_BZ': { x: 0.5, y: 0.4 },
-		'EpicW_BZ': { x: 0.5, y: 0.4 },
-		'SuperW_BZ': { x: 0.5, y: 0.4 },
-		'TotalW_BZ': { x: 0.5, y: 0.4 }
+		'Congrats': { x: 0.5, y: 0.4 },
+		'FreeSpin': { x: 0.5, y: 0.4 },
+		'FreeSpinRetrigger': { x: 0.5, y: 0.4 },
+		'BigWin': { x: 0.5, y: 0.4 },
+		'MegaWin': { x: 0.5, y: 0.4 },
+		'EpicWin': { x: 0.5, y: 0.4 },
+		'SuperWin': { x: 0.5, y: 0.4 },
+		'TotalWin': { x: 0.5, y: 0.4 }
 	};
 
-	// Adjust TotalW_BZ XY offset
+	// Adjust TotalWin XY offset
 	private dialogPositionOffsets: Record<string, { x: number; y: number }> = {
-		'TotalW_BZ': { x: 0, y: 80 }
+		'TotalWin': { x: 0, y: 80 }
 	};
 
-	// Offset for number display (e.g. TotalW_BZ amount)
+	// Offset for number display (e.g. TotalWin amount)
 	private numberDisplayOffsetY: Record<string, number> = {
-		'TotalW_BZ': 150
+		'TotalWin': 150
 	};
 
 	private dialogLoops: Record<string, boolean> = {
-		'Congrats_BZ': true,
-		'FreeSpin_BZ': true,
-		'FreeSpinRetri_BZ': true,
-		'BigW_BZ': true,
-		'MegaW_BZ': true,
-		'EpicW_BZ': true,
-		'SuperW_BZ': true,
-		'TotalW_BZ': true
+		'Congrats': true,
+		'FreeSpin': true,
+		'FreeSpinRetrigger': true,
+		'BigWin': true,
+		'MegaWin': true,
+		'EpicWin': true,
+		'SuperWin': true,
+		'TotalWin': true
 	};
 
 	// Global toggle to disable intro animations for dialogs (win, free spin, congrats)
@@ -209,8 +209,8 @@ export class Dialogs {
 
 		const dialogType = this.normalizeDialogType(config.type);
 		const normalizedConfig: DialogConfig = { ...config, type: dialogType };
-		if (normalizedConfig.type === 'FreeSpin_BZ' && normalizedConfig.isRetrigger) {
-			normalizedConfig.type = 'FreeSpinRetri_BZ';
+		if (normalizedConfig.type === 'FreeSpin' && normalizedConfig.isRetrigger) {
+			normalizedConfig.type = 'FreeSpinRetrigger';
 		}
 		if (dialogType !== config.type) {
 			console.log(`[Dialogs] Normalized dialog type: ${config.type} -> ${dialogType}`);
@@ -235,8 +235,8 @@ export class Dialogs {
 			this.configAutoCloseMs = null;
 		}
 		// Track retrigger state only for Free Spin dialog
-		this.isRetriggerFreeSpin = (normalizedConfig.type === 'FreeSpin_BZ' || normalizedConfig.type === 'FreeSpinRetri_BZ')
-			? !!normalizedConfig.isRetrigger || normalizedConfig.type === 'FreeSpinRetri_BZ'
+		this.isRetriggerFreeSpin = (normalizedConfig.type === 'FreeSpin' || normalizedConfig.type === 'FreeSpinRetrigger')
+			? !!normalizedConfig.isRetrigger || normalizedConfig.type === 'FreeSpinRetrigger'
 			: false;
 
 		// If this is a win dialog, mark global state so autoplay systems can wait
@@ -248,12 +248,12 @@ export class Dialogs {
 
 		// Debug dialog type detection
 		console.log(`[Dialogs] Dialog type: ${normalizedConfig.type}, isWinDialog(): ${this.isWinDialog()}`);
-		if (this.currentDialogType === 'FreeSpin_BZ' || this.currentDialogType === 'FreeSpinRetri_BZ') {
+		if (this.currentDialogType === 'FreeSpin' || this.currentDialogType === 'FreeSpinRetrigger') {
 			console.log('[Dialogs] FreeSpinDialog retrigger state:', this.isRetriggerFreeSpin);
 		}
 
 		// If congrats dialog is appearing, suppress the SlotController's spins-left display
-		if (normalizedConfig.type === 'Congrats_BZ' || normalizedConfig.type === 'TotalW_BZ') {
+		if (normalizedConfig.type === 'Congrats' || normalizedConfig.type === 'TotalWin') {
 			try {
 				const gameSceneAny = scene as any;
 				const slotController = gameSceneAny?.slotController;
@@ -265,7 +265,7 @@ export class Dialogs {
 		}
 
 		// If free spin dialog is appearing, clear any prior suppression to allow showing again
-		if (normalizedConfig.type === 'FreeSpin_BZ' || normalizedConfig.type === 'FreeSpinRetri_BZ') {
+		if (normalizedConfig.type === 'FreeSpin' || normalizedConfig.type === 'FreeSpinRetrigger') {
 			try {
 				const gameSceneAny = scene as any;
 				const slotController = gameSceneAny?.slotController;
@@ -347,13 +347,13 @@ export class Dialogs {
 			if (audioManager && typeof audioManager.playSoundEffect === 'function') {
 				const type = (this.currentDialogType || '').toLowerCase();
 				if (type === 'freespin_bz') {
-					// Use congrats_bz for the FreeSpin dialog per request
+					// Use Congrats for the FreeSpin dialog per request
 					audioManager.playSoundEffect('dialog_congrats');
 					// Duck background music similar to win dialogs
 					if (typeof audioManager.duckBackground === 'function') {
 						audioManager.duckBackground(0.3);
 					}
-				} else if (type === 'congrats_bz') {
+				} else if (type === 'Congrats') {
 					audioManager.playSoundEffect('dialog_congrats');
 					if (typeof audioManager.duckBackground === 'function') {
 						audioManager.duckBackground(0.3);
@@ -383,7 +383,7 @@ export class Dialogs {
 
 		// Create number display(s) if win amount or free spins are provided
 		if (normalizedConfig.winAmount !== undefined || normalizedConfig.freeSpins !== undefined) {
-			if (normalizedConfig.type === 'Congrats_BZ') {
+			if (normalizedConfig.type === 'Congrats') {
 				// Congrats dialog: primary total win + secondary free spins used (if provided)
 				if (normalizedConfig.winAmount !== undefined) {
 					this.createNumberDisplay(scene, normalizedConfig.winAmount || 0, undefined);
@@ -410,7 +410,7 @@ export class Dialogs {
 
 		// Play win dialog SFX at the correct time (after staged setup decides the first tier)
 		try {
-			if (this.isWinDialog() || this.currentDialogType === 'TotalW_BZ') {
+			if (this.isWinDialog() || this.currentDialogType === 'TotalWin') {
 				const audioManager = (window as any).audioManager;
 				// Always duck background while a win dialog is visible
 				if (audioManager && typeof audioManager.duckBackground === 'function') {
@@ -437,42 +437,115 @@ export class Dialogs {
 	}
 
 	/**
-	 * Normalize legacy dialog type names to current BZ types.
+	 * Normalize legacy dialog type names to current dialog types.
 	 */
 	private normalizeDialogType(type: string): DialogConfig['type'] {
 		const normalizedMap: Record<string, DialogConfig['type']> = {
-			SmallW_KA: 'BigW_BZ',
-			MediumW_KA: 'MegaW_BZ',
-			LargeW_KA: 'EpicW_BZ',
-			SuperW_KA: 'SuperW_BZ',
-			Congrats_KA: 'Congrats_BZ',
-			FreeSpin_KA: 'FreeSpin_BZ',
-			smallW_KA: 'BigW_BZ',
-			mediumW_KA: 'MegaW_BZ',
-			largeW_KA: 'EpicW_BZ',
-			superW_KA: 'SuperW_BZ'
+			SmallW_KA: 'BigWin',
+			MediumW_KA: 'MegaWin',
+			LargeW_KA: 'EpicWin',
+			SuperW_KA: 'SuperWin',
+			BigW_BZ: 'BigWin',
+			MegaW_BZ: 'MegaWin',
+			EpicW_BZ: 'EpicWin',
+			SuperW_BZ: 'SuperWin',
+			Congrats_KA: 'Congrats',
+			Congrats_BZ: 'Congrats',
+			FreeSpin_KA: 'FreeSpin',
+			FreeSpin_BZ: 'FreeSpin',
+			FreeSpinRetri_BZ: 'FreeSpinRetrigger',
+			TotalW_BZ: 'TotalWin',
+			congrats_bz: 'Congrats',
+			freespin_bz: 'FreeSpin',
+			freespinretri_bz: 'FreeSpinRetrigger',
+			totalw_bz: 'TotalWin',
+			smallW_KA: 'BigWin',
+			mediumW_KA: 'MegaWin',
+			largeW_KA: 'EpicWin',
+			superW_KA: 'SuperWin',
+			bigw_bz: 'BigWin',
+			megaw_bz: 'MegaWin',
+			epicw_bz: 'EpicWin',
+			superw_bz: 'SuperWin'
 		};
 
 		return normalizedMap[type] || (type as DialogConfig['type']);
 	}
 
 	/**
-	 * Dialog animations only use idle loops from the dialogs folder.
+	 * Build candidate animation names for a dialog type. We try generic names first,
+	 * then legacy/asset-specific names to support renamed keys.
+	 */
+	private getDialogAnimationCandidates(dialogType: string): string[] {
+		const legacyMap: Record<string, string[]> = {
+			BigWin: ['BigW_PC', 'BigW_BZ'],
+			MegaWin: ['MegaW_PC', 'MegaW_BZ'],
+			EpicWin: ['EpicW_PC', 'EpicW_BZ'],
+			SuperWin: ['SuperW_PC', 'SuperW_BZ'],
+			FreeSpin: ['FreeSpin_BZ'],
+			FreeSpinRetrigger: ['FreeSpinRetri_BZ'],
+			TotalWin: ['TotalW_BZ'],
+			Congrats: ['Congrats_BZ', 'Congrats']
+		};
+
+		const bases = [dialogType, ...(legacyMap[dialogType] || [])];
+		const names: string[] = [];
+		for (const base of bases) {
+			names.push(`${base}_idle`);
+			names.push(base);
+		}
+		return names;
+	}
+
+	private getSkeletonAnimationNames(dialog: any): string[] {
+		try {
+			const data = dialog?.skeleton?.data || dialog?.skeletonData;
+			const animations = data?.animations;
+			if (Array.isArray(animations)) {
+				return animations
+					.map((a: any) => String(a?.name || ''))
+					.filter((n: string) => !!n);
+			}
+			if (animations && typeof animations === 'object') {
+				return Object.keys(animations);
+			}
+		} catch { }
+		return [];
+	}
+
+	private resolveDialogAnimationName(dialog: any, dialogType: string): string {
+		const candidates = this.getDialogAnimationCandidates(dialogType);
+		const available = this.getSkeletonAnimationNames(dialog);
+		if (available.length === 0) {
+			// Fallback if animation list cannot be inspected.
+			return candidates[0];
+		}
+
+		for (const c of candidates) {
+			if (available.includes(c)) return c;
+		}
+
+		// Last resort: first animation in skeleton so dialog still animates.
+		return available[0];
+	}
+
+	/**
+	 * Compatibility helper used by staged flows and fade-out logic.
 	 */
 	private getAnimationNameForDialogType(dialogType: string): { intro: string; idle: string; outro?: string } | null {
-		const idleName = `${dialogType}_idle`;
-		return { intro: idleName, idle: idleName };
+		const resolved = this.resolveDialogAnimationName(this.currentDialog, dialogType);
+		return { intro: resolved, idle: resolved };
 	}
 
 	private getOverlayAnimationNameForDialogType(dialogType: string): string | null {
-		if (dialogType === 'TotalW_BZ') {
+		if (dialogType === 'TotalWin') {
 			return 'animation';
 		}
 		return null;
 	}
 
 	/**
-	 * Create the main dialog content (FreeSpin_BZ, EpicW_BZ, etc.)
+	 * Create the main dialog content (FreeSpin, EpicWin, etc.)
 	 */
 	private createDialogContent(scene: Scene, config: DialogConfig): void {
 		// Clean up existing dialog
@@ -496,6 +569,7 @@ export class Dialogs {
 		let scale = config.scale || this.getDialogScale(config.type);
 		let scaleX = scale;
 		let scaleY = scale;
+		const addAny = scene.add as any;
 		const scaleOverride = (isTotalWinDialog && config.scale === undefined && config.scaleX === undefined && config.scaleY === undefined)
 			? this.getDialogScaleXY(config.type)
 			: null;
@@ -518,7 +592,7 @@ export class Dialogs {
 			console.log(`[Dialogs] Creating Spine animation for dialog: ${config.type}`);
 			console.log(`[Dialogs] Using asset: ${assetKey}, atlas: ${atlasKey}`);
 
-			this.currentDialog = scene.add.spine(
+			this.currentDialog = addAny.spine(
 				position.x,
 				position.y,
 				assetKey,
@@ -564,21 +638,16 @@ export class Dialogs {
 			// starting scale of 0 and the pop animation can appear to be skipped.
 			this.currentDialog.setScale(scaleX, scaleY);
 
-			// Get animation names based on dialog type (idle only)
 			const shouldLoop = this.getDialogLoop(config.type);
-			const animations = this.getAnimationNameForDialogType(config.type);
-			if (!animations) {
-				console.error(`[Dialogs] No animation mapping found for dialog type: ${config.type}`);
-				return;
-			}
+			const animationName = this.resolveDialogAnimationName(this.currentDialog, config.type);
 
 			try {
-				console.log(`[Dialogs] Playing idle animation: ${animations.idle}`);
-				startAnimation(this.currentDialog, { animationName: animations.idle, loop: shouldLoop });
+				console.log(`[Dialogs] Playing dialog animation: ${animationName}`);
+				startAnimation(this.currentDialog, { animationName, loop: shouldLoop });
 				this.applyDialogScalePop(scene);
 			} catch (error) {
-				console.log(`[Dialogs] Idle animation failed, retrying: ${animations.idle}`);
-				startAnimation(this.currentDialog, { animationName: animations.idle, loop: shouldLoop });
+				console.log(`[Dialogs] Dialog animation failed, retrying: ${animationName}`);
+				startAnimation(this.currentDialog, { animationName, loop: shouldLoop });
 				this.applyDialogScalePop(scene);
 			}
 		} catch (error) {
@@ -595,9 +664,9 @@ export class Dialogs {
 			const overlayAnimation = this.getOverlayAnimationNameForDialogType(config.type);
 			if (overlayAnimation) {
 				try {
-					const overlayKey = 'TotalW_BZ_meow';
-					const overlayAtlasKey = 'TotalW_BZ-atlas';
-					this.currentDialogOverlay = scene.add.spine(
+					const overlayKey = 'TotalWin_meow';
+					const overlayAtlasKey = 'TotalWin-atlas';
+					this.currentDialogOverlay = addAny.spine(
 						position.x,
 						position.y,
 						overlayKey,
@@ -612,7 +681,7 @@ export class Dialogs {
 					this.dialogOverlay.add(this.currentDialogOverlay);
 					this.dialogOverlay.bringToTop(this.currentDialogOverlay);
 				} catch (overlayError) {
-					console.warn('[Dialogs] Failed to create TotalW_BZ overlay animation', overlayError);
+					console.warn('[Dialogs] Failed to create TotalWin overlay animation', overlayError);
 					this.currentDialogOverlay = null;
 				}
 			}
@@ -670,8 +739,8 @@ export class Dialogs {
 			}
 		} catch { }
 
-		// Default: auto-close win dialogs outside autoplay/scatter and always close FreeSpinRetri_BZ.
-		const isRetriggerDialog = this.currentDialogType === 'FreeSpinRetri_BZ';
+		// Default: auto-close win dialogs outside autoplay/scatter and always close FreeSpinRetrigger.
+		const isRetriggerDialog = this.currentDialogType === 'FreeSpinRetrigger';
 		const isAutoFlow = gameStateManager.isAutoPlaying || isFreeSpinAutoplay || gameStateManager.isScatter;
 		if (this.defaultWinDialogAutoCloseEnabled && this.defaultWinDialogAutoCloseMs !== null) {
 			if (isRetriggerDialog || (this.isWinDialog() && !isAutoFlow)) {
@@ -818,7 +887,7 @@ export class Dialogs {
 
 		// Determine if this is the Congrats dialog showing a total win amount
 		const isTotalWinDialog =
-			(this.currentDialogType === 'Congrats_BZ' || this.currentDialogType === 'TotalW_BZ') &&
+			(this.currentDialogType === 'Congrats' || this.currentDialogType === 'TotalWin') &&
 			freeSpins === undefined;
 		const isDemo = (scene as any).gameAPI?.getDemoState();
 
@@ -826,8 +895,8 @@ export class Dialogs {
 		const numberConfig: NumberDisplayConfig = {
 			x: scene.scale.width / 2,
 			y: this.getNumberDisplayY(scene, this.currentDialogType),
-			offsetY: this.currentDialogType === 'TotalW_BZ'
-				? this.numberDisplayOffsetY.TotalW_BZ
+			offsetY: this.currentDialogType === 'TotalWin'
+				? this.numberDisplayOffsetY.TotalWin
 				: 0,
 			scale: 0.3,
 			spacing: 0,
@@ -891,7 +960,7 @@ export class Dialogs {
 		}
 
 		// Only applicable to Congrats dialog
-		if (this.currentDialogType !== 'Congrats_BZ') {
+		if (this.currentDialogType !== 'Congrats') {
 			return;
 		}
 
@@ -946,11 +1015,11 @@ export class Dialogs {
 		const defaultY = scene.scale.height / 2 - 50;
 		if (!dialogType) return defaultY;
 
-		if (dialogType === 'FreeSpin_BZ' || dialogType === 'FreeSpinRetri_BZ') {
+		if (dialogType === 'FreeSpin' || dialogType === 'FreeSpinRetrigger') {
 			return this.numberYFreeSpin ?? defaultY;
 		}
 
-		if (dialogType === 'Congrats_BZ' || dialogType === 'TotalW_BZ') {
+		if (dialogType === 'Congrats' || dialogType === 'TotalWin') {
 			return this.numberYCongrats ?? defaultY;
 		}
 
@@ -965,11 +1034,11 @@ export class Dialogs {
 	 * Helper: determine if a type is one of the win dialogs.
 	 */
 	private isWinDialogType(type: string): boolean {
-		return type === 'BigW_BZ' || type === 'MegaW_BZ' || type === 'EpicW_BZ' || type === 'SuperW_BZ';
+		return type === 'BigWin' || type === 'MegaWin' || type === 'EpicWin' || type === 'SuperWin';
 	}
 
 	private isTotalWinDialogType(type: string): boolean {
-		return type === 'TotalW_BZ';
+		return type === 'TotalWin';
 	}
 
 	/**
@@ -978,7 +1047,7 @@ export class Dialogs {
 	setNumberDisplayYForWin(y: number): void { this.numberYWin = y; }
 	setNumberDisplayYForFreeSpin(y: number): void { this.numberYFreeSpin = y; }
 	setNumberDisplayYForCongrats(y: number): void { this.numberYCongrats = y; }
-	setNumberDisplayOffsetYForTotalWin(y: number): void { this.numberDisplayOffsetY.TotalW_BZ = y; }
+	setNumberDisplayOffsetYForTotalWin(y: number): void { this.numberDisplayOffsetY.TotalWin = y; }
 	setNumberDisplayYPositions(opts: { win?: number; freeSpin?: number; congrats?: number }): void {
 		if (opts.win !== undefined) this.numberYWin = opts.win;
 		if (opts.freeSpin !== undefined) this.numberYFreeSpin = opts.freeSpin;
@@ -1289,7 +1358,7 @@ export class Dialogs {
 		}
 
 		// Check if this is a free spin dialog - use candy transition
-		if (this.currentDialogType === 'FreeSpin_BZ' || this.currentDialogType === 'FreeSpinRetri_BZ') {
+		if (this.currentDialogType === 'FreeSpin' || this.currentDialogType === 'FreeSpinRetrigger') {
 			// On retrigger, skip candy transition, use normal transition to avoid extra animation
 			if (this.isRetriggerFreeSpin) {
 				console.log('[Dialogs] Free spin dialog (retrigger) clicked - skipping all transitions and disabling immediately');
@@ -1335,10 +1404,10 @@ export class Dialogs {
 	 * Check if the current dialog is a win dialog
 	 */
 	private isWinDialog(): boolean {
-		return this.currentDialogType === 'BigW_BZ' ||
-			this.currentDialogType === 'MegaW_BZ' ||
-			this.currentDialogType === 'EpicW_BZ' ||
-			this.currentDialogType === 'SuperW_BZ';
+		return this.currentDialogType === 'BigWin' ||
+			this.currentDialogType === 'MegaWin' ||
+			this.currentDialogType === 'EpicWin' ||
+			this.currentDialogType === 'SuperWin';
 	}
 
 	private fadeInDialogDimmer(scene: Scene): void {
@@ -1458,7 +1527,7 @@ export class Dialogs {
 				this.cleanupDialog();
 
 				// Check if we need to trigger bonus mode while screen is black
-				if (dialogTypeBeforeCleanup === 'FreeSpin_BZ' || dialogTypeBeforeCleanup === 'FreeSpinRetri_BZ') {
+				if (dialogTypeBeforeCleanup === 'FreeSpin' || dialogTypeBeforeCleanup === 'FreeSpinRetrigger') {
 					console.log('[Dialogs] Triggering bonus mode during black screen');
 					this.triggerBonusMode(scene);
 
@@ -1478,7 +1547,7 @@ export class Dialogs {
 					}
 				} else {
 					// If end-of-bonus dialog closed while in bonus mode, revert to base visuals and reset symbols
-					if (dialogTypeBeforeCleanup === 'Congrats_BZ' || dialogTypeBeforeCleanup === 'TotalW_BZ') {
+					if (dialogTypeBeforeCleanup === 'Congrats' || dialogTypeBeforeCleanup === 'TotalWin') {
 						console.log('[Dialogs] Bonus total dialog closed - reverting from bonus visuals to base');
 						// Switch off bonus mode visuals and music
 						scene.events.emit('setBonusMode', false);
@@ -1522,7 +1591,7 @@ export class Dialogs {
 							blackScreen.destroy();
 
 							// Ensure UI is back to normal only when end-of-bonus dialog closes
-							if (dialogTypeBeforeCleanup === 'Congrats_BZ' || dialogTypeBeforeCleanup === 'TotalW_BZ') {
+							if (dialogTypeBeforeCleanup === 'Congrats' || dialogTypeBeforeCleanup === 'TotalWin') {
 								console.log('[Dialogs] Black screen faded out after bonus total dialog - restoring normal background and header');
 								scene.events.emit('hideBonusBackground');
 								scene.events.emit('hideBonusHeader');
@@ -1783,7 +1852,7 @@ export class Dialogs {
 	 * Check if we should trigger bonus mode based on current dialog type
 	 */
 	private shouldTriggerBonusMode(): boolean {
-		return this.currentDialogType === 'FreeSpin_BZ' || this.currentDialogType === 'FreeSpinRetri_BZ';
+		return this.currentDialogType === 'FreeSpin' || this.currentDialogType === 'FreeSpinRetrigger';
 	}
 
 	/**
@@ -2028,11 +2097,11 @@ export class Dialogs {
 
 	/**
 	 * Configure staged win number and animation thresholds based on bet and total win.
-	 * Example (bet=0.20, win=0.60, final type=SuperW_BZ):
-	 *  - BigW_BZ (BigWin)   -> 0.16 (0.8x)
-	 *  - MegaW_BZ (MegaWin) -> 0.20 (1x)
-	 *  - EpicW_BZ (EpicWin) -> 0.40 (2x)
-	 *  - SuperW_BZ (SuperWin) -> 0.60 (final win)
+	 * Example (bet=0.20, win=0.60, final type=SuperWin):
+	 *  - BigWin (BigWin)   -> 0.16 (0.8x)
+	 *  - MegaWin (MegaWin) -> 0.20 (1x)
+	 *  - EpicWin (EpicWin) -> 0.40 (2x)
+	 *  - SuperWin (SuperWin) -> 0.60 (final win)
 	 */
 	private setupStagedWinNumberAnimation(config: DialogConfig): void {
 		const winAmount = config.winAmount ?? 0;
@@ -2048,11 +2117,11 @@ export class Dialogs {
 		}
 
 		// Order of tiers and their multiplier thresholds
-		const orderedTypes: Array<'BigW_BZ' | 'MegaW_BZ' | 'EpicW_BZ' | 'SuperW_BZ'> = [
-			'BigW_BZ',
-			'MegaW_BZ',
-			'EpicW_BZ',
-			'SuperW_BZ'
+		const orderedTypes: Array<'BigWin' | 'MegaWin' | 'EpicWin' | 'SuperWin'> = [
+			'BigWin',
+			'MegaWin',
+			'EpicWin',
+			'SuperWin'
 		];
 		const thresholds = [
 			WIN_THRESHOLDS.BIG_WIN,
@@ -2064,7 +2133,7 @@ export class Dialogs {
 		const finalIndex = orderedTypes.indexOf(config.type as any);
 		if (finalIndex <= 0) {
 			// Only apply staged behavior when final tier is at least Medium (MegaWin) or higher
-			console.log('[Dialogs] Staged win: final tier is BigW_BZ or unknown - using simple animation');
+			console.log('[Dialogs] Staged win: final tier is BigWin or unknown - using simple animation');
 			this.isStagedWinNumberAnimation = false;
 			this.stagedWinStages = [];
 			this.stagedWinCurrentStageIndex = 0;
@@ -2072,7 +2141,7 @@ export class Dialogs {
 			return;
 		}
 
-		let stages: Array<{ type: 'BigW_BZ' | 'MegaW_BZ' | 'EpicW_BZ' | 'SuperW_BZ'; target: number }> = [];
+		let stages: Array<{ type: 'BigWin' | 'MegaWin' | 'EpicWin' | 'SuperWin'; target: number }> = [];
 		let lastTarget = 0;
 
 		// Add intermediate tiers (below the final tier) only at their threshold values,
@@ -2465,22 +2534,22 @@ export class Dialogs {
 
 	// Convenience methods for specific dialog types
 	showCongrats(scene: Scene, config?: Partial<DialogConfig>): void {
-		this.showDialog(scene, { type: 'Congrats_BZ', ...config });
+		this.showDialog(scene, { type: 'Congrats', ...config });
 	}
 
 	showTotalWin(scene: Scene, config?: Partial<DialogConfig>): void {
-		this.showDialog(scene, { type: 'TotalW_BZ', ...config });
+		this.showDialog(scene, { type: 'TotalWin', ...config });
 	}
 
 	showFreeSpinDialog(scene: Scene, config?: Partial<DialogConfig>): void {
 		const delayMs = 1000;
 		scene.time.delayedCall(delayMs, () => {
-			this.showDialog(scene, { type: 'FreeSpin_BZ', ...config });
+			this.showDialog(scene, { type: 'FreeSpin', ...config });
 		});
 	}
 
 	showFreeSpinRetriggerDialog(scene: Scene, config?: Partial<DialogConfig>): void {
-		this.showDialog(scene, { type: 'FreeSpinRetri_BZ', isRetrigger: true, ...config });
+		this.showDialog(scene, { type: 'FreeSpinRetrigger', isRetrigger: true, ...config });
 	}
 
 	/**
@@ -2575,19 +2644,19 @@ export class Dialogs {
 	}
 
 	showLargeWin(scene: Scene, config?: Partial<DialogConfig>): void {
-		this.showDialog(scene, { type: 'EpicW_BZ', ...config });
+		this.showDialog(scene, { type: 'EpicWin', ...config });
 	}
 
 	showMediumWin(scene: Scene, config?: Partial<DialogConfig>): void {
-		this.showDialog(scene, { type: 'MegaW_BZ', ...config });
+		this.showDialog(scene, { type: 'MegaWin', ...config });
 	}
 
 	showSmallWin(scene: Scene, config?: Partial<DialogConfig>): void {
-		this.showDialog(scene, { type: 'BigW_BZ', ...config });
+		this.showDialog(scene, { type: 'BigWin', ...config });
 	}
 
 	showSuperWin(scene: Scene, config?: Partial<DialogConfig>): void {
-		this.showDialog(scene, { type: 'SuperW_BZ', ...config });
+		this.showDialog(scene, { type: 'SuperWin', ...config });
 	}
 
 	/**
@@ -2612,3 +2681,6 @@ export class Dialogs {
 		console.log('[Dialogs] Default win dialog auto-close enabled set to', enabled);
 	}
 }
+
+
+

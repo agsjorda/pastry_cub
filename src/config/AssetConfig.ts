@@ -1,5 +1,6 @@
 import { NetworkManager } from "../managers/NetworkManager";
 import { ScreenModeManager } from "../managers/ScreenModeManager";
+import { BONUS_MULTIPLIER_IMAGE_BY_MARK_COUNT } from "./GameConfig";
 
 export interface AssetGroup {
 	images?: { [key: string]: string };
@@ -149,14 +150,13 @@ export class AssetConfig {
 		};
 		console.log('[AssetConfig] Explosion VFX spine: Explosion_BZ_VFX');
 
-		// Multiplier overlays for bonus grid (x1, x2, x4, ..., x128)
-		// Files expected in: assets/symbols/high/pastry_cub/multiplier_symbols/x1.webp, x2.webp, ...
-		const bonusMultipliers = [1, 2, 4, 8, 16, 32, 64, 128];
-		bonusMultipliers.forEach((mult) => {
+		// Multiplier overlays for bonus grid image tiers (1st mark->x1, 2nd->x2, ...).
+		// Files expected in: assets/symbols/high/pastry_cub_symbols/multiplier_symbols/x1.webp, x2.webp, ...
+		BONUS_MULTIPLIER_IMAGE_BY_MARK_COUNT.forEach((mult, index) => {
 			const key = `bonus_multiplier_x${mult}`;
-			const path = `assets/symbols/high/pastry_cub/multiplier_symbols/x${mult}.webp`;
+			const path = `assets/symbols/high/pastry_cub_symbols/multiplier_symbols/x${mult}.webp`;
 			symbolImages[key] = path;
-			console.log(`[AssetConfig] Bonus multiplier ${mult}x: ${path}`);
+			console.log(`[AssetConfig] Bonus multiplier mark#${index + 1} -> ${mult}x: ${path}`);
 		});
 
 		return {
@@ -282,40 +282,40 @@ export class AssetConfig {
 
 		return {
 			spine: {
-				'Congrats_BZ': {
+				'Congrats': {
 					atlas: `${prefix}/dialogs/Congrats_BZ.atlas`,
 					json: `${prefix}/dialogs/Congrats_BZ.json`
 				},
-				'BigW_BZ': {
-					atlas: `${prefix}/dialogs/BigW_BZ.atlas`,
-					json: `${prefix}/dialogs/BigW_BZ.json`
+				'BigWin': {
+					atlas: `${prefix}/dialogs/BigW_PC.atlas`,
+					json: `${prefix}/dialogs/BigW_PC.json`
 				},
-				'MegaW_BZ': {
-					atlas: `${prefix}/dialogs/MegaW_BZ.atlas`,
-					json: `${prefix}/dialogs/MegaW_BZ.json`
+				'MegaWin': {
+					atlas: `${prefix}/dialogs/MegaW_PC.atlas`,
+					json: `${prefix}/dialogs/MegaW_PC.json`
 				},
-				'EpicW_BZ': {
-					atlas: `${prefix}/dialogs/EpicW_BZ.atlas`,
-					json: `${prefix}/dialogs/EpicW_BZ.json`
+				'EpicWin': {
+					atlas: `${prefix}/dialogs/EpicW_PC.atlas`,
+					json: `${prefix}/dialogs/EpicW_PC.json`
 				},
-				'SuperW_BZ': {
-					atlas: `${prefix}/dialogs/SuperW_BZ.atlas`,
-					json: `${prefix}/dialogs/SuperW_BZ.json`
+				'SuperWin': {
+					atlas: `${prefix}/dialogs/SuperW_PC.atlas`,
+					json: `${prefix}/dialogs/SuperW_PC.json`
 				},
-				'TotalW_BZ': {
+				'TotalWin': {
 					atlas: `${prefix}/dialogs/TotalW_BZ.atlas`,
 					json: `${prefix}/dialogs/TotalW_BZ.json`
 				},
 				// Total win overlay notes animation (uses TotalW_BZ atlas pages)
-				'TotalW_BZ_meow': {
+				'TotalWin_meow': {
 					atlas: `${prefix}/dialogs/TotalW_BZ.atlas`,
 					json: `${prefix}/dialogs/cats meow.json`
 				},
-				'FreeSpin_BZ': {
+				'FreeSpin': {
 					atlas: `${prefix}/dialogs/FreeSpin_BZ.atlas`,
 					json: `${prefix}/dialogs/FreeSpin_BZ.json`
 				},
-				'FreeSpinRetri_BZ': {
+				'FreeSpinRetrigger': {
 					atlas: `${prefix}/dialogs/FreeSpinRetri_BZ.atlas`,
 					json: `${prefix}/dialogs/FreeSpinRetri_BZ.json`
 				}
@@ -402,38 +402,29 @@ export class AssetConfig {
 		return {
 			audio: {
 				// Menu/UI clicks
-				'click_bz': 'assets/sounds/click_sw.ogg',
+				'click': 'assets/sounds/click_sw.ogg',
 				//BG sounds
-				'mainbg_bz': 'assets/sounds/BG/mainbg_BB.ogg',
-				'bonusbg_bz': 'assets/sounds/BG/bonusbg_BB.ogg',
-				'freespinbg_bz': 'assets/sounds/BG/freespinwonbg_BB.ogg',
-				'spinb_bz': 'assets/sounds/SFX/spin_BB.ogg',
-				'reeldrop_bz': 'assets/sounds/SFX/reeldrop_BB.ogg',
-				'turbodrop_bz': 'assets/sounds/SFX/turbodrop_BB.ogg',
-				// Candy explosion transition SFX (used by SymbolExplosionTransition)
-				'candy_transition_bz': 'assets/sounds/SFX/candy_transition.ogg',
-				// Scatter win "nom nom" SFX – played when scatter win animation runs
-				'nomnom_bz': 'assets/sounds/SFX/nomnom_sw.ogg',
-				'coin_throw_bz': 'assets/sounds/SFX/coin_throw_ka.ogg',
-				'coin_drop_bz': 'assets/sounds/SFX/coin_drop_ka.ogg',
+				'mainbg': 'assets/sounds/BG/normalbg_PC.ogg',
+				'bonusbg': 'assets/sounds/BG/bonusbg_PC.ogg',
+				'freespinbg': 'assets/sounds/BG/freespinbg_PC.ogg',
+				'spinb': 'assets/sounds/SFX/spin_PC.ogg',
+				'reeldrop': 'assets/sounds/SFX/reeldrop_PC.ogg',
+				'turbodrop': 'assets/sounds/SFX/turbo_PC.ogg',
 				// Tumble bomb SFX
-				'bomb_bz': 'assets/sounds/SFX/bomb_sw.ogg',
-				'tbomb_bz': 'assets/sounds/SFX/tbomb_BB.ogg',
-				'ghost_whisper_bz': 'assets/sounds/SFX/anticipation_BB.ogg',
+				'tbomb': 'assets/sounds/SFX/tbomb_PC.ogg',
 				// Radial light transition whistle SFX
-				'whistle_bz': 'assets/sounds/SFX/whistle_BB.ogg',
-				'scatter_bz': 'assets/sounds/SFX/scatter_BB.ogg',
+				'whistle': 'assets/sounds/SFX/whistle_BB.ogg',
+				'scatter': 'assets/sounds/SFX/scatter_PC.ogg',
 				// Tumble symbol-win SFX (play per tumble index)
-				'twin1_bz': 'assets/sounds/SFX/symbol_win/twin1_BB.ogg',
-				'twin2_bz': 'assets/sounds/SFX/symbol_win/twin2_BB.ogg',
-				'twin3_bz': 'assets/sounds/SFX/symbol_win/twin3_BB.ogg',
-				'twin4_bz': 'assets/sounds/SFX/symbol_win/twin4_BB.ogg',
+				'twin1': 'assets/sounds/SFX/symbol_win/twin1_BB.ogg',
+				'twin2': 'assets/sounds/SFX/symbol_win/twin2_BB.ogg',
+				'twin3': 'assets/sounds/SFX/symbol_win/twin3_BB.ogg',
+				'twin4': 'assets/sounds/SFX/symbol_win/twin4_BB.ogg',
 				// Win dialog SFX
-				'bigw_bz': 'assets/sounds/Wins/bigw_BB.ogg',
-				'megaw_bz': 'assets/sounds/Wins/megaw_BB.ogg',
-				'superw_bz': 'assets/sounds/Wins/superw_BB.ogg',
-				'epicw_bz': 'assets/sounds/Wins/epicw_BB.ogg',
-				'congrats_bz': 'assets/sounds/Wins/congrats_BB.ogg'
+				'bigw': 'assets/sounds/Wins/bigw_PC.ogg',
+				'megaw': 'assets/sounds/Wins/megaw_PC.ogg',
+				'superw': 'assets/sounds/Wins/superw_PC.ogg',
+				'epicw': 'assets/sounds/Wins/epicw_PC.ogg',
 			}
 		};
 	}
@@ -464,3 +455,6 @@ export class AssetConfig {
 		console.log(`[AssetConfig] Available asset groups:`, Object.keys(this.getAllAssets()));
 	}
 } 
+
+
+

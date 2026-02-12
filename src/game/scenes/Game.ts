@@ -50,7 +50,11 @@ import { FreeRoundManager } from '../components/FreeRoundManager';
 import { ensureSpineFactory } from '../../utils/SpineGuard';
 import { Character } from '../components/Character';
 import { CurrencyManager } from '../components/CurrencyManager';
-import { calculateTotalWinFromTumbles as spinCalculateTotalWinFromTumbles, capWinByMaxMultiplier } from '../components/Spin';
+import {
+	calculateTotalWinFromTumbles as spinCalculateTotalWinFromTumbles,
+	capWinByMaxMultiplier,
+	hasQualifyingClusterInGrid,
+} from '../components/Spin';
 import { IdleManager } from '../components/IdleManager';
 
 export class Game extends Scene {
@@ -588,7 +592,27 @@ export class Game extends Scene {
 			totalWin = paylineWin + tumbleSum;
 			if (totalWin > 0) console.log('[Game] WIN_STOP: totalWin derived from paylines + tumbles=', totalWin);
 		}
-		const hasCluster = tumbleResult.hasCluster;
+		let hasCluster = tumbleResult.hasCluster;
+		try {
+			const snapshots = this.symbols.getClusterWinGridSnapshots();
+			if (Array.isArray(snapshots) && snapshots.length > 0) {
+				const hasClusterFromSnapshots = snapshots.some((grid) => {
+					try {
+						return hasQualifyingClusterInGrid(grid as any);
+					} catch {
+						return false;
+					}
+				});
+				if (hasClusterFromSnapshots && !hasCluster) {
+					console.log('[Game] WIN_STOP: cluster detected from live grid snapshots');
+				}
+				hasCluster = hasCluster || hasClusterFromSnapshots;
+			}
+		} catch (e) {
+			console.warn('[Game] WIN_STOP: Failed snapshot-based cluster check', e);
+		} finally {
+			try { this.symbols.clearClusterWinGridSnapshots(); } catch { }
+		}
 		const hasWin = totalWin > 0;
 
 		if ((hasCluster || hasWin) && !this.gameStateManager.isBonus) {
@@ -858,7 +882,7 @@ export class Game extends Scene {
 			// Switch to bonus background music when background changes to bonus
 			if (this.audioManager) {
 				this.audioManager.playBackgroundMusic(MusicType.BONUS);
-				console.log('[Game] Switched to bonus background music (bonusbg_bz)');
+				console.log('[Game] Switched to bonus background music (bonusbg)');
 			}
 
 			console.log('[Game] ===== BONUS BACKGROUND EVENT HANDLED =====');

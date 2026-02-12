@@ -161,6 +161,13 @@ export function findClusters(area: GridArea): Cluster[] {
   return clusters;
 }
 
+/**
+ * True when at least one qualifying (5+) cluster exists in the provided grid.
+ */
+export function hasQualifyingClusterInGrid(area: GridArea): boolean {
+  return findClusters(area).length > 0;
+}
+
 /** Sentinel for empty cell during cascade simulation (not a valid symbol id). */
 const CASCADE_EMPTY = -1;
 

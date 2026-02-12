@@ -1,11 +1,9 @@
 import { Scene } from 'phaser';
 import { SpinData } from '../../backend/SpinData';
-import { ensureSpineFactory } from '../../utils/SpineGuard';
 import { QUALIFYING_CLUSTER_COUNT, getOutCount, getOutWin } from './Spin';
 import { MIN_CLUSTER_SIZE, UI_CONFIG } from '../../config/GameConfig';
 import { Logger } from '../../utils/Logger';
 import { CurrencyManager } from './CurrencyManager';
-import { startAnimationWithEntry } from '../../utils/SpineAnimationHelper';
 
 interface WinTrackerLayoutOptions {
   offsetX?: number;
@@ -427,56 +425,11 @@ export class WinTracker {
   }
 
   private createSymbolIcon(symbolId: number): { icon: any; isSpine: boolean } {
-    // Try to create a spine-based icon for standard symbols (0–7)
-    try {
-      if (symbolId >= 0 && symbolId <= 7) {
-        if (ensureSpineFactory(this.scene, 'WinTracker')) {
-          const sugarKey = `symbol_${symbolId}_sugar_spine`;
-          // Check if the spine JSON is loaded before trying to create it
-          if (!this.scene.cache.json.has(sugarKey)) {
-            // Spine not loaded yet, fall through to PNG fallback
-          } else {
-            const sugarAtlasKey = `${sugarKey}-atlas`;
-            const go: any = (this.scene.add as any).spine?.(0, 0, sugarKey, sugarAtlasKey);
-            if (go) {
-              try { go.setOrigin?.(0.5, 0.5); } catch {}
-              // Small icon scale
-              try { go.setScale?.(this.iconScale); } catch {}
-              // Play idle if present
-              try {
-                const idle = `Symbol${symbolId}_SW_Idle`;
-                if (go.animationState?.setAnimation) {
-                  const startResult = startAnimationWithEntry(go, {
-                    animationName: idle,
-                    loop: true,
-                    logWhenMissing: false
-                  });
-                  const entry = startResult?.entry;
-                  try {
-                    const duration = (go as any)?.skeleton?.data?.findAnimation?.(idle)?.duration;
-                    if (typeof duration === 'number' && duration > 0 && entry) {
-                      (entry as any).trackTime = Math.random() * duration;
-                    }
-                  } catch {}
-                  try {
-                    const speedJitter = 0.95 + Math.random() * 0.1;
-                    (go.animationState as any).timeScale = speedJitter;
-                  } catch {}
-                }
-              } catch {}
-              return { icon: go, isSpine: true };
-            }
-          }
-        }
-      }
-    } catch {}
-
-    // Fallback to PNG sprite
+    // Win tracker should always use static symbol textures from
+    // assets/symbols/high/pastry_cub_symbols/statics.
     const key = `symbol_${symbolId}`;
-    // Check if the texture exists before trying to create the image
     if (!this.scene.textures.exists(key)) {
       console.warn(`[WinTracker] Texture not found for symbol ${symbolId} (key: ${key}), creating placeholder`);
-      // Create a placeholder rectangle if texture doesn't exist
       const placeholder = this.scene.add.rectangle(0, 0, 40, 40, 0x888888);
       placeholder.setOrigin(0.5, 0.5);
       placeholder.setScale(this.iconScale);

@@ -32,7 +32,7 @@ export class BonusHeader {
 	private headerWinBarImage?: Phaser.GameObjects.Image;
 	// Track if we just seeded the win to prevent immediate text overrides
 	private justSeededWin: boolean = false;
-	// Suppress win bar text while TotalW_BZ dialog is showing
+	// Suppress win bar text while TotalWin dialog is showing
 	private suppressWinbarDisplay: boolean = false;
 
 	constructor(networkManager: NetworkManager, screenModeManager: ScreenModeManager) {
@@ -65,7 +65,7 @@ export class BonusHeader {
 		// Set up event listeners for winnings updates (like regular header)
 		this.setupWinningsEventListener();
 
-		// Hide win bar text while TotalW_BZ dialog is visible
+		// Hide win bar text while TotalWin dialog is visible
 		this.setupWinbarSuppressionListeners(scene);
 		
 		// Initialize winnings display - start hidden
@@ -74,10 +74,10 @@ export class BonusHeader {
 
 	private setupWinbarSuppressionListeners(scene: Scene): void {
 		scene.events.on('dialogShown', (dialogType: string) => {
-			if (dialogType === 'TotalW_BZ') {
+			if (dialogType === 'TotalWin') {
 				this.suppressWinbarDisplay = true;
 				this.forceHideWinningsDisplay();
-				console.log('[BonusHeader] TotalW_BZ shown - suppressing winbar display');
+				console.log('[BonusHeader] TotalWin shown - suppressing winbar display');
 			}
 		});
 		scene.events.on('hideBonusHeader', () => {
@@ -527,7 +527,7 @@ export class BonusHeader {
 	}
 
 	/**
-	 * Force-hide the win bar text (used when TotalW_BZ dialog is shown).
+	 * Force-hide the win bar text (used when TotalWin dialog is shown).
 	 */
 	public forceHideWinningsDisplay(): void {
 		if (this.amountText && this.youWonText) {
@@ -717,41 +717,40 @@ export class BonusHeader {
 
 		// Listen for tumble sequence completion (during bonus mode: accumulate spin total only)
 		gameEventManager.on(GameEventType.TUMBLE_SEQUENCE_DONE, (data: any) => {
-			this.stopConveyorTopAnimation();
 			try {
 				if (!gameStateManager.isBonus) return;
 				const symbolsComponent = (this.bonusHeaderContainer.scene as any).symbols;
 				const spinData = symbolsComponent?.currentSpinData;
 				
-				// Prefer totalWin from the current freespin item (backend per-spin total).
-				// Fall back to subTotalWin, then to a manual tumble+payline sum.
+				// Prefer frontend-emitted tumble total so sticky bonus multipliers are reflected
+				// immediately in UI accumulation. Fall back to freespin item totals.
 				let spinWin = 0;
 				try {
 					const slotAny: any = spinData?.slot || {};
-					const currentItem = this.getCurrentFreeSpinItem(spinData);
-					if (currentItem) {
-						const rawItemTotal =
-							(currentItem as any).totalWin ??
-							(currentItem as any).subTotalWin ??
-							0;
-						const itemTotal = Number(rawItemTotal);
-						if (!isNaN(itemTotal) && itemTotal > 0) {
-							spinWin = itemTotal;
-							console.log(`[BonusHeader] TUMBLE_SEQUENCE_DONE: using freespin item totalWin=$${itemTotal}`);
+					const spinTumbleWin = Number((data as any)?.totalWin ?? 0);
+					if (spinTumbleWin > 0) {
+						// Add paylines separately if tumble payload excludes them.
+						let spinPaylineWin = 0;
+						if (slotAny?.paylines && Array.isArray(slotAny.paylines) && slotAny.paylines.length > 0) {
+							spinPaylineWin = this.calculateTotalWinFromPaylines(slotAny.paylines);
 						}
+						spinWin = spinTumbleWin + spinPaylineWin;
+						console.log(`[BonusHeader] TUMBLE_SEQUENCE_DONE: using event total (tumbles=$${spinTumbleWin} + paylines=$${spinPaylineWin}) = $${spinWin}`);
 					}
 
-					// Fallback: if freespin item total not available, use the totalWin from event data (tumbles only)
+					// Fallback: freespin item backend total/subtotal
 					if (spinWin === 0) {
-						const spinTumbleWin = Number((data as any)?.totalWin ?? 0);
-						if (spinTumbleWin > 0) {
-							// Still need to add paylines if tumbles don't include them
-							let spinPaylineWin = 0;
-							if (slotAny?.paylines && Array.isArray(slotAny.paylines) && slotAny.paylines.length > 0) {
-								spinPaylineWin = this.calculateTotalWinFromPaylines(slotAny.paylines);
+						const currentItem = this.getCurrentFreeSpinItem(spinData);
+						if (currentItem) {
+							const rawItemTotal =
+								(currentItem as any).totalWin ??
+								(currentItem as any).subTotalWin ??
+								0;
+							const itemTotal = Number(rawItemTotal);
+							if (!isNaN(itemTotal) && itemTotal > 0) {
+								spinWin = itemTotal;
+								console.log(`[BonusHeader] TUMBLE_SEQUENCE_DONE: fallback freespin item totalWin=$${itemTotal}`);
 							}
-							spinWin = spinTumbleWin + spinPaylineWin;
-							console.log(`[BonusHeader] TUMBLE_SEQUENCE_DONE: fallback calculation (tumbles=$${spinTumbleWin} + paylines=$${spinPaylineWin}) = $${spinWin}`);
 						}
 					}
 				} catch {}
@@ -856,9 +855,18 @@ export class BonusHeader {
 			}
 		});
 
+		// Follow reel conveyor behavior during tumbles
+		gameEventManager.on(GameEventType.TUMBLE_COLUMNS_START, () => {
+			this.playConveyorTopAnimation();
+		});
+		gameEventManager.on(GameEventType.TUMBLE_COLUMNS_DONE, () => {
+			this.stopConveyorTopAnimation();
+		});
+
 		// Listen for reel done events to show winnings display (like regular header)
 		gameEventManager.on(GameEventType.REELS_STOP, (data: any) => {
 			console.log(`[BonusHeader] REELS_STOP received - checking for wins`);
+			this.stopConveyorTopAnimation();
 
 			// In bonus mode, per-spin display is handled on WIN_STOP; skip here to avoid label mismatch
 			if (gameStateManager.isBonus) {
@@ -1192,3 +1200,4 @@ export class BonusHeader {
 		}
 	}
 }
+

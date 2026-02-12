@@ -90,7 +90,7 @@ export class SlotController {
 	private shouldSubtractOneFromServerFsDisplay: boolean = false;
 	private uiFsDecrementApplied: boolean = false;
 	
-	// Flag to track if we're in buy feature free spins and waiting for TotalW_BZ dialog
+	// Flag to track if we're in buy feature free spins and waiting for TotalWin dialog
 	private isBuyFeatureFreeSpinsActive: boolean = false;
 	
 	private buyFeatureController!: BuyFeatureController;
@@ -508,7 +508,7 @@ export class SlotController {
 		// Setup spin state change listener
 		this.setupSpinStateListener();
 		
-		// Setup dialog shown listener for TotalW_BZ dialog
+		// Setup dialog shown listener for TotalWin dialog
 		this.setupDialogShownListener();
 		
 		// No need to set initial spin button state here - will be handled when reels finish
@@ -3696,7 +3696,7 @@ export class SlotController {
 				// If buy feature spin lock is active, mark that we're in buy feature free spins
 				if (this.buyFeatureController.isSpinLocked()) {
 					this.isBuyFeatureFreeSpinsActive = true;
-					console.log('[SlotController] Buy feature free spins activated - buttons will remain disabled until TotalW_BZ dialog');
+					console.log('[SlotController] Buy feature free spins activated - buttons will remain disabled until TotalWin dialog');
 				}
 			} else {
 				console.log('[SlotController] Bonus mode deactivated - showing primary controller');
@@ -4117,7 +4117,7 @@ export class SlotController {
 	}
 
 	/**
-	 * Setup listener for dialog shown events to detect when TotalW_BZ dialog appears
+	 * Setup listener for dialog shown events to detect when TotalWin dialog appears
 	 */
 	private setupDialogShownListener(): void {
 		if (!this.scene) {
@@ -4128,9 +4128,9 @@ export class SlotController {
 		this.scene.events.on('dialogShown', (dialogType: string) => {
 			console.log(`[SlotController] Dialog shown: ${dialogType}, isBuyFeatureFreeSpinsActive: ${this.isBuyFeatureFreeSpinsActive}`);
 			
-			// If the TotalW_BZ dialog is shown at the end of bonus, release buy-feature locks
+			// If the TotalWin dialog is shown at the end of bonus, release buy-feature locks
 			// and re-evaluate control states so buttons are not left disabled.
-			if (dialogType === 'TotalW_BZ' && (this.isBuyFeatureFreeSpinsActive || this.buyFeatureController?.isSpinLocked?.())) {
+			if (dialogType === 'TotalWin' && (this.isBuyFeatureFreeSpinsActive || this.buyFeatureController?.isSpinLocked?.())) {
 				if (gameStateManager.isBonusFinished) {
 					this.buyFeatureController?.setSpinLock(false);
 				}
@@ -4139,7 +4139,7 @@ export class SlotController {
 				this.updateAutoplayButtonStateWithLock();
 				this.updateTurboButtonStateWithLock();
 				this.updateAmplifyButtonStateWithLock();
-				this.enableBetBackgroundInteraction('TotalW_BZ dialog shown');
+				this.enableBetBackgroundInteraction('TotalWin dialog shown');
 			}
 		});
 	}
@@ -4569,6 +4569,7 @@ export class SlotController {
 		return dummySpinData;
 	}
 }
+
 
 
 

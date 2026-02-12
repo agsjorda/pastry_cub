@@ -5,7 +5,7 @@
  * Import from this file to access all symbol-related functionality.
  * 
  * @example
- * import { Symbols, SymbolGrid, SymbolMultiplier } from './symbols';
+ * import { Symbols, SymbolGrid, SymbolMarker } from './symbols';
  */
 
 // Main Symbols class (backward compatibility)
@@ -16,8 +16,8 @@ export { SymbolGrid } from './SymbolGrid';
 export { SymbolAnimations } from './SymbolAnimations';
 export { SymbolFactory } from './SymbolFactory';
 export { SymbolOverlay } from './SymbolOverlay';
-export { SymbolMultiplier } from './SymbolMultiplier';
-export type { SymbolMultiplierLayout } from './SymbolMultiplier';
+export { SymbolMarker } from './SymbolMarker';
+export type { SymbolMarkerLayout } from './SymbolMarker';
 
 // Specialized controllers
 export { FreeSpinController } from './FreeSpinController';

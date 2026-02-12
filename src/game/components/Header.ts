@@ -249,9 +249,8 @@ export class Header {
 			} catch {}
 		});
 
-		// Listen for tumble sequence completion to display TOTAL WIN and stop conveyor top
+		// Listen for tumble sequence completion to display TOTAL WIN
 		gameEventManager.on(GameEventType.TUMBLE_SEQUENCE_DONE, (data: any) => {
-			this.stopConveyorTopAnimation();
 			try {
 				// Don't show winnings in header if in bonus mode (bonus header handles it)
 				if (gameStateManager.isBonus) {
@@ -321,9 +320,18 @@ export class Header {
 			this.playConveyorTopAnimation();
 		});
 
+		// Follow reel conveyor behavior during tumbles
+		gameEventManager.on(GameEventType.TUMBLE_COLUMNS_START, () => {
+			this.playConveyorTopAnimation();
+		});
+		gameEventManager.on(GameEventType.TUMBLE_COLUMNS_DONE, () => {
+			this.stopConveyorTopAnimation();
+		});
+
 		// Listen for reel done events to show winnings display
 		gameEventManager.on(GameEventType.REELS_STOP, (data: any) => {
 			console.log(`[Header] REELS_STOP received - checking for wins`);
+			this.stopConveyorTopAnimation();
 			
 			// Don't show winnings in header if in bonus mode (bonus header handles it)
 			if (gameStateManager.isBonus) {

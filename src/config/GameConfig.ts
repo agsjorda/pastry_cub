@@ -12,10 +12,30 @@ export { CLOCK_DISPLAY_NAME, GAME_DISPLAY_NAME, CLOCK_DISPLAY_CONFIG } from './G
 /** WinTracker position and icon size (symbol win strip) */
 export const WIN_TRACKER_LAYOUT = {
   /** Vertical offset from base position (negative = up, positive = down) */
-  offsetY: 220,
+  offsetY: 210,
   /** Scale of symbol icons in the strip */
-  iconScale: 0.3,
+  iconScale: 0.1,
 } as const;
+
+/** Bonus multiplier overlay placement and fit on each symbol cell */
+export const BONUS_MULTIPLIER_LAYOUT = {
+  /** Horizontal offset (px) from the center of each cell */
+  offsetX: 0,
+  /** Vertical offset (px) from the center of each cell */
+  offsetY: 0,
+  /** Extra fit scale after matching cell size (1 = exact cell fit) */
+  scale: 1,
+} as const;
+
+/**
+ * Bonus marker image mapping by mark count.
+ * Index 0 = first time a cell is marked (x1), index 1 = second mark (x2), etc.
+ * Current art set provides 8 tiers up to x128.
+ */
+export const BONUS_MULTIPLIER_IMAGE_BY_MARK_COUNT: readonly number[] = [1, 2, 4, 8, 16, 32, 64, 128] as const;
+
+/** Bonus marker logic cap (can exceed current image tiers; UI falls back to text if no matching image exists). */
+export const BONUS_MULTIPLIER_MAX_VALUE: number = 128;
 
 /** Header layout (Header_SceneFrame and Header_WinBar position and scale) */
 export const HEADER_CONFIG = {
