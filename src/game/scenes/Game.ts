@@ -484,8 +484,6 @@ export class Game extends Scene {
 		});
 		gameEventManager.on(GameEventType.REELS_STOP, () => {
 			console.log('[Game] REELS_STOP event received');
-			if (!gameStateManager.isScatter && !gameStateManager.isBonus) this.updateBalanceAfterWinStop();
-			gameEventManager.emit(GameEventType.BALANCE_UPDATE);
 		});
 		gameEventManager.on(GameEventType.REELS_START, () => {
 			try {
@@ -530,7 +528,6 @@ export class Game extends Scene {
 		console.log('[Game] WIN_STOP event received (tumble-based evaluation)');
 		if (!this.symbols?.currentSpinData) {
 			console.log('[Game] WIN_STOP: No current spin data available');
-			if (!gameStateManager.isScatter && !gameStateManager.isBonus) this.updateBalanceAfterWinStop();
 			return;
 		}
 		const spinData = this.symbols.currentSpinData;
@@ -623,10 +620,6 @@ export class Game extends Scene {
 		console.log(`[Game] WIN_STOP: totalWin used for win dialog=$${totalWin}, hasCluster=${hasCluster}, hasWin=${hasWin}`);
 		if (hasWin) this.checkAndShowWinDialog(totalWin, betAmount);
 
-		if (this.gameAPI.getDemoState() && !gameStateManager.isScatter && !gameStateManager.isBonus) {
-			this.gameAPI.updateDemoBalance(this.gameAPI.getDemoBalance() + totalWin);
-		}
-		if (!gameStateManager.isScatter && !gameStateManager.isBonus) this.updateBalanceAfterWinStop();
 	}
 
 	/**
@@ -662,39 +655,6 @@ export class Game extends Scene {
 				this.slotController.updateBalanceAmount(defaultBalance);
 				console.log(`[Game] Using default balance: $${defaultBalance}`);
 			}
-		}
-	}
-
-	/**
-	 * Update balance from server after WIN_STOP or REELS_STOP
-	 */
-	private async updateBalanceAfterWinStop(): Promise<void> {
-		try {
-			console.log('[Game] Updating balance from server after WIN_STOP/REELS_STOP...');
-
-			// Call the GameAPI to get the current balance from server
-			const balance = await this.gameAPI.initializeBalance();
-
-			// Update the SlotController balance display
-			if (this.slotController) {
-				this.slotController.updateBalanceAmount(balance);
-				console.log(`[Game] Balance updated after WIN_STOP/REELS_STOP: $${balance}`);
-			}
-
-			// Update autoplay options balance if visible
-			this.updateAutoplayOptionsBalance(balance);
-
-		} catch (error) {
-			console.error('[Game] Error updating balance after WIN_STOP/REELS_STOP:', error);
-		}
-	}
-
-	/**
-	 * Update the AutoplayOptions balance display
-	 */
-	private updateAutoplayOptionsBalance(balance: number): void {
-		if (this.autoplayOptions && this.autoplayOptions.isVisible()) {
-			this.autoplayOptions.setCurrentBalance(balance);
 		}
 	}
 
