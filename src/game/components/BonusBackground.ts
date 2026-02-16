@@ -17,7 +17,6 @@ export class BonusBackground {
 	private screenModeManager: ScreenModeManager;
 	private bonusBg: any = null; // Spine animation object
 	private bonusBgCover: Phaser.GameObjects.Image | null = null;
-    private bonusSpine: any = null; // Spine animation object
 	private scene: Scene | null = null;
 	private conveyorSpines: any[] = []; // 7 columns of BG_Conveyor_PC - one behind each reel (same as normal)
 	private conveyorScene: Scene | null = null;
@@ -78,21 +77,6 @@ export class BonusBackground {
 			this.createPortraitBonusBackground(scene, assetScale);
 		} else {
 			this.createLandscapeBonusBackground(scene, assetScale);
-		}
-
-		// Add spine animation for bonus mode
-		// Assumes 'bonus_character' spine asset is loaded in AssetConfig
-		this.bonusSpine = (scene.add as any).spine(
-			scene.scale.width * 0.5,
-			scene.scale.height * 0.5,
-			'character2', // key for bonus character
-			'character2-atlas'
-		);
-		if (this.bonusSpine) {
-			this.bonusSpine.setScale(0.18);
-			this.bonusSpine.setDepth(10);
-			this.bonusSpine.setVisible(false); // Only show in bonus mode
-			this.bonusContainer.add(this.bonusSpine);
 		}
 
 		// Create conveyor spines (same as normal Background)
@@ -288,10 +272,6 @@ export class BonusBackground {
 			console.log(`[BonusBackground] Initial bonus bg cover visibility: ${isBonus} (isBonus: ${isBonus})`);
 		}
 		
-		if (this.bonusSpine) {
-			this.bonusSpine.setVisible(isBonus);
-		}
-
 		// Conveyor visible in both normal and bonus game (same as normal Background)
 		for (const spine of this.conveyorSpines) {
 			if (spine) spine.setVisible(true);

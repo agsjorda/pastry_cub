@@ -4,6 +4,7 @@ import { gameEventManager, GameEventType } from '../event/EventManager';
 import { gameStateManager } from './GameStateManager';
 import { TurboConfig } from '../config/TurboConfig';
 import { SCATTER_SYMBOL_ID } from '../config/GameConfig';
+import { SoundEffectType } from './AudioManager';
 
 /** Data shape for scatter animation (replaces tmp_backend Data) */
 export interface ScatterData {
@@ -110,37 +111,19 @@ export class ScatterAnimationManager {
     const isBuyFeature = gameStateManager.isBuyFeatureSpin;
 
     try {
-      // Step 1: Wait for player to see scatter symbols
+      // Step 1: Wait for player to see scatter symbols (sugar_wonderland style: delay then show dialog)
       console.log('[ScatterAnimationManager] Waiting for player to see scatter symbols...');
       await this.delay(this.getTurboAdjustedDelay(this.config.scatterRevealDelay));
-      
-      // Step 2: Skip all spinner animations; directly determine free spins and show dialog
+
+      // Step 2: Directly determine free spins and show dialog (no merge/transition)
       this.determineFreeSpins(data);
-
-      if (isBuyFeature) {
-        // Ensure symbols are visible behind the free spins dialog.
-        try {
-          const gameScene: any = this.scene as any;
-          await gameScene?.symbols?.forceScatterResetImmediate?.();
-          gameScene?.symbols?.ensureScatterSymbolsVisible?.();
-          gameScene?.symbols?.container?.setVisible?.(true);
-          gameScene?.symbols?.container?.setAlpha?.(1);
-        } catch { }
-      }
-
-      // Wait for Symbols transition (merge + explosion) before showing dialog - same for normal and buy feature
-      await this.waitForBuyFeatureTransitions();
-
-      // Directly show free spins dialog without wheel
       this.showFreeSpinsDialog(data);
 
       if (isBuyFeature) {
         gameStateManager.isBuyFeatureSpin = false;
       }
-      
-      // Note: Symbol reset will happen after dialog animations complete
+
       console.log('[ScatterAnimationManager] Scatter bonus sequence completed, waiting for dialog animations to finish');
-      
     } catch (error) {
       console.error('[ScatterAnimationManager] Error during scatter animation:', error);
     } finally {
@@ -158,27 +141,6 @@ export class ScatterAnimationManager {
       this.scene!.time.delayedCall(ms, () => {
         resolve();
       });
-    });
-  }
-
-  private async waitForBuyFeatureTransitions(): Promise<void> {
-    if (!this.scene) return;
-    const gameScene: any = this.scene as any;
-    const symbols = gameScene?.symbols as { isBuyFeatureTransitionComplete?: boolean } | undefined;
-    if (symbols?.isBuyFeatureTransitionComplete) {
-      return;
-    }
-    await new Promise<void>((resolve) => {
-      let finished = false;
-      const finish = () => {
-        if (finished) return;
-        finished = true;
-        resolve();
-      };
-      try {
-        this.scene!.events.once('buyFeatureTransitionsComplete', finish);
-      } catch { }
-      this.scene!.time.delayedCall(5000, finish);
     });
   }
 
@@ -313,6 +275,14 @@ export class ScatterAnimationManager {
     
     // Keep bonus mode active; do not toggle music here
     gameStateManager.isBonus = true;
+    try {
+      const audioMgr = (window as any).audioManager;
+      if (audioMgr && typeof audioMgr.playSoundEffect === 'function') {
+        audioMgr.playSoundEffect(SoundEffectType.DIALOG_RETRIGGER);
+      }
+    } catch (e) {
+      console.warn('[ScatterAnimationManager] Failed to play retrigger SFX', e);
+    }
     // A retrigger explicitly means the bonus is continuing, so make sure any
     // tentative "bonus finished" state set earlier in the spin (e.g. from
     // REELS_STOP heuristics) is cleared before congrats logic can react to it.

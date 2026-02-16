@@ -24,7 +24,7 @@ export const BONUS_MULTIPLIER_LAYOUT = {
   /** Vertical offset (px) from the center of each cell */
   offsetY: 0,
   /** Extra fit scale after matching cell size (1 = exact cell fit) */
-  scale: 1,
+  scale: 1.1,
 } as const;
 
 /**
@@ -40,25 +40,53 @@ export const BONUS_MULTIPLIER_MAX_VALUE: number = 128;
 /** Header layout (Header_SceneFrame and Header_WinBar position and scale) */
 export const HEADER_CONFIG = {
   /** X offset (px) for Header_SceneFrame. Positive = right, negative = left. Use to nudge horizontal center. */
-  SCENE_FRAME_OFFSET_X: 4,
+  SCENE_FRAME_OFFSET_X: 0,
   /** Y position (px) of the top edge of Header_SceneFrame. 0 = top of screen; positive = frame lower. */
-  SCENE_FRAME_OFFSET_Y: -20,
+  SCENE_FRAME_OFFSET_Y: -2,
   /** Scale multiplier for Header_SceneFrame. 1 = width-fit, < 1 = smaller, > 1 = larger. */
-  SCENE_FRAME_SCALE: 1.12,
+  SCENE_FRAME_SCALE: 1,
   /** Header_Scene: X scale multiplier (applied on top of frame scale). 1 = same as frame. */
-  HEADER_SCENE_SCALE_X: 1,
+  HEADER_SCENE_SCALE_X: .9,
   /** Header_Scene: Y scale multiplier (applied on top of frame scale). 1 = same as frame. */
-  HEADER_SCENE_SCALE_Y: 1,
+  HEADER_SCENE_SCALE_Y: .9,
   /** Header_Scene: Y position offset (px) added to frame top. Positive = down, negative = up. */
-  HEADER_SCENE_OFFSET_Y: 30,
+  HEADER_SCENE_OFFSET_Y: 0,
+  /** Header scene container: X scale multiplier. 1 = fit screen width, < 1 = narrower, > 1 = wider. */
+  HEADER_SCENE_CONTAINER_SCALE_X: .95,
+  /** Header scene container: Y scale multiplier. 1 = same as frame height, < 1 = shorter, > 1 = taller. */
+  HEADER_SCENE_CONTAINER_SCALE_Y: .9,
+  /** Header scene container: Y offset (px). Positive = down, negative = up. */
+  HEADER_SCENE_CONTAINER_OFFSET_Y: 0,
   /** Y offset (px) added to Header_WinBar position (below Header_SceneFrame). Positive = down, negative = up. */
   WIN_BAR_OFFSET_Y: -30,
+  /** Y offset (px) for win bar text (YOU WON / amount). Positive = lower, negative = higher. Applied on top of base position. */
+  WIN_BAR_TEXT_OFFSET_Y: 0,
+  /** Scale multiplier for win bar label text (YOU WON / TOTAL WIN). 1 = default size, < 1 = smaller, > 1 = larger. */
+  WIN_BAR_TEXT_SCALE: .9,
+  /** Scale multiplier for win bar value text (amount e.g. $0.00). 1 = default size, < 1 = smaller, > 1 = larger. */
+  WIN_BAR_TEXT_VALUE_SCALE: .9,
   /** Scale multiplier for Header_WinBar. 1 = width-fit, < 1 = smaller, > 1 = larger. */
   WIN_BAR_SCALE: 1,
   /** Conveyor top (inside frame): scale multiplier. 1 = same as width-fit, < 1 = smaller, > 1 = larger. */
   CONVEYOR_TOP_SCALE: 0.6,
   /** Conveyor top (inside frame): Y offset (px) from frame top. Positive = down, negative = up. */
-  CONVEYOR_TOP_OFFSET_Y: 115,
+  CONVEYOR_TOP_OFFSET_Y: 95,
+  /** Number of animal spines to create in the pool (reused when one exits right). */
+  ANIMALS_POOL_SIZE: 10,
+  /** Minimum number of animals visible on the conveyor (if lane fits fewer, uses 1). */
+  ANIMALS_MIN_VISIBLE: 3,
+  /** Header animals layer: scale multiplier relative to width-fit. */
+  ANIMALS_SCALE: 0.12,
+  /** Header animals layer: Y offset (px) from frame top. Positive = down, negative = up. */
+  ANIMALS_OFFSET_Y: 70,
+  /** Horizontal spacing between left/right header animals from center (px). */
+  ANIMALS_SIDE_OFFSET_X: 10,
+  /** Idle/start horizontal spread inside SceneFrame lane (0-1). Lower = closer together. */
+  ANIMALS_IDLE_SPREAD: 0.5,
+  /** Left animal animation name in BG_Animals_PC skeleton. */
+  ANIMALS_LEFT_ANIMATION: 'Bear',
+  /** Right animal animation name in BG_Animals_PC skeleton. */
+  ANIMALS_RIGHT_ANIMATION: 'Tiger',
 } as const;
 
 // =============================================================================
@@ -120,9 +148,6 @@ export const MAX_IDLE_TIME_MINUTES: number = 5; // 5 minutes (use 0.25 for 15 se
 export const GAME_SCENE_PHYSICS_BOTTOM_OFFSET = 220;
 /** Fade-in from black duration (ms) */
 export const GAME_SCENE_FADE_IN_DURATION_MS = 1000;
-/** Character positions and scale in main game (left/right of reels) */
-export const GAME_SCENE_CHARACTER_1 = { X_RATIO: 0.42, Y_RATIO: 0.27, SCALE: 0.1, DEPTH: 100 };
-export const GAME_SCENE_CHARACTER_2 = { X_RATIO: 0.65, Y_RATIO: 0.24, SCALE: 0.13, DEPTH: 100 };
 
 // =============================================================================
 // GRID CONFIGURATION
@@ -321,13 +346,17 @@ export const SCATTER_RETRIGGER_SCALE = 1.5;
 // DEBUG / VISUAL (dev toggles – easy to find)
 // =============================================================================
 /** When true, draw a red border around symbols that are part of a win (cluster/tumble). */
-export const SHOW_WIN_BORDER_SYMBOLS: boolean = true;
+export const SHOW_WIN_BORDER_SYMBOLS: boolean = false;
 /** Line width (px) for the win border when SHOW_WIN_BORDER_SYMBOLS is true. Use a smaller value for thinner lines. */
 export const WIN_BORDER_LINE_WIDTH = 2;
 /** When true, draw a red border around the reel/grid container. */
 export const SHOW_REEL_BORDER: boolean = false;
 /** When true, draw hitboxes for controller buttons. */
 export const SHOW_BUTTON_HITBOXES: boolean = false;
+/** When true, draw a green debug border around Header_SceneFrame to see its size. */
+export const SHOW_HEADER_SCENEFRAME_BORDER: boolean = false;
+/** When true, draw a red debug border around the full header area (scene, frame, win bar, win text). */
+export const SHOW_HEADER_BORDER: boolean = false;
 
 // =============================================================================
 // SYMBOL DEPTH (Z-ordering)

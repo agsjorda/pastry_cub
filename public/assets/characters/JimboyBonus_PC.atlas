@@ -1,0 +1,13 @@
+JimboyBonus_PC.webp
+size:452,452
+filter:Linear,Linear
+pma:true
+FMajimboy
+bounds:2,2,223,446
+offsets:0,0,271,447
+FMajimboyArm
+bounds:227,325,84,123
+offsets:0,1,84,125
+FMajimboyArmLense
+bounds:313,348,85,100
+offsets:0,5,87,106

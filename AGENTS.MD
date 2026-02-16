@@ -40,3 +40,8 @@ Follow existing naming patterns unless the user asks for a rename.
 ## 6. Documentation Rule
 
 When adding a new replace point (new assets folder, config constant, or game rule source), update `GAME_TEMPLATE.md` in the same change.
+
+## 7. Change Approval
+
+- Ask the user for confirmation before changing any file.
+- Do not make code or config edits until the user explicitly approves.

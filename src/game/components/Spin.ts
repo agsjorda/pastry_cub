@@ -9,16 +9,20 @@
  * - Helpers to interpret backend tumble/out data
  */
 
-import { SLOT_COLUMNS, SCATTER_FREE_SPINS, MAX_WIN_MULTIPLIER } from '../../config/GameConfig';
+import {
+  SLOT_COLUMNS,
+  SCATTER_FREE_SPINS,
+  MAX_WIN_MULTIPLIER,
+  MIN_CLUSTER_SIZE,
+  NORMAL_SYMBOLS,
+  SCATTER_SYMBOL_ID,
+} from '../../config/GameConfig';
 
 /** Minimum matching symbol count to qualify as a winning cluster (win dialog, WinTracker, high-count animation) */
-export const QUALIFYING_CLUSTER_COUNT = 5;
+export const QUALIFYING_CLUSTER_COUNT = MIN_CLUSTER_SIZE;
 
 /** Regular pay symbols (1-7). Cluster pays apply only to these. */
-export const CLUSTER_PAY_SYMBOLS = [1, 2, 3, 4, 5, 6, 7] as const;
-
-/** Scatter symbol ID (pays by total count anywhere on grid) */
-export const SCATTER_SYMBOL_ID = 0;
+export const CLUSTER_PAY_SYMBOLS: readonly number[] = NORMAL_SYMBOLS;
 
 /** Valid symbol payout counts (5 through 15) */
 export const SYMBOL_PAY_COUNTS = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15] as const;

@@ -5,6 +5,7 @@
  */
 
 import type { Game } from '../../scenes/Game';
+import { TumbleOut } from '../Spin';
 
 /** Re-export from Spin (single source of truth for win/tumble evaluation) */
 export type { TumbleOut } from '../Spin';
@@ -158,40 +159,6 @@ export interface TumbleData {
  * Tracks which cells should be removed in a tumble
  */
 export type RemovalMask = boolean[][];
-
-// ============================================================================
-// SPIN DATA TYPES
-// ============================================================================
-
-/**
- * Simplified spin data structure from the game API
- */
-export interface SpinData {
-  bet: string | number;
-  slot?: {
-    area?: number[][];
-    tumbles?: TumbleData[];
-    freespin?: FreeSpinData;
-    freeSpin?: FreeSpinData;
-  };
-}
-
-/**
- * Free spin data structure
- */
-export interface FreeSpinData {
-  count?: number;
-  items?: FreeSpinItem[];
-}
-
-/**
- * Individual free spin item
- */
-export interface FreeSpinItem {
-  spinsLeft?: number;
-  totalWin?: number;
-  subTotalWin?: number;
-}
 
 // ============================================================================
 // FREE SPIN AUTOPLAY TYPES

@@ -84,6 +84,8 @@ export class Dialogs {
 	private numberYWin: number | null = 490;
 	private numberYFreeSpin: number | null = null;
 	private numberYCongrats: number | null = null;
+	private readonly defaultNumberDisplayScale: number = 0.5;
+	private readonly minNumberDisplayScale: number = 0.18;
 
 	// Managers
 	private networkManager: NetworkManager;
@@ -102,26 +104,19 @@ export class Dialogs {
 
 	// Dialog configuration
 	private dialogScales: Record<string, number> = {
-		'Congrats': 0.45,
-		'FreeSpin': 0.45,
-		'FreeSpinRetrigger': 0.45,
+		'Congrats': 1,
+		'FreeSpin': 1,
 		'BigWin': 1,
 		'MegaWin': 1,
 		'EpicWin': 1,
 		'SuperWin': 1,
-		'TotalWin': 0.45
-	};
-
-	// Adjust TotalWin scale
-	private dialogScaleXY: Record<string, { x: number; y: number }> = {
-		'TotalWin': { x: 0.3, y: 0.27 }
+		'TotalWin': 1
 	};
 
 	// Dialog positions (relative: 0.0 = left/top, 0.5 = center, 1.0 = right/bottom)
 	private dialogPositions: Record<string, { x: number; y: number }> = {
 		'Congrats': { x: 0.5, y: 0.4 },
 		'FreeSpin': { x: 0.5, y: 0.4 },
-		'FreeSpinRetrigger': { x: 0.5, y: 0.4 },
 		'BigWin': { x: 0.5, y: 0.4 },
 		'MegaWin': { x: 0.5, y: 0.4 },
 		'EpicWin': { x: 0.5, y: 0.4 },
@@ -129,20 +124,20 @@ export class Dialogs {
 		'TotalWin': { x: 0.5, y: 0.4 }
 	};
 
-	// Adjust TotalWin XY offset
-	private dialogPositionOffsets: Record<string, { x: number; y: number }> = {
-		'TotalWin': { x: 0, y: 80 }
-	};
-
 	// Offset for number display (e.g. TotalWin amount)
 	private numberDisplayOffsetY: Record<string, number> = {
+		'Congrats': 0,
+		'FreeSpin': 0,
+		'BigWin': -70,
+		'MegaWin': -70,
+		'EpicWin': -70,
+		'SuperWin': -70,
 		'TotalWin': 150
 	};
 
 	private dialogLoops: Record<string, boolean> = {
 		'Congrats': true,
 		'FreeSpin': true,
-		'FreeSpinRetrigger': true,
 		'BigWin': true,
 		'MegaWin': true,
 		'EpicWin': true,
@@ -497,6 +492,11 @@ export class Dialogs {
 		return names;
 	}
 
+	private getDialogRenderType(dialogType: string): string {
+		// Retrigger currently reuses the FreeSpin visual asset/animation.
+		return dialogType === 'FreeSpinRetrigger' ? 'FreeSpin' : dialogType;
+	}
+
 	private getSkeletonAnimationNames(dialog: any): string[] {
 		try {
 			const data = dialog?.skeleton?.data || dialog?.skeletonData;
@@ -514,7 +514,8 @@ export class Dialogs {
 	}
 
 	private resolveDialogAnimationName(dialog: any, dialogType: string): string {
-		const candidates = this.getDialogAnimationCandidates(dialogType);
+		const renderType = this.getDialogRenderType(dialogType);
+		const candidates = this.getDialogAnimationCandidates(renderType);
 		const available = this.getSkeletonAnimationNames(dialog);
 		if (available.length === 0) {
 			// Fallback if animation list cannot be inspected.
@@ -537,13 +538,6 @@ export class Dialogs {
 		return { intro: resolved, idle: resolved };
 	}
 
-	private getOverlayAnimationNameForDialogType(dialogType: string): string | null {
-		if (dialogType === 'TotalWin') {
-			return 'animation';
-		}
-		return null;
-	}
-
 	/**
 	 * Create the main dialog content (FreeSpin, EpicWin, etc.)
 	 */
@@ -559,6 +553,7 @@ export class Dialogs {
 		}
 
 		const isTotalWinDialog = this.isTotalWinDialogType(config.type);
+		const renderType = this.getDialogRenderType(config.type);
 		let position = config.position || this.getDialogPosition(config.type, scene);
 		if (isTotalWinDialog && config.positionOffset) {
 			position = {
@@ -586,8 +581,8 @@ export class Dialogs {
 
 		// Create Spine animation for the dialog
 		try {
-			const assetKey = config.type;
-			const atlasKey = `${config.type}-atlas`;
+			const assetKey = renderType;
+			const atlasKey = `${renderType}-atlas`;
 
 			console.log(`[Dialogs] Creating Spine animation for dialog: ${config.type}`);
 			console.log(`[Dialogs] Using asset: ${assetKey}, atlas: ${atlasKey}`);
@@ -598,7 +593,7 @@ export class Dialogs {
 				assetKey,
 				atlasKey
 			);
-			this.currentDialogAssetType = config.type;
+			this.currentDialogAssetType = renderType as DialogConfig['type'];
 			this.currentDialog.setOrigin(0.5, 0.5);
 
 			if (isTotalWinDialog) {
@@ -660,32 +655,6 @@ export class Dialogs {
 
 		// Add directly to dialog overlay so it shares the same layer as number display
 		this.dialogOverlay.add(this.currentDialog);
-		if (isTotalWinDialog) {
-			const overlayAnimation = this.getOverlayAnimationNameForDialogType(config.type);
-			if (overlayAnimation) {
-				try {
-					const overlayKey = 'TotalWin_meow';
-					const overlayAtlasKey = 'TotalWin-atlas';
-					this.currentDialogOverlay = addAny.spine(
-						position.x,
-						position.y,
-						overlayKey,
-						overlayAtlasKey
-					);
-					this.currentDialogOverlay.setOrigin(0.5, 0.5);
-					this.currentDialogOverlay.setScale(scaleX, scaleY);
-					this.currentDialogOverlay.setDepth(104);
-					if (this.currentDialogOverlay.animationState) {
-						startAnimation(this.currentDialogOverlay, { animationName: overlayAnimation, loop: true });
-					}
-					this.dialogOverlay.add(this.currentDialogOverlay);
-					this.dialogOverlay.bringToTop(this.currentDialogOverlay);
-				} catch (overlayError) {
-					console.warn('[Dialogs] Failed to create TotalWin overlay animation', overlayError);
-					this.currentDialogOverlay = null;
-				}
-			}
-		}
 		// Ensure number displays stay above dialog content even if we recreate the dialog (staged wins)
 		if (this.numberDisplayContainer) {
 			this.dialogOverlay.bringToTop(this.numberDisplayContainer);
@@ -892,24 +861,17 @@ export class Dialogs {
 		const isDemo = (scene as any).gameAPI?.getDemoState();
 
 		// Create number display configuration
-		const numberConfig: NumberDisplayConfig = {
+		const numberConfig = this.buildNumberDisplayConfig(scene, {
 			x: scene.scale.width / 2,
 			y: this.getNumberDisplayY(scene, this.currentDialogType),
-			offsetY: this.currentDialogType === 'TotalWin'
-				? this.numberDisplayOffsetY.TotalWin
-				: 0,
-			scale: 0.3,
-			spacing: 0,
-			alignment: 'center',
+			offsetY: this.getNumberDisplayOffsetY(this.currentDialogType),
 			decimalPlaces: freeSpins !== undefined ? 0 : 2, // No decimals for free spins
-			showCommas: freeSpins !== undefined ? false : true, // No commas for free spins
+			showCommas: freeSpins === undefined, // No commas for free spins
 			// For Congrats dialog totals, show a currency prefix.
 			// Other dialogs remain unchanged.
 			prefix: isTotalWinDialog ? (isDemo ? '' : CurrencyManager.getInlinePrefix()) : '',
-			suffix: '', // No suffix - only display numbers
-			commaYOffset: 12,
-			dotYOffset: 10
-		};
+			suffix: '' // No suffix - only display numbers
+		});
 
 		// Create the number display (primary win amount / free spins, depending on dialog)
 		const numberDisplay = new NumberDisplay(this.networkManager, this.screenModeManager, numberConfig);
@@ -918,16 +880,7 @@ export class Dialogs {
 		const displayValue = freeSpins !== undefined ? freeSpins : winAmount;
 		// Pre-measure to ensure the value doesn't overflow the screen for all dialogs
 		numberDisplay.displayValue(displayValue);
-		try {
-			const bounds = numberDisplay.getContainer().getBounds();
-			const maxWidth = scene.scale.width * 0.82;
-			if (bounds.width > maxWidth) {
-				const baseScale = numberConfig.scale ?? 0.3;
-				const scaleFactor = maxWidth / bounds.width;
-				const newScale = Math.max(0.18, baseScale * scaleFactor);
-				numberDisplay.setScale(newScale);
-			}
-		} catch { }
+		this.fitNumberDisplayToWidth(numberDisplay, scene, 1, numberConfig.scale ?? this.defaultNumberDisplayScale);
 		// Start from 0 (or current) and animate on fade-in
 		numberDisplay.displayValue(0);
 		this.numberDisplay = numberDisplay;
@@ -965,18 +918,15 @@ export class Dialogs {
 		}
 
 		const numberConfig: NumberDisplayConfig = {
-			x: scene.scale.width / 2 - 50,
-			// Place slightly below the main total win display
-			y: this.getNumberDisplayY(scene, this.currentDialogType) + 70,
-			scale: 0.3,
-			spacing: 0,
-			alignment: 'center',
-			decimalPlaces: 0,
-			showCommas: false,
-			prefix: '',
-			suffix: '',
-			commaYOffset: 12,
-			dotYOffset: 10
+			...this.buildNumberDisplayConfig(scene, {
+				x: scene.scale.width / 2 - 50,
+				// Place slightly below the main total win display
+				y: this.getNumberDisplayY(scene, this.currentDialogType) + 70,
+				decimalPlaces: 0,
+				showCommas: false,
+				prefix: '',
+				suffix: ''
+			})
 		};
 
 		const fsDisplay = new NumberDisplay(this.networkManager, this.screenModeManager, numberConfig);
@@ -984,16 +934,7 @@ export class Dialogs {
 		fsDisplay.displayValue(freeSpins);
 		
 		// Ensure secondary display doesn't overflow screen
-		try {
-			const bounds = fsDisplay.getContainer().getBounds();
-			const maxWidth = scene.scale.width * 0.82;
-			if (bounds.width > maxWidth) {
-				const baseScale = numberConfig.scale ?? 0.3;
-				const scaleFactor = maxWidth / bounds.width;
-				const newScale = Math.max(0.18, baseScale * scaleFactor);
-				fsDisplay.setScale(newScale);
-			}
-		} catch { }
+		this.fitNumberDisplayToWidth(fsDisplay, scene, 0.82, numberConfig.scale ?? this.defaultNumberDisplayScale);
 
 		this.congratsFreeSpinsDisplay = fsDisplay;
 
@@ -1006,6 +947,54 @@ export class Dialogs {
 		this.dialogOverlay.add(this.congratsFreeSpinsContainer);
 
 		console.log('[Dialogs] Created congrats free spins display:', freeSpins);
+	}
+
+	private buildNumberDisplayConfig(
+		scene: Scene,
+		opts: {
+			x: number;
+			y: number;
+			offsetY?: number;
+			decimalPlaces: number;
+			showCommas: boolean;
+			prefix?: string;
+			suffix?: string;
+			scale?: number;
+		}
+	): NumberDisplayConfig {
+		return {
+			x: opts.x,
+			y: opts.y,
+			offsetY: opts.offsetY ?? 0,
+			scale: opts.scale ?? this.defaultNumberDisplayScale,
+			spacing: 0,
+			alignment: 'center',
+			decimalPlaces: opts.decimalPlaces,
+			showCommas: opts.showCommas,
+			prefix: opts.prefix ?? '',
+			suffix: opts.suffix ?? '',
+			commaYOffset: 12,
+			dotYOffset: 10
+		};
+	}
+
+	private fitNumberDisplayToWidth(
+		display: NumberDisplay,
+		scene: Scene,
+		maxWidthRatio: number,
+		baseScale: number
+	): void {
+		try {
+			const bounds = display.getContainer().getBounds();
+			const maxWidth = scene.scale.width * maxWidthRatio;
+			if (bounds.width <= maxWidth) {
+				return;
+			}
+			const scaleFactor = maxWidth / bounds.width;
+			display.setScale(Math.max(this.minNumberDisplayScale, baseScale * scaleFactor));
+		} catch {
+			// Ignore measurement failures; display will render with its configured base scale.
+		}
 	}
 
 	/**
@@ -1041,12 +1030,22 @@ export class Dialogs {
 		return type === 'TotalWin';
 	}
 
+	private getNumberDisplayOffsetY(dialogType: string | null): number {
+		if (!dialogType) {
+			return 0;
+		}
+		return this.numberDisplayOffsetY[dialogType] ?? 0;
+	}
+
 	/**
 	 * Public setters to configure number display Y positions per group at runtime.
 	 */
 	setNumberDisplayYForWin(y: number): void { this.numberYWin = y; }
 	setNumberDisplayYForFreeSpin(y: number): void { this.numberYFreeSpin = y; }
 	setNumberDisplayYForCongrats(y: number): void { this.numberYCongrats = y; }
+	setNumberDisplayOffsetY(dialogType: DialogConfig['type'], y: number): void {
+		this.numberDisplayOffsetY[dialogType] = y;
+	}
 	setNumberDisplayOffsetYForTotalWin(y: number): void { this.numberDisplayOffsetY.TotalWin = y; }
 	setNumberDisplayYPositions(opts: { win?: number; freeSpin?: number; congrats?: number }): void {
 		if (opts.win !== undefined) this.numberYWin = opts.win;
@@ -2501,35 +2500,38 @@ export class Dialogs {
 
 	// Helper methods for dialog configuration
 	private getDialogScale(dialogType: string): number {
-		return this.dialogScales[dialogType] || 1.0;
+		const renderType = this.getDialogRenderType(dialogType);
+		return this.dialogScales[renderType] || 1.0;
 	}
 
 	private getDialogScaleXY(dialogType: string): { x: number; y: number } | null {
 		if (!this.isTotalWinDialogType(dialogType)) {
 			return null;
 		}
-		return this.dialogScaleXY[dialogType] || null;
+		const scaleMap = (this as any).dialogScaleXY as Record<string, { x: number; y: number }> | undefined;
+		return scaleMap?.[dialogType] ?? null;
 	}
 
 	private getDialogPosition(dialogType: string, scene: Scene): { x: number; y: number } {
-		const position = this.dialogPositions[dialogType];
-		const offset = this.isTotalWinDialogType(dialogType) ? this.dialogPositionOffsets[dialogType] : null;
+		const renderType = this.getDialogRenderType(dialogType);
+		const position = this.dialogPositions[renderType];
 		if (position) {
 			// Convert relative positions (0.0 to 1.0) to absolute screen coordinates
 			return {
-				x: (position.x * scene.scale.width) + (offset?.x ?? 0),
-				y: (position.y * scene.scale.height) + (offset?.y ?? 0)
+				x: (position.x * scene.scale.width),
+				y: (position.y * scene.scale.height)
 			};
 		}
 		// Default to center of screen
 		return {
-			x: (scene.scale.width / 2) + (offset?.x ?? 0),
-			y: (scene.scale.height / 2) + (offset?.y ?? 0)
+			x: (scene.scale.width / 2),
+			y: (scene.scale.height / 2)
 		};
 	}
 
 	private getDialogLoop(dialogType: string): boolean {
-		return this.dialogLoops[dialogType] || false;
+		const renderType = this.getDialogRenderType(dialogType);
+		return this.dialogLoops[renderType] || false;
 	}
 
 	// Convenience methods for specific dialog types

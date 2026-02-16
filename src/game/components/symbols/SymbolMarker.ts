@@ -25,6 +25,7 @@ export interface SymbolMarkerLayout {
   verticalSpacing: number;
   numCols: number;
   numRows: number;
+  parentContainer?: Phaser.GameObjects.Container;
   offsetX?: number;
   offsetY?: number;
   scale?: number;
@@ -38,10 +39,10 @@ export class SymbolMarker {
   private layout: SymbolMarkerLayout | null = null;
   private values: number[][] = [];
   private overlays: (Phaser.GameObjects.GameObject | null)[][] = [];
-  private readonly behindSymbolsDepth: number = DEPTH_SYMBOL_DEFAULT - 1;
   private static readonly MARKER_VALUE = 1;
   private static readonly MIN_ACTIVE_MULTIPLIER = 2;
   private static readonly MAX_MULTIPLIER = BONUS_MULTIPLIER_MAX_VALUE;
+  private static readonly FIRST_MARKER_ALPHA = 0.7;
 
   constructor(scene: Game) {
     this.scene = scene;
@@ -125,6 +126,42 @@ export class SymbolMarker {
     }
   }
 
+  /**
+   * Refresh positions and visibility of all existing marker overlays.
+   * Call after symbols drop or grid layout changes to ensure markers stay aligned.
+   */
+  public refreshOverlays(): void {
+    if (!this.scene || !this.layout) return;
+    this.ensureState();
+    for (let c = 0; c < this.overlays.length; c++) {
+      for (let r = 0; r < this.overlays[c].length; r++) {
+        const value = this.values[c]?.[r] || 0;
+        if (value > 0) {
+          // Update existing overlay position and ensure it's visible
+          const overlay = this.overlays[c]?.[r] as any;
+          if (overlay && overlay.scene) {
+            const L = this.layout;
+            const symbolTotalWidth = L.displayWidth + L.horizontalSpacing;
+            const symbolTotalHeight = L.displayHeight + L.verticalSpacing;
+            const startX = L.slotX - L.totalGridWidth * 0.5;
+            const startY = L.slotY - L.totalGridHeight * 0.5;
+            const x = startX + c * symbolTotalWidth + symbolTotalWidth * 0.5 + (L.offsetX ?? 0);
+            const y = startY + r * symbolTotalHeight + symbolTotalHeight * 0.5 + (L.offsetY ?? 0);
+            try {
+              overlay.setPosition?.(x, y);
+              overlay.setVisible?.(true);
+              overlay.setDepth?.(this.getOverlayDepth());
+              L.parentContainer?.sendToBack?.(overlay);
+            } catch {}
+          } else if (value > 0) {
+            // Recreate overlay if it was destroyed
+            this.updateOverlay(c, r, value);
+          }
+        }
+      }
+    }
+  }
+
   private ensureState(): void {
     const cols = this.layout?.numCols ?? SLOT_COLUMNS;
     const rows = this.layout?.numRows ?? SLOT_ROWS;
@@ -138,6 +175,11 @@ export class SymbolMarker {
         () => Array<Phaser.GameObjects.GameObject | null>(rows).fill(null)
       );
     }
+  }
+
+  private getOverlayDepth(): number {
+    // Match bonus-game marker layering: keep marker overlays behind symbol objects.
+    return DEPTH_SYMBOL_DEFAULT - 1;
   }
 
   private getTextureKey(value: number): string | null {
@@ -168,11 +210,22 @@ export class SymbolMarker {
     if (key && this.scene.textures?.exists(key)) {
       const img = this.scene.add.image(x, y, key);
       img.setOrigin(0.5, 0.5);
+      img.setVisible(true);
       try {
-        img.setDepth(this.behindSymbolsDepth);
+        img.setDepth(this.getOverlayDepth());
+      } catch {}
+      try {
+        if (L.parentContainer) {
+          L.parentContainer.addAt?.(img, 0);
+          L.parentContainer.sendToBack?.(img);
+        }
       } catch {}
       try {
         this.fitOverlayImageToCell(img);
+      } catch {}
+      this.applyOverlayAlpha(img, value);
+      try {
+        console.log('[SymbolMarker] Created overlay image', { x, y, value, key, visible: img.visible, depth: img.depth });
       } catch {}
       return img;
     }
@@ -186,8 +239,19 @@ export class SymbolMarker {
         strokeThickness: 4,
       } as any);
       txt.setOrigin(0.5, 0.5);
+      txt.setVisible(true);
       try {
-        txt.setDepth(this.behindSymbolsDepth);
+        txt.setDepth(this.getOverlayDepth());
+      } catch {}
+      try {
+        if (L.parentContainer) {
+          L.parentContainer.addAt?.(txt, 0);
+          L.parentContainer.sendToBack?.(txt);
+        }
+      } catch {}
+      this.applyOverlayAlpha(txt, value);
+      try {
+        console.log('[SymbolMarker] Created overlay text', { x, y, value, visible: txt.visible, depth: txt.depth });
       } catch {}
       return txt;
     } catch {}
@@ -256,6 +320,9 @@ export class SymbolMarker {
 
     try {
       existing.setPosition?.(x, y);
+      existing.setVisible?.(true);
+      existing.setDepth?.(this.getOverlayDepth());
+      L.parentContainer?.sendToBack?.(existing);
     } catch {}
 
     let replaceOverlay = false;
@@ -268,6 +335,7 @@ export class SymbolMarker {
             existing.setTexture(key);
             this.fitOverlayImageToCell(existing);
           }
+          this.applyOverlayAlpha(existing, value);
         } catch {
           replaceOverlay = true;
         }
@@ -278,6 +346,7 @@ export class SymbolMarker {
       } else {
         try {
           existing.setText(`x${value}`);
+          this.applyOverlayAlpha(existing, value);
         } catch {
           replaceOverlay = true;
         }
@@ -300,6 +369,17 @@ export class SymbolMarker {
       return;
     }
 
+    // Ensure existing overlay is visible
+    try {
+      existing.setVisible?.(true);
+    } catch {}
     this.animateOverlayPulse(existing);
+  }
+
+  private applyOverlayAlpha(overlay: Phaser.GameObjects.GameObject, value: number): void {
+    const alpha = value === SymbolMarker.MARKER_VALUE ? SymbolMarker.FIRST_MARKER_ALPHA : 1;
+    try {
+      (overlay as any).setAlpha?.(alpha);
+    } catch {}
   }
 }

@@ -50,94 +50,19 @@ export class Boot extends Scene
 		// Load loading assets using AssetLoader
 		this.assetLoader.loadLoadingAssets(this);
 
-		
-		// Load the texture image first
-		this.load.image('Character1_BZ', 'assets/characters/Character1_BZ.webp');
-		this.load.image('Character2_BZ', 'assets/characters/Character2_BZ.webp');
-		console.log('[Boot] Queued Character1_BZ.webp as image');
-		console.log('[Boot] Queued Character2_BZ.webp as image');
-		
-		// Load atlas as text to debug
-		this.load.text('Character1_atlas_text', 'assets/characters/Character1_BZ.atlas');
-		this.load.text('Character2_atlas_text', 'assets/characters/Character2_BZ.atlas');
-		console.log('[Boot] Queued atlas as text for debugging');
-		
-
-		// Retry loading spine loader up to 5 times if not available
-		const tryLoadSpine = (scene: Scene, attempt = 1) => {
-			const loadAny = scene.load as any;
-			if (typeof loadAny.spine === 'function') {
-				loadAny.spine('character1', 'assets/characters/Character1_BZ.json', 'assets/characters/Character1_BZ.atlas', true);
-				console.log('[Boot] character1 spine load queued');
-				return;
-			}
-			if (typeof loadAny.spineJson === 'function' && typeof loadAny.spineAtlas === 'function') {
-				loadAny.spineAtlas('character1-atlas', 'assets/characters/Character1_BZ.atlas');
-				loadAny.spineJson('character1', 'assets/characters/Character1_BZ.json');
-				console.log('[Boot] character1 spine load queued (separate)');
-				return;
-			}
-			if (attempt < 5) {
-				console.warn(`[Boot] spine loader not available, retrying (${attempt})...`);
-				setTimeout(() => tryLoadSpine(scene, attempt + 1), 100 * attempt); // Exponential backoff
-			} else {
-				console.error('[Boot] spine loader not available after retries!');
-			}
-		};
-
-		tryLoadSpine(this);
-
 		// Add error handlers
 		this.load.on('loaderror', (file: any) => {
 			console.error('[Boot] Load error for file:', file.key, file.url);
 		});
 
-		this.load.on('filecomplete', (key: string) => {
-			if (key === 'character1' || key.includes('Character1')) {
-				console.log('[Boot] File complete:', key);
-			}
-		});
-
 		// Preload font assets as early as possible so loading/studio screens can use Poppins
 		this.assetLoader.loadFontAssets(this);
 		
-		console.log(`[Boot] Loading assets (loading + fonts + character1) for Boot scene`);
+		console.log(`[Boot] Loading assets (loading + fonts) for Boot scene`);
 
 		// Debug: Log when loading completes
 		this.load.once('complete', () => {
 			console.log('[Boot] All assets loaded');
-			
-			// Check if atlas text was loaded
-			if (this.cache.text.exists('Character1_atlas_text')) {
-				const atlasText = this.cache.text.get('Character1_atlas_text');
-				console.log('[Boot] Atlas text loaded, first 200 chars:', atlasText.substring(0, 200));
-			}
-			
-			// Check if image was loaded
-			if (this.textures.exists('Character1_BZ')) {
-				console.log('[Boot] Character1_BZ.webp loaded as texture');
-			}
-			
-			// Check if character1 is in cache
-			const spineCache = (this.cache as any).custom?.spine;
-			if (spineCache) {
-				console.log('[Boot] Spine cache exists');
-				const hasChar1 = spineCache.has('character1');
-				console.log('[Boot] character1 in spine cache:', hasChar1);
-				
-				// Log all keys in spine cache
-				try {
-					const keys = spineCache.entries?.keys?.();
-					if (keys) {
-						const keyArray = Array.from(keys);
-						console.log('[Boot] All spine cache keys:', keyArray);
-					}
-				} catch (e) {
-					console.log('[Boot] Could not enumerate spine cache keys');
-				}
-			} else {
-				console.log('[Boot] No spine cache found');
-			}
 		});
 	}
 

@@ -5,9 +5,12 @@ import { gameEventManager, GameEventType } from '../../event/EventManager';
 import { gameStateManager } from '../../managers/GameStateManager';
 import { PaylineData } from '../../backend/SpinData';
 import { CurrencyManager } from './CurrencyManager';
-import { HEADER_CONFIG } from '../../config/GameConfig';
+import { Animals } from './Animals';
+import { JimboyCharacter } from './JimboyCharacter';
+import { HEADER_CONFIG, SHOW_HEADER_BORDER, SHOW_HEADER_SCENEFRAME_BORDER } from '../../config/GameConfig';
 import { ensureSpineFactory } from '../../utils/SpineGuard';
 import { startAnimation, stopAnimation } from '../../utils/SpineAnimationHelper';
+import { getTotalWinFromPaylines } from './Spin';
 
 
 export class Header {
@@ -16,10 +19,17 @@ export class Header {
 	private screenModeManager: ScreenModeManager;
 	private amountText: Phaser.GameObjects.Text;
 	private youWonText: Phaser.GameObjects.Text;
+	private headerSceneContainer?: Phaser.GameObjects.Container;
 	private headerSceneImage?: Phaser.GameObjects.Image;
 	private headerSceneFrameImage?: Phaser.GameObjects.Image;
 	private headerWinBarImage?: Phaser.GameObjects.Image;
+	private headerSceneContentMaskGraphics?: Phaser.GameObjects.Graphics;
+	private headerSceneContentMask?: Phaser.Display.Masks.GeometryMask;
 	private conveyorTopSpine: any = null;
+	private animals: Animals | null = null;
+	private jimboyNormal: JimboyCharacter | null = null;
+	private debugHeaderFrameBorder?: Phaser.GameObjects.Graphics;
+	private debugHeaderBorder?: Phaser.GameObjects.Graphics;
 	private currentWinnings: number = 0;
 	private pendingWinnings: number = 0;
 	private scene: Scene | null = null;
@@ -50,6 +60,11 @@ export class Header {
 
 		// Add header elements
 		this.createHeaderElements(scene, assetScale);
+		scene.events.on('update', (_time: number, delta: number) => {
+			this.animals?.update(delta);
+			this.updateHeaderSceneContainerDebugBorder(scene);
+			this.updateHeaderDebugBorder();
+		});
 		
 		// Set up event listeners for winnings updates
 		this.setupWinningsEventListener();
@@ -61,44 +76,66 @@ export class Header {
 	private createHeaderElements(scene: Scene, assetScale: number): void {
 		const centerX = scene.scale.width * 0.5;
 		const centerXView = scene.cameras?.main ? scene.cameras.main.centerX : centerX;
+		const frameBaseWidth = this.getHeaderImageDisplayWidth(scene, 'Header_SceneFrame');
+		const frameBaseHeight = this.getHeaderImageDisplayHeight(scene, 'Header_SceneFrame');
+		if (!this.headerSceneContainer) {
+			this.headerSceneContainer = scene.add.container(0, 0);
+			this.headerContainer.add(this.headerSceneContainer);
+		}
+		const headerSceneContainer = this.headerSceneContainer as Phaser.GameObjects.Container;
 
-		// Header_Scene: background, same scale as Header_SceneFrame with optional x/y scale and y position offset
+		// Header_Scene: background in local container space.
 		if (scene.textures.exists('Header_Scene')) {
-			const sceneY = HEADER_CONFIG.SCENE_FRAME_OFFSET_Y + HEADER_CONFIG.HEADER_SCENE_OFFSET_Y;
-			this.headerSceneImage = this.createScaledHeaderImage(scene, 'Header_Scene', centerX, sceneY);
-			const sceneFrameScale = scene.textures.exists('Header_SceneFrame')
-				? (scene.scale.width / scene.textures.get('Header_SceneFrame').getSourceImage().width) * HEADER_CONFIG.SCENE_FRAME_SCALE
-				: scene.scale.width / this.headerSceneImage.width;
-			this.headerSceneImage.setScale(
-				sceneFrameScale * HEADER_CONFIG.HEADER_SCENE_SCALE_X,
-				sceneFrameScale * HEADER_CONFIG.HEADER_SCENE_SCALE_Y
+			const sceneY = HEADER_CONFIG.HEADER_SCENE_OFFSET_Y;
+			this.headerSceneImage = scene.add.image(0, sceneY, 'Header_Scene').setOrigin(0.5, 0);
+			this.headerSceneImage.setDisplaySize(
+				Math.max(1, frameBaseWidth) * HEADER_CONFIG.HEADER_SCENE_SCALE_X,
+				Math.max(1, frameBaseHeight) * HEADER_CONFIG.HEADER_SCENE_SCALE_Y
 			);
-			this.headerContainer.add(this.headerSceneImage);
+			this.headerSceneImage.setDepth(0);
+			headerSceneContainer.add(this.headerSceneImage);
 		}
 
-		// Conveyor top: at top inside Header_SceneFrame, higher depth than Header_Scene (added after so it draws on top)
-		this.createConveyorTopSpine(scene, centerXView);
+		// Header_SceneFrame: on top (foreground), in local container space.
+		if (scene.textures.exists('Header_SceneFrame')) {
+			this.headerSceneFrameImage = scene.add.image(0, 0, 'Header_SceneFrame');
+			this.headerSceneFrameImage.setOrigin(0.5, 0);
+			this.headerSceneFrameImage.setDepth(9501);
+		}
 
-		// Header_WinBar: below the frame (positioned after frame so we know its height)
+		// Header animals: between Header_Scene and Header_SceneFrame
+		this.animals?.destroy();
+		this.animals = new Animals(scene, headerSceneContainer, () => this.headerSceneFrameImage);
+		this.animals.create(centerXView);
+
+		if (this.headerSceneFrameImage) {
+			headerSceneContainer.add(this.headerSceneFrameImage);
+		}
+		this.createJimboyNormalSpine(scene, centerXView);
+
+		// Conveyor top: at top inside Header_SceneFrame, higher depth than Header_Scene (added after so it draws on top)
+		this.createConveyorTopSpine(scene);
+
+		// Header_WinBar: below the frame (same formula as BonusHeader for identical layout)
 		if (scene.textures.exists('Header_WinBar')) {
-			const frameHeight = this.getHeaderImageDisplayHeight(scene, 'Header_SceneFrame');
-			const winBarY = HEADER_CONFIG.SCENE_FRAME_OFFSET_Y + frameHeight + HEADER_CONFIG.WIN_BAR_OFFSET_Y;
+			const frameTopY = HEADER_CONFIG.SCENE_FRAME_OFFSET_Y + HEADER_CONFIG.HEADER_SCENE_CONTAINER_OFFSET_Y;
+			const baseHeight = Math.max(1, this.getHeaderImageDisplayHeight(scene, 'Header_SceneFrame'));
+			const frameScaleY = Math.max(0.01, HEADER_CONFIG.HEADER_SCENE_CONTAINER_SCALE_Y);
+			const containerHeight = baseHeight * frameScaleY;
+			const winBarY = frameTopY + containerHeight + HEADER_CONFIG.WIN_BAR_OFFSET_Y;
 			this.headerWinBarImage = this.createScaledHeaderImage(scene, 'Header_WinBar', centerX, winBarY);
 			this.headerWinBarImage.setScale((scene.scale.width / this.headerWinBarImage.width) * HEADER_CONFIG.WIN_BAR_SCALE);
 			this.headerContainer.add(this.headerWinBarImage);
 		}
-
-		// Header_SceneFrame: on top (foreground), added to scene; use camera center so it stays centered in viewport
-		if (scene.textures.exists('Header_SceneFrame')) {
-			this.headerSceneFrameImage = this.createScaledHeaderImage(scene, 'Header_SceneFrame', centerXView, HEADER_CONFIG.SCENE_FRAME_OFFSET_Y);
-			this.headerSceneFrameImage.setOrigin(0.5, 0);
-			this.headerSceneFrameImage.setScale((scene.scale.width / this.headerSceneFrameImage.width) * HEADER_CONFIG.SCENE_FRAME_SCALE);
-			this.headerSceneFrameImage.setPosition(centerXView + HEADER_CONFIG.SCENE_FRAME_OFFSET_X, HEADER_CONFIG.SCENE_FRAME_OFFSET_Y);
-			this.headerSceneFrameImage.setDepth(9501);
+		if (this.headerSceneContainer) {
+			this.headerContainer.bringToTop(this.headerSceneContainer);
 		}
 
 		// Add winnings text centered on the win bar
-		this.createWinBarText(scene, scene.scale.width * 0.5, scene.scale.height * 0.1);
+		const winBarTextY = scene.scale.height * 0.15 + HEADER_CONFIG.WIN_BAR_TEXT_OFFSET_Y;
+		this.createWinBarText(scene, scene.scale.width * 0.5, winBarTextY);
+		this.updateHeaderSceneContainerLayout(scene, centerXView);
+		this.updateHeaderDebugBorder();
 	}
 
 	private createScaledHeaderImage(scene: Scene, key: string, x: number, y: number): Phaser.GameObjects.Image {
@@ -108,33 +145,109 @@ export class Header {
 		return img;
 	}
 
+	private getHeaderSceneFrameBaseSize(scene: Scene): { width: number; height: number } {
+		if (!scene.textures.exists('Header_SceneFrame')) {
+			return { width: 0, height: 0 };
+		}
+		const source = scene.textures.get('Header_SceneFrame').getSourceImage() as { width?: number; height?: number };
+		const sourceWidth = Number(source?.width ?? 0);
+		const sourceHeight = Number(source?.height ?? 0);
+		if (sourceWidth <= 0 || sourceHeight <= 0) {
+			return { width: 0, height: 0 };
+		}
+		return {
+			width: sourceWidth,
+			height: sourceHeight
+		};
+	}
+
+	private getHeaderSceneFrameWorldHeight(scene: Scene, centerXView?: number): number {
+		const rect = this.getHeaderSceneFrameRect(scene, centerXView);
+		if (rect && Number.isFinite(rect.height) && rect.height > 0) {
+			return rect.height;
+		}
+		return this.getHeaderImageDisplayHeight(scene, 'Header_SceneFrame');
+	}
+
 	private getHeaderImageDisplayHeight(scene: Scene, key: string): number {
+		if (key === 'Header_SceneFrame') {
+			const base = this.getHeaderSceneFrameBaseSize(scene);
+			if (base.width <= 0 || base.height <= 0) return 0;
+			// Preserve aspect ratio; width is already screen-fitted in getHeaderImageDisplayWidth
+			const displayWidth = scene.scale.width * HEADER_CONFIG.SCENE_FRAME_SCALE;
+			return Math.max(1, base.height * (displayWidth / base.width));
+		}
 		if (!scene.textures.exists(key)) return 0;
 		const texture = scene.textures.get(key).getSourceImage();
 		const scale = scene.scale.width / texture.width;
-		const scaleMultiplier = key === 'Header_SceneFrame' ? HEADER_CONFIG.SCENE_FRAME_SCALE : 1;
+		const scaleMultiplier = 1;
 		return texture.height * scale * scaleMultiplier;
 	}
 
 	/** Conveyor top spine at the top inside Header_SceneFrame, drawn above Header_Scene. */
-	private createConveyorTopSpine(scene: Scene, centerXView: number): void {
+	private createConveyorTopSpine(scene: Scene): void {
 		if (!ensureSpineFactory(scene, '[Header] createConveyorTopSpine') || !scene.cache.json.has('BG_ConveyorTop_PC')) {
-			scene.time.delayedCall(300, () => this.createConveyorTopSpine(scene, centerXView));
+			scene.time.delayedCall(300, () => this.createConveyorTopSpine(scene));
 			return;
 		}
 		try {
-			const x = centerXView + HEADER_CONFIG.SCENE_FRAME_OFFSET_X;
-			const y = HEADER_CONFIG.SCENE_FRAME_OFFSET_Y + HEADER_CONFIG.CONVEYOR_TOP_OFFSET_Y;
+			const x = 0;
+			const y = HEADER_CONFIG.CONVEYOR_TOP_OFFSET_Y;
 			this.conveyorTopSpine = scene.add.spine(x, y, 'BG_ConveyorTop_PC', 'BG_ConveyorTop_PC-atlas');
 			this.conveyorTopSpine.setOrigin(0.5, 0);
 			// Scale to match frame width (spine ref width 580 from JSON), then apply config multiplier
 			const spineRefWidth = 580;
-			const scale = (scene.scale.width / spineRefWidth) * HEADER_CONFIG.SCENE_FRAME_SCALE * HEADER_CONFIG.CONVEYOR_TOP_SCALE;
+			const frameBaseWidth = this.getHeaderImageDisplayWidth(scene, 'Header_SceneFrame');
+			const scale = ((frameBaseWidth > 0 ? frameBaseWidth : scene.scale.width) / spineRefWidth) * HEADER_CONFIG.CONVEYOR_TOP_SCALE;
 			this.conveyorTopSpine.setScale(scale);
-			this.headerContainer.add(this.conveyorTopSpine); // list order: above Header_Scene, below Header_SceneFrame (scene 9501)
+			if (this.headerSceneContainer) {
+				this.headerSceneContainer.add(this.conveyorTopSpine); // inside header scene container
+				if (this.headerSceneFrameImage) {
+					this.headerSceneContainer.bringToTop(this.headerSceneFrameImage);
+				}
+			} else {
+				this.headerContainer.add(this.conveyorTopSpine);
+			}
 		} catch (e) {
 			console.warn('[Header] Failed to create conveyor top spine:', e);
 		}
+	}
+
+	private createJimboyNormalSpine(scene: Scene, centerXView: number): void {
+		this.jimboyNormal?.destroy();
+		this.jimboyNormal = new JimboyCharacter(scene, {
+			assetKey: 'JimboyNormal_PC',
+			depth: 9502
+		});
+		this.jimboyNormal.create(centerXView);
+		this.jimboyNormal.registerGlobal('Jimboy');
+		if (gameStateManager.isBonus) {
+			this.pauseJimboyNormal();
+		}
+	}
+
+	private resumeJimboyNormal(): void {
+		if (!this.jimboyNormal) return;
+		this.jimboyNormal.setVisible(true);
+		this.jimboyNormal.playRandomAnimation({
+			autoRepeat: true,
+			loop: false,
+			hideBetweenPlays: false
+		});
+	}
+
+	private pauseJimboyNormal(): void {
+		if (!this.jimboyNormal) return;
+		this.jimboyNormal.stopRandomAnimationLoop();
+		this.jimboyNormal.setVisible(false);
+	}
+
+	private startAnimalsMoveAnimation(): void {
+		this.animals?.start();
+	}
+
+	private stopAnimalsMoveAnimation(): void {
+		this.animals?.stop();
 	}
 
 	/** Play conveyor top animation (during spin). */
@@ -162,7 +275,7 @@ export class Header {
 			fontFamily: 'Poppins-Bold',
 			stroke: '#004D00',
 			strokeThickness: 3
-		}).setOrigin(0.5, 0.5).setDepth(9501); // Above header container (9500)
+		}).setOrigin(0.5, 0.5).setDepth(9501).setScale(HEADER_CONFIG.WIN_BAR_TEXT_SCALE); // Above header container (9500)
 		// Don't add to container - add directly to scene so depth works correctly
 		// Start hidden by default; will be shown only when there is an actual win.
 		this.youWonText.setVisible(false);
@@ -177,10 +290,209 @@ export class Header {
 			fontFamily: 'Poppins-Bold',
 			stroke: '#004D00',
 			strokeThickness: 3
-		}).setOrigin(0.5, 0.5).setDepth(9501); // Above header container (9500)
+		}).setOrigin(0.5, 0.5).setDepth(9501).setScale(HEADER_CONFIG.WIN_BAR_TEXT_VALUE_SCALE); // Above header container (9500)
 		// Don't add to container - add directly to scene so depth works correctly
 		// Start hidden by default; will be shown only when there is an actual win.
 		this.amountText.setVisible(false);
+	}
+
+	private updateHeaderSceneContainerLayout(scene: Scene, centerXView?: number): void {
+		const viewCenter = centerXView ?? (scene.cameras?.main ? scene.cameras.main.centerX : scene.scale.width * 0.5);
+		if (this.headerSceneContainer) {
+			const frameScaleX = Math.max(0.01, HEADER_CONFIG.HEADER_SCENE_CONTAINER_SCALE_X);
+			const frameScaleY = Math.max(0.01, HEADER_CONFIG.HEADER_SCENE_CONTAINER_SCALE_Y);
+			const baseWidth = Math.max(
+				1,
+				this.getHeaderImageDisplayWidth(scene, 'Header_SceneFrame')
+			);
+			const baseHeight = Math.max(
+				1,
+				this.getHeaderImageDisplayHeight(scene, 'Header_SceneFrame')
+			);
+			// Apply container scale so HEADER_SCENE_CONTAINER_SCALE_X/Y actually size the container and frame
+			const containerWidth = baseWidth * frameScaleX;
+			const containerHeight = baseHeight * frameScaleY;
+			const anchorX = viewCenter + HEADER_CONFIG.SCENE_FRAME_OFFSET_X;
+			const anchorY = HEADER_CONFIG.SCENE_FRAME_OFFSET_Y + HEADER_CONFIG.HEADER_SCENE_CONTAINER_OFFSET_Y;
+			this.headerSceneContainer.setScale(1, 1);
+			this.headerSceneContainer.setPosition(anchorX, anchorY);
+			this.headerSceneContainer.setSize(containerWidth, containerHeight);
+			this.fitHeaderSceneToContainer(scene, containerWidth, containerHeight);
+		}
+		const rect = this.getHeaderSceneFrameRect(scene, centerXView);
+		this.updateHeaderSceneContentMask(scene, rect);
+		this.updateHeaderSceneContainerDebugBorder(scene, rect);
+	}
+
+	private fitHeaderSceneToContainer(scene: Scene, containerWidth: number, containerHeight: number): void {
+		const w = Math.max(1, containerWidth);
+		const h = Math.max(1, containerHeight);
+		if (this.headerSceneFrameImage) {
+			this.headerSceneFrameImage.setOrigin(0.5, 0);
+			this.headerSceneFrameImage.setPosition(0, 0);
+			this.headerSceneFrameImage.setDisplaySize(w, h);
+		}
+		if (this.headerSceneImage) {
+			this.headerSceneImage.setOrigin(0.5, 0);
+			this.headerSceneImage.setPosition(0, HEADER_CONFIG.HEADER_SCENE_OFFSET_Y);
+			// Header_Scene (background): size within container, optional HEADER_SCENE_SCALE_X/Y
+			const contentWidth = w * HEADER_CONFIG.HEADER_SCENE_SCALE_X;
+			const contentHeight = h * HEADER_CONFIG.HEADER_SCENE_SCALE_Y;
+			this.headerSceneImage.setDisplaySize(Math.max(1, contentWidth), Math.max(1, contentHeight));
+		}
+	}
+
+	private updateHeaderSceneContentMask(scene: Scene, rect: Phaser.Geom.Rectangle | null): void {
+		if (!rect) {
+			try { this.headerSceneImage?.clearMask?.(false); } catch {}
+			try { this.conveyorTopSpine?.clearMask?.(false); } catch {}
+			return;
+		}
+
+		if (!this.headerSceneContentMaskGraphics || !this.headerSceneContentMask) {
+			this.headerSceneContentMaskGraphics = scene.add.graphics();
+			this.headerSceneContentMaskGraphics.setVisible(false);
+			this.headerSceneContentMask = this.headerSceneContentMaskGraphics.createGeometryMask();
+		}
+
+		this.headerSceneContentMaskGraphics.clear();
+		this.headerSceneContentMaskGraphics.fillStyle(0xffffff, 1);
+		this.headerSceneContentMaskGraphics.fillRect(rect.x, rect.y, rect.width, rect.height);
+
+		try { this.headerSceneImage?.setMask?.(this.headerSceneContentMask); } catch {}
+		try { this.conveyorTopSpine?.setMask?.(this.headerSceneContentMask); } catch {}
+	}
+
+	private updateHeaderSceneContainerDebugBorder(scene: Scene, rect?: Phaser.Geom.Rectangle | null): void {
+		const hideFrameBorder = () => {
+			this.debugHeaderFrameBorder?.clear();
+			this.debugHeaderFrameBorder?.setVisible(false);
+		};
+		const bounds = rect ?? this.getHeaderSceneFrameRect(scene);
+		if (!bounds || !this.headerContainer) {
+			hideFrameBorder();
+			return;
+		}
+		const visible = this.headerContainer.visible;
+
+		if (SHOW_HEADER_SCENEFRAME_BORDER) {
+			if (!this.debugHeaderFrameBorder) {
+				this.debugHeaderFrameBorder = scene.add.graphics().setDepth(9603);
+			}
+			this.debugHeaderFrameBorder.clear();
+			this.debugHeaderFrameBorder.lineStyle(2, 0x00ff00, 1);
+			this.debugHeaderFrameBorder.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
+			this.debugHeaderFrameBorder.setVisible(visible);
+		} else {
+			hideFrameBorder();
+		}
+	}
+
+	private getHeaderSceneFrameRect(scene: Scene, centerXView?: number): Phaser.Geom.Rectangle | null {
+		if (this.headerSceneFrameImage) {
+			try {
+				const b = this.headerSceneFrameImage.getBounds();
+				const width = Math.max(1, Number(b?.width ?? 0));
+				const height = Math.max(1, Number(b?.height ?? 0));
+				const x = Number(b?.x ?? 0);
+				const y = Number(b?.y ?? 0);
+				if (Number.isFinite(x) && Number.isFinite(y)) {
+					return new Phaser.Geom.Rectangle(x, y, width, height);
+				}
+			} catch {}
+		}
+
+		const baseWidth = this.getHeaderImageDisplayWidth(scene, 'Header_SceneFrame');
+		const baseHeight = this.getHeaderImageDisplayHeight(scene, 'Header_SceneFrame');
+		if (baseWidth <= 0 || baseHeight <= 0) {
+			return null;
+		}
+
+		const viewCenter = centerXView ?? (scene.cameras?.main ? scene.cameras.main.centerX : scene.scale.width * 0.5);
+		const width = baseWidth;
+		const height = baseHeight;
+		const left = viewCenter + HEADER_CONFIG.SCENE_FRAME_OFFSET_X - width * 0.5;
+		const top = HEADER_CONFIG.SCENE_FRAME_OFFSET_Y + HEADER_CONFIG.HEADER_SCENE_CONTAINER_OFFSET_Y;
+		return new Phaser.Geom.Rectangle(left, top, width, height);
+	}
+
+	private getHeaderImageDisplayWidth(scene: Scene, key: string): number {
+		if (key === 'Header_SceneFrame') {
+			// Width-fit to screen so container and frame stay within game scene
+			return Math.max(1, scene.scale.width * HEADER_CONFIG.SCENE_FRAME_SCALE);
+		}
+		if (!scene.textures.exists(key)) return 0;
+		const texture = scene.textures.get(key).getSourceImage();
+		const scale = scene.scale.width / texture.width;
+		const scaleMultiplier = 1;
+		return texture.width * scale * scaleMultiplier;
+	}
+
+	private updateHeaderDebugBorder(): void {
+		if (!SHOW_HEADER_BORDER) {
+			if (this.debugHeaderBorder) {
+				this.debugHeaderBorder.clear();
+				this.debugHeaderBorder.setVisible(false);
+			}
+			return;
+		}
+
+		const bounds = this.getHeaderDebugBounds();
+		if (!bounds || !this.scene) {
+			if (this.debugHeaderBorder) {
+				this.debugHeaderBorder.clear();
+				this.debugHeaderBorder.setVisible(false);
+			}
+			return;
+		}
+
+		if (!this.debugHeaderBorder) {
+			this.debugHeaderBorder = this.scene.add.graphics().setDepth(9603);
+		}
+
+		this.debugHeaderBorder.clear();
+		this.debugHeaderBorder.lineStyle(2, 0xff0000, 1);
+		this.debugHeaderBorder.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
+		const isHeaderVisible = Boolean(this.headerContainer?.visible && (this.headerSceneFrameImage?.visible ?? true));
+		this.debugHeaderBorder.setVisible(isHeaderVisible);
+	}
+
+	private getHeaderDebugBounds(): Phaser.Geom.Rectangle | null {
+		const candidates: any[] = [
+			this.headerSceneImage,
+			this.headerSceneFrameImage,
+			this.headerWinBarImage,
+			this.youWonText,
+			this.amountText
+		];
+
+		let minX = Number.POSITIVE_INFINITY;
+		let minY = Number.POSITIVE_INFINITY;
+		let maxX = Number.NEGATIVE_INFINITY;
+		let maxY = Number.NEGATIVE_INFINITY;
+
+		for (const item of candidates) {
+			if (!item || typeof item.getBounds !== 'function') continue;
+			try {
+				const bounds = item.getBounds();
+				if (!bounds) continue;
+				const x = Number(bounds.x ?? 0);
+				const y = Number(bounds.y ?? 0);
+				const width = Number(bounds.width ?? 0);
+				const height = Number(bounds.height ?? 0);
+				if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(width) || !Number.isFinite(height)) continue;
+				if (width <= 0 || height <= 0) continue;
+				minX = Math.min(minX, x);
+				minY = Math.min(minY, y);
+				maxX = Math.max(maxX, x + width);
+				maxY = Math.max(maxY, y + height);
+			} catch {}
+		}
+
+		if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+			return null;
+		}
+		return new Phaser.Geom.Rectangle(minX, minY, Math.max(1, maxX - minX), Math.max(1, maxY - minY));
 	}
 
 	resize(scene: Scene): void {
@@ -189,28 +501,27 @@ export class Header {
 		}
 		const centerX = scene.scale.width * 0.5;
 		const centerXView = scene.cameras?.main ? scene.cameras.main.centerX : centerX;
-		const sceneFrameScale = this.headerSceneFrameImage
-			? (scene.scale.width / this.headerSceneFrameImage.width) * HEADER_CONFIG.SCENE_FRAME_SCALE
-			: (scene.scale.width * HEADER_CONFIG.SCENE_FRAME_SCALE) / (this.headerSceneImage?.width ?? 1);
-		if (this.headerSceneImage) {
-			const sceneY = HEADER_CONFIG.SCENE_FRAME_OFFSET_Y + HEADER_CONFIG.HEADER_SCENE_OFFSET_Y;
-			this.headerSceneImage.setPosition(centerX, sceneY);
-			this.headerSceneImage.setScale(
-				sceneFrameScale * HEADER_CONFIG.HEADER_SCENE_SCALE_X,
-				sceneFrameScale * HEADER_CONFIG.HEADER_SCENE_SCALE_Y
-			);
+		// Recompute layout from current scale (needed when scale mode changes size, e.g. RESIZE or orientation)
+		this.updateHeaderSceneContainerLayout(scene, centerXView);
+		// Conveyor spine scale is set only at create; update it on resize to match frame width
+		if (this.conveyorTopSpine) {
+			const frameBaseWidth = this.getHeaderImageDisplayWidth(scene, 'Header_SceneFrame');
+			const spineRefWidth = 580;
+			const scale = ((frameBaseWidth > 0 ? frameBaseWidth : scene.scale.width) / spineRefWidth) * HEADER_CONFIG.CONVEYOR_TOP_SCALE;
+			this.conveyorTopSpine.setScale(scale);
 		}
-		if (this.headerSceneFrameImage) {
-			this.headerSceneFrameImage.setOrigin(0.5, 0);
-			this.headerSceneFrameImage.setScale(sceneFrameScale);
-			this.headerSceneFrameImage.setPosition(centerXView + HEADER_CONFIG.SCENE_FRAME_OFFSET_X, HEADER_CONFIG.SCENE_FRAME_OFFSET_Y);
-		}
+		this.animals?.resize(centerXView);
+		this.jimboyNormal?.resize(centerXView);
 		if (this.headerWinBarImage && scene.textures.exists('Header_SceneFrame')) {
-			const frameHeight = this.getHeaderImageDisplayHeight(scene, 'Header_SceneFrame');
-			const winBarY = HEADER_CONFIG.SCENE_FRAME_OFFSET_Y + frameHeight + HEADER_CONFIG.WIN_BAR_OFFSET_Y;
+			const frameTopY = HEADER_CONFIG.SCENE_FRAME_OFFSET_Y + HEADER_CONFIG.HEADER_SCENE_CONTAINER_OFFSET_Y;
+			const baseHeight = Math.max(1, this.getHeaderImageDisplayHeight(scene, 'Header_SceneFrame'));
+			const frameScaleY = Math.max(0.01, HEADER_CONFIG.HEADER_SCENE_CONTAINER_SCALE_Y);
+			const containerHeight = baseHeight * frameScaleY;
+			const winBarY = frameTopY + containerHeight + HEADER_CONFIG.WIN_BAR_OFFSET_Y;
 			this.headerWinBarImage.setPosition(centerX, winBarY);
 			this.headerWinBarImage.setScale((scene.scale.width / this.headerWinBarImage.width) * HEADER_CONFIG.WIN_BAR_SCALE);
 		}
+		this.updateHeaderDebugBorder();
 	}
 
 	getContainer(): Phaser.GameObjects.Container {
@@ -223,6 +534,15 @@ export class Header {
 		if (this.headerSceneFrameImage) {
 			this.headerSceneFrameImage.setVisible(visible);
 		}
+		if (visible && !gameStateManager.isBonus) {
+			this.resumeJimboyNormal();
+		} else {
+			this.pauseJimboyNormal();
+		}
+		if (this.scene) {
+			this.updateHeaderSceneContainerDebugBorder(this.scene);
+		}
+		this.updateHeaderDebugBorder();
 	}
 
 	/**
@@ -318,20 +638,24 @@ export class Header {
 				this.hideWinningsDisplay();
 			}
 			this.playConveyorTopAnimation();
+			this.startAnimalsMoveAnimation();
 		});
 
 		// Follow reel conveyor behavior during tumbles
 		gameEventManager.on(GameEventType.TUMBLE_COLUMNS_START, () => {
 			this.playConveyorTopAnimation();
+			this.startAnimalsMoveAnimation();
 		});
 		gameEventManager.on(GameEventType.TUMBLE_COLUMNS_DONE, () => {
 			this.stopConveyorTopAnimation();
+			this.stopAnimalsMoveAnimation();
 		});
 
 		// Listen for reel done events to show winnings display
 		gameEventManager.on(GameEventType.REELS_STOP, (data: any) => {
 			console.log(`[Header] REELS_STOP received - checking for wins`);
 			this.stopConveyorTopAnimation();
+			this.stopAnimalsMoveAnimation();
 			
 			// Don't show winnings in header if in bonus mode (bonus header handles it)
 			if (gameStateManager.isBonus) {
@@ -430,8 +754,8 @@ export class Header {
 						this.youWonText.setVisible(false);
 						this.amountText.setVisible(false);
 						// Reset scale for next show
-						this.youWonText.setScale(1);
-						this.amountText.setScale(1);
+						this.youWonText.setScale(HEADER_CONFIG.WIN_BAR_TEXT_SCALE);
+						this.amountText.setScale(HEADER_CONFIG.WIN_BAR_TEXT_VALUE_SCALE);
 					}
 				});
 			} else {
@@ -489,28 +813,34 @@ export class Header {
 			// Only animate if value changed or not already visible/scaled
 			if (isAlreadyVisible && isAlreadyScaled) {
 				if (valueChanged) {
-					// Value changed - do a pulse animation (enlarge then revert)
+					// Value changed - do a pulse animation (enlarge then revert); label and value scale independently
 					if (this.scene) {
 						this.scene.tweens.add({
-							targets: [this.youWonText, this.amountText],
-							scaleX: 1.2,
-							scaleY: 1.2,
+							targets: this.youWonText,
+							scaleX: HEADER_CONFIG.WIN_BAR_TEXT_SCALE * 1.2,
+							scaleY: HEADER_CONFIG.WIN_BAR_TEXT_SCALE * 1.2,
 							duration: 150,
 							ease: 'Power2',
 							yoyo: true,
 							repeat: 0,
-							onComplete: () => {
-								// Ensure scale is exactly 1 after animation
-								this.youWonText.setScale(1);
-								this.amountText.setScale(1);
-							}
+							onComplete: () => { this.youWonText.setScale(HEADER_CONFIG.WIN_BAR_TEXT_SCALE); }
+						});
+						this.scene.tweens.add({
+							targets: this.amountText,
+							scaleX: HEADER_CONFIG.WIN_BAR_TEXT_VALUE_SCALE * 1.2,
+							scaleY: HEADER_CONFIG.WIN_BAR_TEXT_VALUE_SCALE * 1.2,
+							duration: 150,
+							ease: 'Power2',
+							yoyo: true,
+							repeat: 0,
+							onComplete: () => { this.amountText.setScale(HEADER_CONFIG.WIN_BAR_TEXT_VALUE_SCALE); }
 						});
 					}
 					console.log(`[Header] Winnings display updated with pulse animation: ${formattedWinnings} (raw: ${winnings})`);
 				} else {
 					// Value hasn't changed - just ensure scale is correct without animation
-					this.youWonText.setScale(1);
-					this.amountText.setScale(1);
+					this.youWonText.setScale(HEADER_CONFIG.WIN_BAR_TEXT_SCALE);
+					this.amountText.setScale(HEADER_CONFIG.WIN_BAR_TEXT_VALUE_SCALE);
 					console.log(`[Header] Winnings display value unchanged, skipping animation: ${formattedWinnings} (raw: ${winnings})`);
 				}
 			} else {
@@ -519,19 +849,23 @@ export class Header {
 				this.youWonText.setScale(0);
 				this.amountText.setScale(0);
 				
-				// Animate scale in with bounce effect
+				// Animate scale in with bounce effect (label and value scale independently)
 				if (this.scene) {
 					this.scene.tweens.add({
-						targets: [this.youWonText, this.amountText],
-						scaleX: 1,
-						scaleY: 1,
+						targets: this.youWonText,
+						scaleX: HEADER_CONFIG.WIN_BAR_TEXT_SCALE,
+						scaleY: HEADER_CONFIG.WIN_BAR_TEXT_SCALE,
 						duration: 300,
 						ease: 'Back.easeOut',
-						onComplete: () => {
-							// Ensure scale is exactly 1 after animation
-							this.youWonText.setScale(1);
-							this.amountText.setScale(1);
-						}
+						onComplete: () => { this.youWonText.setScale(HEADER_CONFIG.WIN_BAR_TEXT_SCALE); }
+					});
+					this.scene.tweens.add({
+						targets: this.amountText,
+						scaleX: HEADER_CONFIG.WIN_BAR_TEXT_VALUE_SCALE,
+						scaleY: HEADER_CONFIG.WIN_BAR_TEXT_VALUE_SCALE,
+						duration: 300,
+						ease: 'Back.easeOut',
+						onComplete: () => { this.amountText.setScale(HEADER_CONFIG.WIN_BAR_TEXT_VALUE_SCALE); }
 					});
 				}
 				console.log(`[Header] Winnings display shown with scale-in animation: ${formattedWinnings} (raw: ${winnings})`);
@@ -553,12 +887,8 @@ export class Header {
 		if (!paylines || paylines.length === 0) {
 			return 0;
 		}
-		
-		const totalWin = paylines.reduce((sum, payline) => {
-			const winAmount = payline.win || 0;
-			console.log(`[Header] Payline ${payline.lineKey}: ${winAmount} (symbol ${payline.symbol}, count ${payline.count})`);
-			return sum + winAmount;
-		}, 0);
+
+		const totalWin = getTotalWinFromPaylines(paylines);
 		
 		console.log(`[Header] Calculated total winnings: ${totalWin} from ${paylines.length} paylines`);
 		return totalWin;
@@ -631,6 +961,7 @@ export class Header {
 		// Listen for bonus mode events
 		scene.events.on('setBonusMode', (isBonus: boolean) => {
 			if (isBonus) {
+				this.pauseJimboyNormal();
 				// Hide winnings display when bonus mode starts (bonus header will show its own)
 				// Force hide immediately and ensure it stays hidden
 				this.hideWinningsDisplay();
@@ -646,12 +977,16 @@ export class Header {
 				}
 				console.log('[Header] Winnings display hidden - bonus mode started');
 			} else {
+				if (this.headerContainer?.visible) {
+					this.resumeJimboyNormal();
+				}
 				console.log('[Header] Bonus mode ended - winnings display can be shown again');
 			}
 		});
 
 		// Also listen for showBonusHeader event to hide winnings display
 		scene.events.on('showBonusHeader', () => {
+			this.pauseJimboyNormal();
 			this.hideWinningsDisplay();
 			// Force hide to ensure it's hidden
 			if (this.amountText && this.youWonText) {

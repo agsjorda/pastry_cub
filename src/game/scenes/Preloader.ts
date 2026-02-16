@@ -12,6 +12,7 @@ import { StudioLoadingScreen } from '../components/StudioLoadingScreen';
 import { ClockDisplay } from '../components/ClockDisplay';
 import { CLOCK_DISPLAY_NAME, GAME_DISPLAY_NAME, CLOCK_DISPLAY_CONFIG, PRELOADER_CONFIG } from '../../config/GameConfig';
 import { CurrencyManager } from '../components/CurrencyManager';
+import { playRadialDimmerTransition } from '../utils/playRadialDimmerTransition';
 
 export class Preloader extends Scene
 {
@@ -129,7 +130,12 @@ export class Preloader extends Scene
 		this.assetLoader.loadBuyFeatureAssets(this);
 		this.assetLoader.loadMenuAssets(this);
 		this.assetLoader.loadHelpScreenAssets(this);
-		
+		// Whistle SFX for radial dimmer transition (Preloader → Game)
+		const whistlePath = this.assetConfig.getAudioAssets().audio?.['whistle'];
+		if (whistlePath) {
+			this.load.audio('whistle', whistlePath);
+		}
+
 		console.log(`[Preloader] Loading assets for Preloader and Game scenes`);
 	}
 
@@ -217,14 +223,15 @@ export class Preloader extends Scene
             this.buttonBg.setAlpha(1);
         }
 
-		// Start game on click
+		// Start game on click – use radial dimmer transition (from beelze_bop) then start Game
         this.buttonSpin?.once('pointerdown', () => {
-            console.log('[Preloader] Starting Game scene');
-            this.scene.start('Game', { 
-                networkManager: this.networkManager, 
-                screenModeManager: this.screenModeManager,
-                // Pass the same GameAPI instance so initialization data is shared
-                gameAPI: this.gameAPI
+            playRadialDimmerTransition(this, () => {
+                console.log('[Preloader] Starting Game scene after radial dimmer');
+                this.scene.start('Game', {
+                    networkManager: this.networkManager,
+                    screenModeManager: this.screenModeManager,
+                    gameAPI: this.gameAPI
+                });
             });
         });
 

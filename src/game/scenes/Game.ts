@@ -43,12 +43,9 @@ import {
 	WIN_TRACKER_LAYOUT,
 	GAME_SCENE_PHYSICS_BOTTOM_OFFSET,
 	GAME_SCENE_FADE_IN_DURATION_MS,
-	GAME_SCENE_CHARACTER_1,
-	GAME_SCENE_CHARACTER_2,
 } from '../../config/GameConfig';
 import { FreeRoundManager } from '../components/FreeRoundManager';
 import { ensureSpineFactory } from '../../utils/SpineGuard';
-import { Character } from '../components/Character';
 import { CurrencyManager } from '../components/CurrencyManager';
 import {
 	calculateTotalWinFromTumbles as spinCalculateTotalWinFromTumbles,
@@ -77,8 +74,6 @@ export class Game extends Scene {
 	private clockDisplay!: ClockDisplay;
 	private winTracker!: WinTracker;
 	private freeRoundManager: FreeRoundManager | null = null;
-	private character1?: Character;
-	private character2?: Character;
 
 	private idleManager: IdleManager | null = null;
 	private onPointerDownResetIdle?: () => void;
@@ -99,17 +94,6 @@ export class Game extends Scene {
 		this.scatterAnticipation = new ScatterAnticipation();
 	}
 
-	/** Create Character1 and Character2 - disabled for now */
-	private createCharacters(): void {
-		// Characters removed for now - re-enable by uncommenting the block below
-		// const c1 = GAME_SCENE_CHARACTER_1;
-		// const c2 = GAME_SCENE_CHARACTER_2;
-		// this.character1 = new Character(this, { ... });
-		// this.character1.create();
-		// this.character2 = new Character(this, { ... });
-		// this.character2.create();
-	}
-
 	private handleResize(): void {
 		try {
 			if (this.physics && this.physics.world) {
@@ -119,14 +103,6 @@ export class Game extends Scene {
 
 		try { this.background?.resize(this); } catch { }
 		try { this.bonusBackground?.resize(this); } catch { }
-		try {
-			if (this.character1) {
-				this.character1.setPosition(this.scale.width * GAME_SCENE_CHARACTER_1.X_RATIO, this.scale.height * GAME_SCENE_CHARACTER_1.Y_RATIO);
-			}
-			if (this.character2) {
-				this.character2.setPosition(this.scale.width * GAME_SCENE_CHARACTER_2.X_RATIO, this.scale.height * GAME_SCENE_CHARACTER_2.Y_RATIO);
-			}
-		} catch { }
 		try { this.header?.resize(this); } catch { }
 		try { this.bonusHeader?.resize(this); } catch { }
 		try { (this.symbols as any)?.resize?.(this); } catch { }
@@ -289,7 +265,6 @@ export class Game extends Scene {
 	}
 
 	private createCharactersAndClock(): void {
-		this.createCharacters();
 		this.clockDisplay = new ClockDisplay(this, {
 			...CLOCK_DISPLAY_CONFIG,
 			suffixText: ` | ${GAME_DISPLAY_NAME}${this.gameAPI.getDemoState() ? ' | DEMO' : ''}`,
@@ -471,17 +446,9 @@ export class Game extends Scene {
 		});
 	}
 
-	/** GameEventManager: WIN_STOP, WIN_START, REELS_*, dialogAnimationsComplete, SPIN, AUTO_START */
+	/** GameEventManager: WIN_STOP, REELS_*, dialogAnimationsComplete, SPIN, AUTO_START */
 	private setupGameEventListeners(): void {
 		gameEventManager.on(GameEventType.WIN_STOP, (data: any) => this.onWinStop(data));
-		gameEventManager.on(GameEventType.WIN_START, () => {
-			try {
-				if (this.character1) this.character1.playAnimation('Character1_BZ_win', false, true);
-				if (this.character2) this.character2.playAnimation('Character2_BZ_win', false, true);
-			} catch (e) {
-				console.warn('[Game] Failed to play character win animations on WIN_START:', e);
-			}
-		});
 		gameEventManager.on(GameEventType.REELS_STOP, () => {
 			console.log('[Game] REELS_STOP event received');
 		});
@@ -612,10 +579,6 @@ export class Game extends Scene {
 		}
 		const hasWin = totalWin > 0;
 
-		if ((hasCluster || hasWin) && !this.gameStateManager.isBonus) {
-			if (this.character1) this.character1.playAnimation('Character1_BZ_win', false, true);
-			if (this.character2) this.character2.playAnimation('Character2_BZ_win', false, true);
-		}
 		totalWin = capWinByMaxMultiplier(totalWin, betAmount);
 		console.log(`[Game] WIN_STOP: totalWin used for win dialog=$${totalWin}, hasCluster=${hasCluster}, hasWin=${hasWin}`);
 		if (hasWin) this.checkAndShowWinDialog(totalWin, betAmount);

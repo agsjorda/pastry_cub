@@ -30,6 +30,7 @@ File: `src/config/GameBranding.ts`
 
 - `src/config/AssetConfig.ts` for key/path mapping
 - `src/config/GameConfig.ts` for layout, grid, tuning, thresholds, animation/depth values
+  Includes `HEADER_CONFIG.HEADER_SCENE_CONTAINER_SCALE_X`, `HEADER_CONFIG.HEADER_SCENE_CONTAINER_SCALE_Y`, `HEADER_CONFIG.HEADER_SCENE_CONTAINER_OFFSET_Y` for header scene container transforms.
 
 ### Paytables and win rules
 
@@ -64,6 +65,7 @@ File: `src/game/components/MenuTabs/HelpScreen.ts`
 | Bonus background | `public/assets/portrait/high/bonus_background/` | `src/config/AssetConfig.ts` -> `getBonusBackgroundAssets()` |
 | Header art | `public/assets/portrait/high/header/` | `src/config/AssetConfig.ts` -> `getHeaderAssets()` |
 | Symbol Spine art (scatter + regular) | `public/assets/symbols/high/pastry_cub_symbols/Symbol0_PC.*` through `Symbol7_PC.*` | `src/config/AssetConfig.ts` -> `getSymbolAssets()` |
+| Bonus grid character overlay (Jimboy) | `public/assets/characters/JimboyBonus_PC.*` | `src/config/AssetConfig.ts` -> `getSymbolAssets()` and `src/game/components/symbols/Symbols.ts` |
 | Static symbol icons (help/paytable) | `public/assets/symbols/high/pastry_cub_symbols/statics/symbol0.png` through `symbol7.png` | `src/config/AssetConfig.ts` -> `getSymbolAssets()` |
 | Bonus marker images | `public/assets/symbols/high/pastry_cub_symbols/multiplier_symbols/x1.webp` ... `x128.webp` | `src/config/GameConfig.ts` and `src/config/AssetConfig.ts` |
 | Dialog Spine assets | `public/assets/portrait/high/dialogs/` | `src/config/AssetConfig.ts` dialog mapping |
@@ -73,6 +75,7 @@ File: `src/game/components/MenuTabs/HelpScreen.ts`
 Notes:
 - Keep asset keys stable unless you intentionally update every consumer.
 - If file names change, update `AssetConfig.ts` mappings first.
+- Scatter reel-drop staged SFX keys are `scatterdrop1` ... `scatterdrop4` in `src/config/AssetConfig.ts`.
 
 ## 5. Gameplay Value Replacement Map
 
@@ -88,7 +91,7 @@ Notes:
 | Symbol size/spacing | `src/config/GameConfig.ts` -> `SYMBOL_CONFIG` |
 | Grid position/mask | `src/config/GameConfig.ts` -> `GRID_*` constants |
 | Animation timings | `src/config/GameConfig.ts` -> `TIMING_CONFIG`, `ANIMATION_CONFIG`, and related timing constants |
-| Debug toggles | `src/config/GameConfig.ts` -> `SHOW_*` flags |
+| Debug toggles | `src/config/GameConfig.ts` -> `SHOW_*` flags (including `SHOW_HEADER_SCENE_CONTAINER_BORDER`, `SHOW_HEADER_BORDER`) |
 
 ## 6. Bonus Marker (Multiplier Spot) Rules
 

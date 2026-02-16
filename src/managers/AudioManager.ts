@@ -1,4 +1,6 @@
 import { gameStateManager } from './GameStateManager';
+import { gameEventManager } from '../event/EventManager';
+import { GameEventType } from '../event/EventManager';
 
 export enum MusicType {
 	MAIN = 'main',
@@ -8,7 +10,12 @@ export enum MusicType {
 
 export enum SoundEffectType {
 	SPIN = 'spin',
+	REEL_ROLL = 'reel_roll',
 	REEL_DROP = 'reeldrop',
+	SCATTER_DROP_1 = 'scatter_drop_1',
+	SCATTER_DROP_2 = 'scatter_drop_2',
+	SCATTER_DROP_3 = 'scatter_drop_3',
+	SCATTER_DROP_4 = 'scatter_drop_4',
 	TURBO_DROP = 'turbodrop',
 	CANDY_TRANSITION = 'candy_transition',
 	// Scatter win "nom nom" SFX (Symbol0 win animation)
@@ -30,6 +37,7 @@ export enum SoundEffectType {
 	WIN_SUPER = 'win_super',
 	WIN_EPIC = 'win_epic',
 	DIALOG_CONGRATS = 'dialog_congrats',
+	DIALOG_RETRIGGER = 'dialog_retrigger',
 	TUMBLE_BOMB = 'tumble_bomb'
 }
 
@@ -152,6 +160,34 @@ export class AudioManager {
 			this.sfxInstances.set(SoundEffectType.REEL_DROP, reelDropSfx);
 			console.log('[AudioManager] Reel drop sound effect instance created');
 
+			try {
+				const scatterDrop1 = this.scene.sound.add('scatterdrop1', { volume: this.sfxVolume, loop: false });
+				this.sfxInstances.set(SoundEffectType.SCATTER_DROP_1, scatterDrop1);
+			} catch (e) { console.warn('[AudioManager] Failed to create scatterdrop1 SFX instance:', e); }
+			try {
+				const scatterDrop2 = this.scene.sound.add('scatterdrop2', { volume: this.sfxVolume, loop: false });
+				this.sfxInstances.set(SoundEffectType.SCATTER_DROP_2, scatterDrop2);
+			} catch (e) { console.warn('[AudioManager] Failed to create scatterdrop2 SFX instance:', e); }
+			try {
+				const scatterDrop3 = this.scene.sound.add('scatterdrop3', { volume: this.sfxVolume, loop: false });
+				this.sfxInstances.set(SoundEffectType.SCATTER_DROP_3, scatterDrop3);
+			} catch (e) { console.warn('[AudioManager] Failed to create scatterdrop3 SFX instance:', e); }
+			try {
+				const scatterDrop4 = this.scene.sound.add('scatterdrop4', { volume: this.sfxVolume, loop: false });
+				this.sfxInstances.set(SoundEffectType.SCATTER_DROP_4, scatterDrop4);
+			} catch (e) { console.warn('[AudioManager] Failed to create scatterdrop4 SFX instance:', e); }
+
+			try {
+				const reelRollSfx = this.scene.sound.add('reelroll', {
+					volume: this.sfxVolume,
+					loop: true
+				});
+				this.sfxInstances.set(SoundEffectType.REEL_ROLL, reelRollSfx);
+				console.log('[AudioManager] Reel roll sound effect instance created');
+			} catch (e) {
+				console.warn('[AudioManager] Failed to create reelroll SFX instance:', e);
+			}
+
 			const turboDropSfx = this.scene.sound.add('turbodrop', {
 				volume: this.sfxVolume,
 				loop: false
@@ -263,6 +299,13 @@ export class AudioManager {
 			} catch (e) {
 				console.warn('[AudioManager] Failed to create congrats SFX instance:', e);
 			}
+			try {
+				const retriggerDlg = this.scene.sound.add('retrigger', { volume: this.sfxVolume, loop: false });
+				this.sfxInstances.set(SoundEffectType.DIALOG_RETRIGGER, retriggerDlg);
+				console.log('[AudioManager] Retrigger dialog SFX instance created');
+			} catch (e) {
+				console.warn('[AudioManager] Failed to create retrigger SFX instance:', e);
+			}
 			console.log('[AudioManager] Total SFX instances:', this.sfxInstances.size);
 
 			// Create ambient audio instance
@@ -273,9 +316,43 @@ export class AudioManager {
 			// console.log('[AudioManager] Ambient audio instance created');
 
 			console.log('[AudioManager] All audio instances created successfully');
+
+			// Reel roll: play while reels/tumble are moving, stop when sequence is done
+			try {
+				gameEventManager.on(GameEventType.REELS_START, this.boundOnReelsStart);
+				gameEventManager.on(GameEventType.TUMBLE_SEQUENCE_DONE, this.boundOnTumbleSequenceDone);
+			} catch (e) {
+				console.warn('[AudioManager] Failed to subscribe to reel roll events:', e);
+			}
 		} catch (error) {
 			console.error('[AudioManager] Error creating audio instances:', error);
 		}
+	}
+
+	private boundOnReelsStart = (): void => this.onReelsStart();
+	private boundOnTumbleSequenceDone = (): void => this.onTumbleSequenceDone();
+
+	private onReelsStart(): void {
+		if (this.isMuted) return;
+		const sfx = this.sfxInstances.get(SoundEffectType.REEL_ROLL);
+		if (sfx && !sfx.isPlaying) {
+			try {
+				sfx.play();
+			} catch (e) {
+				console.warn('[AudioManager] Failed to play reel roll:', e);
+			}
+		}
+	}
+
+	private onTumbleSequenceDone(): void {
+		this.stopReelRoll();
+	}
+
+	/**
+	 * Stop (fade out) the reel roll SFX. Call when reels and tumbles have finished.
+	 */
+	stopReelRoll(): void {
+		this.fadeOutSfx(SoundEffectType.REEL_ROLL, 200);
 	}
 
 	/**

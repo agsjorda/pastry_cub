@@ -1,7 +1,7 @@
 import { Scene } from 'phaser';
 import { SpinData } from '../../backend/SpinData';
 import { QUALIFYING_CLUSTER_COUNT, getOutCount, getOutWin } from './Spin';
-import { MIN_CLUSTER_SIZE, UI_CONFIG } from '../../config/GameConfig';
+import { UI_CONFIG } from '../../config/GameConfig';
 import { Logger } from '../../utils/Logger';
 import { CurrencyManager } from './CurrencyManager';
 
@@ -261,7 +261,7 @@ export class WinTracker {
         const symbolId = Number(out?.symbol);
         const count = getOutCount(out as any);
         const win = getOutWin(out as any);
-        if (!isFinite(symbolId) || count <= 0 || count < MIN_CLUSTER_SIZE) continue;
+        if (!isFinite(symbolId) || count <= 0 || count < QUALIFYING_CLUSTER_COUNT) continue;
         const existing = summary.get(symbolId) || { lines: 0, totalWin: 0, multiplier: 1, baseValue: 0 };
         existing.lines += count;
         existing.totalWin += win;

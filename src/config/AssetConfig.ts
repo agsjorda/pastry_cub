@@ -70,6 +70,14 @@ export class AssetConfig {
 				'BG_ConveyorTop_PC': {
 					atlas: `${prefix}/conveyor/BG_ConveyorTop_PC.atlas`,
 					json: `${prefix}/conveyor/BG_ConveyorTop_PC.json`
+				},
+				'JimboyNormal_PC': {
+					atlas: `assets/characters/JimboyNormal_PC.atlas`,
+					json: `assets/characters/JimboyNormal_PC.json`
+				},
+				'BG_Animals_PC': {
+					atlas: `assets/characters/BG_Animals_PC.atlas`,
+					json: `assets/characters/BG_Animals_PC.json`
 				}
 			}
 		};
@@ -94,10 +102,6 @@ export class AssetConfig {
 				'loading_frame': `${prefix}/loading/loading-frame.png`,
 				'loading_frame_2': `${prefix}/loading/loading-frame-2.png`,
 				'dijoker_logo': `${prefix}/loading/DiJoker-logo.png`,
-				// Character1 texture - must be loaded before spine asset
-				'Character1_BZ.webp': `assets/characters/Character1_BZ.webp`,
-				// Character2 texture - must be loaded before spine asset
-				'Character2_BZ.webp': `assets/characters/Character2_BZ.webp`
 			},
 			spine: {
 				// Studio loading spine (DI JOKER) – only available in portrait/high
@@ -105,16 +109,6 @@ export class AssetConfig {
 					atlas: `${prefix}/dijoker_loading/DI JOKER.atlas`,
 					json: `${prefix}/dijoker_loading/DI JOKER.json`
 				},
-				// Character1 for preloader screen
-				'character1': {
-					atlas: `assets/characters/Character1_BZ.atlas`,
-					json: `assets/characters/Character1_BZ.json`
-				},
-				// Character2 for preloader screen
-				'character2': {
-					atlas: `assets/characters/Character2_BZ.atlas`,
-					json: `assets/characters/Character2_BZ.json`
-				}
 			}
 		};
 	}
@@ -147,6 +141,11 @@ export class AssetConfig {
 		symbolSpine['Explosion_BZ_VFX'] = {
 			atlas: `assets/symbols/high/pastry_cub_symbols/Explosion_BZ_VFX.atlas`,
 			json: `assets/symbols/high/pastry_cub_symbols/Explosion_BZ_VFX.json`
+		};
+		// Bonus-grid Jimboy character (separate from symbol cells)
+		symbolSpine['JimboyBonus_PC'] = {
+			atlas: `assets/characters/JimboyBonus_PC.atlas`,
+			json: `assets/characters/JimboyBonus_PC.json`
 		};
 		console.log('[AssetConfig] Explosion VFX spine: Explosion_BZ_VFX');
 
@@ -283,8 +282,8 @@ export class AssetConfig {
 		return {
 			spine: {
 				'Congrats': {
-					atlas: `${prefix}/dialogs/Congrats_BZ.atlas`,
-					json: `${prefix}/dialogs/Congrats_BZ.json`
+					atlas: `${prefix}/dialogs/Congrats_PC.atlas`,
+					json: `${prefix}/dialogs/Congrats_PC.json`
 				},
 				'BigWin': {
 					atlas: `${prefix}/dialogs/BigW_PC.atlas`,
@@ -302,18 +301,17 @@ export class AssetConfig {
 					atlas: `${prefix}/dialogs/SuperW_PC.atlas`,
 					json: `${prefix}/dialogs/SuperW_PC.json`
 				},
-				'TotalWin': {
-					atlas: `${prefix}/dialogs/TotalW_BZ.atlas`,
-					json: `${prefix}/dialogs/TotalW_BZ.json`
+				'MaxWin': {
+					atlas: `${prefix}/dialogs/MaxW_PC.atlas`,
+					json: `${prefix}/dialogs/MaxW_PC.json`
 				},
-				// Total win overlay notes animation (uses TotalW_BZ atlas pages)
-				'TotalWin_meow': {
-					atlas: `${prefix}/dialogs/TotalW_BZ.atlas`,
-					json: `${prefix}/dialogs/cats meow.json`
+				'TotalWin': {
+					atlas: `${prefix}/dialogs/Congrats_PC.atlas`,
+					json: `${prefix}/dialogs/Congrats_PC.json`
 				},
 				'FreeSpin': {
-					atlas: `${prefix}/dialogs/FreeSpin_BZ.atlas`,
-					json: `${prefix}/dialogs/FreeSpin_BZ.json`
+					atlas: `${prefix}/dialogs/FreeSpin_PC.atlas`,
+					json: `${prefix}/dialogs/FreeSpin_PC.json`
 				},
 				'FreeSpinRetrigger': {
 					atlas: `${prefix}/dialogs/FreeSpinRetri_BZ.atlas`,
@@ -408,7 +406,13 @@ export class AssetConfig {
 				'bonusbg': 'assets/sounds/BG/bonusbg_PC.ogg',
 				'freespinbg': 'assets/sounds/BG/freespinbg_PC.ogg',
 				'spinb': 'assets/sounds/SFX/spin_PC.ogg',
+				'reelroll': 'assets/sounds/SFX/reelroll_PC.ogg',
 				'reeldrop': 'assets/sounds/SFX/reeldrop_PC.ogg',
+				// Scatter reel-drop variants (played progressively per scatter reel in a spin)
+				'scatterdrop1': 'assets/sounds/SFX/symbol_win/scatterdrop_brass_1.ogg',
+				'scatterdrop2': 'assets/sounds/SFX/symbol_win/scatterdrop_brass_2.ogg',
+				'scatterdrop3': 'assets/sounds/SFX/symbol_win/scatterdrop_brass_3.ogg',
+				'scatterdrop4': 'assets/sounds/SFX/symbol_win/scatterdrop_brass_4.ogg',
 				'turbodrop': 'assets/sounds/SFX/turbo_PC.ogg',
 				// Tumble bomb SFX
 				'tbomb': 'assets/sounds/SFX/tbomb_PC.ogg',
@@ -425,6 +429,9 @@ export class AssetConfig {
 				'megaw': 'assets/sounds/Wins/megaw_PC.ogg',
 				'superw': 'assets/sounds/Wins/superw_PC.ogg',
 				'epicw': 'assets/sounds/Wins/epicw_PC.ogg',
+				'maxw': 'assets/sounds/Wins/maxw_PC.ogg',
+				'totalw': 'assets/sounds/Wins/totalw_PC.ogg',
+				'retrigger': 'assets/sounds/Wins/retrigger_PC.ogg',
 			}
 		};
 	}
