@@ -394,6 +394,24 @@ export class Game extends Scene {
 			this.menu.toggleMenu(this);
 		});
 		EventBus.on('show-bet-options', () => {
+			// Secondary safety gate: bet options should never be openable during spins or autoplay,
+			// including while tumbles are still processing. Mirror shuten_doji behavior.
+			const gsm: any = this.gameStateManager;
+			if (
+				gsm?.isProcessingSpin ||
+				gsm?.isReelSpinning ||
+				gsm?.isAutoPlaying ||
+				!!this.gameData?.isAutoPlaying
+			) {
+				console.log('[Game] show-bet-options blocked by game state', {
+					isProcessingSpin: gsm?.isProcessingSpin,
+					isReelSpinning: gsm?.isReelSpinning,
+					isAutoPlaying: gsm?.isAutoPlaying,
+					gameDataIsAutoPlaying: !!this.gameData?.isAutoPlaying,
+				});
+				return;
+			}
+
 			const currentBaseBet = this.slotController.getBaseBetAmount() || 0.20;
 			const currentDisplayText = this.slotController.getBetAmountText();
 			const currentDisplayBet = currentDisplayText ? parseFloat(currentDisplayText) : currentBaseBet;

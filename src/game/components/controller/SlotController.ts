@@ -333,12 +333,15 @@ export class SlotController {
 
 		this.controllerContainer.iterate((child: any) => {
 			if (child && child.getData && child.getData('isBetBackground')) {
-				// Do NOT grey it out; just disable interaction so bet options cannot be opened.
 				child.disableInteractive();
 				const suffix = reason ? ` (${reason})` : '';
 				console.log(`[SlotController] Bet background interaction disabled${suffix}`);
 			}
 		});
+		// Also disable the bet amount text so tapping it cannot open the bet options popup
+		if (this.betAmountText) {
+			this.betAmountText.disableInteractive();
+		}
 	}
 
 	/**
@@ -351,12 +354,15 @@ export class SlotController {
 
 		this.controllerContainer.iterate((child: any) => {
 			if (child && child.getData && child.getData('isBetBackground')) {
-				// Restore interaction only (keep original alpha as designed)
 				child.setInteractive();
 				const suffix = reason ? ` (${reason})` : '';
 				console.log(`[SlotController] Bet background interaction re-enabled${suffix}`);
 			}
 		});
+		// Also re-enable the bet amount text
+		if (this.betAmountText) {
+			this.betAmountText.setInteractive();
+		}
 	}
 
 	/**
@@ -1587,10 +1593,11 @@ export class SlotController {
 				audioManager.playSoundEffect(SoundEffectType.MENU_CLICK);
 			}
 
-			// Prevent opening bet options while reels are spinning or autoplay is active
-			if (gameStateManager.isReelSpinning || gameStateManager.isAutoPlaying) {
+			// Prevent opening bet options while spin/tumbles are in progress or autoplay is active
+			const gsm: any = gameStateManager as any;
+			if (gameStateManager.isReelSpinning || gameStateManager.isAutoPlaying || gsm?.isProcessingSpin) {
 				console.log(
-					'[SlotController] Bet options panel disabled while spinning or autoplaying'
+					'[SlotController] Bet options panel disabled while spinning, tumbling, or autoplaying'
 				);
 				return;
 			}
