@@ -33,7 +33,6 @@ import { GameAPI } from '../../backend/GameAPI';
 import { AudioManager, MusicType } from '../../managers/AudioManager';
 import { Menu } from '../components/Menu';
 import { FullScreenManager } from '../../managers/FullScreenManager';
-import { ScatterAnticipation } from '../components/ScatterAnticipation';
 import { ClockDisplay } from '../components/ClockDisplay';
 import WinTracker from '../components/WinTracker';
 import {
@@ -47,10 +46,9 @@ import {
 import { FreeRoundManager } from '../components/FreeRoundManager';
 import { ensureSpineFactory } from '../../utils/SpineGuard';
 import { CurrencyManager } from '../components/CurrencyManager';
+import { setDecimalPlaces } from '../../utils/NumberPrecisionFormatter';
 import {
 	calculateTotalWinFromTumbles as spinCalculateTotalWinFromTumbles,
-	capWinByMaxMultiplier,
-	hasQualifyingClusterInGrid,
 } from '../components/Spin';
 import { IdleManager } from '../components/IdleManager';
 
@@ -70,7 +68,6 @@ export class Game extends Scene {
 	public gameAPI!: GameAPI;
 	public audioManager!: AudioManager;
 	private menu: Menu;
-	private scatterAnticipation: ScatterAnticipation;
 	private clockDisplay!: ClockDisplay;
 	private winTracker!: WinTracker;
 	private freeRoundManager: FreeRoundManager | null = null;
@@ -91,7 +88,6 @@ export class Game extends Scene {
 		this.gameData = new GameData();
 		this.symbols = new Symbols();
 		this.menu = new Menu();
-		this.scatterAnticipation = new ScatterAnticipation();
 	}
 
 	private handleResize(): void {
@@ -112,7 +108,6 @@ export class Game extends Scene {
 		try { (this.autoplayOptions as any)?.resize?.(this); } catch { }
 		try { (this.menu as any)?.resize?.(this); } catch { }
 		try { (this.winTracker as any)?.resize?.(this); } catch { }
-		try { (this.scatterAnticipation as any)?.resize?.(this); } catch { }
 		try { (this.clockDisplay as any)?.resize?.(); } catch { }
 		try { (this.freeRoundManager as any)?.resize?.(this); } catch { }
 	}
@@ -359,6 +354,8 @@ export class Game extends Scene {
 			const initData = this.gameAPI.getInitializationData();
 			const initFsRemaining = this.gameAPI.getRemainingInitFreeSpins();
 			const initFsBet = this.gameAPI.getInitFreeSpinBet();
+			const initCurrencyPlaces = Number((initData as any)?.currencyDecimalPlaces);
+			setDecimalPlaces(Number.isFinite(initCurrencyPlaces) ? initCurrencyPlaces : 2);
 			CurrencyManager.initializeFromInitData(initData);
 			this.slotController?.refreshCurrencySymbols?.();
 			this.freeRoundManager = new FreeRoundManager();
@@ -374,9 +371,6 @@ export class Game extends Scene {
 		} catch (e) {
 			console.warn('[Game] Failed to create FreeRoundManager from initialization data:', e);
 		}
-		this.scatterAnticipation.create(this, this.background.getContainer());
-		this.scatterAnticipation.hide();
-		(this as any).scatterAnticipation = this.scatterAnticipation;
 	}
 
 	private runFadeIn(fadeOverlay: Phaser.GameObjects.Rectangle): void {
@@ -425,20 +419,36 @@ export class Game extends Scene {
 			} catch { }
 		});
 		EventBus.on('autoplay', () => {
-			const currentBetText = this.slotController.getBetAmountText();
-			const currentBet = currentBetText ? parseFloat(currentBetText) : 0.20;
+			// Display bet (may include amplify/enhanced multiplier)
+			const currentBetText = this.slotController.getBetAmountText?.();
+			const currentDisplayBet = currentBetText ? parseFloat(currentBetText) : 0.20;
+
+			// Base bet from controller (without amplify), used for API and ladders
+			const baseBet = this.slotController.getBaseBetAmount?.() || currentDisplayBet;
+
 			const currentBalance = this.slotController.getBalanceAmount();
+			const isEnhancedBet = !!this.gameData?.isEnhancedBet;
+			const betDisplayMultiplier = isEnhancedBet ? 1.25 : 1;
+
 			this.autoplayOptions.show({
 				currentAutoplayCount: 10,
-				currentBet,
+				// Use base bet for internal logic and ladders
+				currentBet: baseBet,
+				// Pass display bet + multiplier so UI matches controller bet text
+				currentBetDisplay: currentDisplayBet,
+				betDisplayMultiplier,
 				currentBalance,
-				isEnhancedBet: this.gameData?.isEnhancedBet,
+				isEnhancedBet,
 				onClose: () => console.log('[Game] Autoplay options closed'),
+				onBetChange: (betAmount: number) => {
+					// Sync SlotController/base bet + controller label live as user adjusts bet in autoplay
+					this.slotController.updateBetAmountFromAutoplay(betAmount);
+				},
 				onConfirm: (autoplayCount: number) => {
 					const selectedBet = this.autoplayOptions.getCurrentBet();
-					if (Math.abs(selectedBet - currentBet) > 0.0001) {
+					if (Math.abs(selectedBet - baseBet) > 0.0001) {
 						this.slotController.updateBetAmountFromAutoplay(selectedBet);
-						gameEventManager.emit(GameEventType.BET_UPDATE, { newBet: selectedBet, previousBet: currentBet });
+						gameEventManager.emit(GameEventType.BET_UPDATE, { newBet: selectedBet, previousBet: baseBet });
 					}
 					this.slotController.startAutoplay(autoplayCount);
 				}
@@ -519,7 +529,7 @@ export class Game extends Scene {
 					if (!isNaN(itemTotalWin) && itemTotalWin > 0) totalWin = itemTotalWin;
 				}
 			} catch (e) {
-				console.warn('[Game] WIN_STOP: Failed to derive freespin item totalWin', e);
+				console.warn('[Game] WIN_STOP: Failed to derive freespin item totalWin, falling back to tumble totalWin', e);
 			}
 		}
 
@@ -530,59 +540,22 @@ export class Game extends Scene {
 		const bonusTumbles = freeSpinItem?.tumbles;
 		const tumblesToUse = (Array.isArray(slotTumbles) && slotTumbles.length > 0) ? slotTumbles : (Array.isArray(bonusTumbles) ? bonusTumbles : []);
 		const tumbleResult = spinCalculateTotalWinFromTumbles(tumblesToUse);
-		if (Array.isArray(tumblesToUse) && tumblesToUse.length > 0 && tumbleResult.totalWin > 0) {
-			if (totalWin !== tumbleResult.totalWin) {
-				console.log('[Game] WIN_STOP: overriding totalWin with tumble total', {
-					previous: totalWin,
-					tumbleTotal: tumbleResult.totalWin
-				});
-			}
-			totalWin = tumbleResult.totalWin;
-		} else if (totalWin === 0) {
-			totalWin = tumbleResult.totalWin;
-		}
-		// Fallback: derive totalWin from paylines + tumbles when slot.totalWin / freespin item not set
 		if (totalWin === 0) {
-			let paylineWin = 0;
-			if (Array.isArray((spinData.slot as any)?.paylines)) {
-				for (const pl of (spinData.slot as any).paylines) {
-					paylineWin += Number(pl?.win ?? 0) || 0;
-				}
-			}
-			let tumbleSum = 0;
-			for (const t of tumblesToUse) {
-				tumbleSum += Number(t?.win ?? 0) || 0;
-			}
-			totalWin = paylineWin + tumbleSum;
-			if (totalWin > 0) console.log('[Game] WIN_STOP: totalWin derived from paylines + tumbles=', totalWin);
+			totalWin = tumbleResult.totalWin;
 		}
-		let hasCluster = tumbleResult.hasCluster;
+		const hasCluster = tumbleResult.hasCluster;
+
+		console.log(`[Game] WIN_STOP: totalWin used for win dialog=$${totalWin}, hasCluster>=8=${hasCluster}`);
+		if (hasCluster && totalWin > 0) {
+			this.checkAndShowWinDialog(totalWin, betAmount);
+		} else {
+			console.log('[Game] WIN_STOP: No qualifying cluster wins (>=8) detected');
+		}
+
+		// If the menu History tab is open, refresh the history list once per spin.
 		try {
-			const snapshots = this.symbols.getClusterWinGridSnapshots();
-			if (Array.isArray(snapshots) && snapshots.length > 0) {
-				const hasClusterFromSnapshots = snapshots.some((grid) => {
-					try {
-						return hasQualifyingClusterInGrid(grid as any);
-					} catch {
-						return false;
-					}
-				});
-				if (hasClusterFromSnapshots && !hasCluster) {
-					console.log('[Game] WIN_STOP: cluster detected from live grid snapshots');
-				}
-				hasCluster = hasCluster || hasClusterFromSnapshots;
-			}
-		} catch (e) {
-			console.warn('[Game] WIN_STOP: Failed snapshot-based cluster check', e);
-		} finally {
-			try { this.symbols.clearClusterWinGridSnapshots(); } catch { }
-		}
-		const hasWin = totalWin > 0;
-
-		totalWin = capWinByMaxMultiplier(totalWin, betAmount);
-		console.log(`[Game] WIN_STOP: totalWin used for win dialog=$${totalWin}, hasCluster=${hasCluster}, hasWin=${hasWin}`);
-		if (hasWin) this.checkAndShowWinDialog(totalWin, betAmount);
-
+			(this.menu as any)?.refreshHistoryAfterSpin?.(this);
+		} catch { /* avoid surfacing menu/history issues in core win flow */ }
 	}
 
 	/**
@@ -625,6 +598,13 @@ export class Game extends Scene {
 	 * Delegate to Dialogs: check conditions and show appropriate win dialog or queue.
 	 */
 	private checkAndShowWinDialog(payout: number, bet: number): void {
+		// Win dialogs should only be shown during bonus game flow.
+		if (!gameStateManager.isBonus) {
+			console.log('[Game] Skipping win dialog - not in bonus mode');
+			gameStateManager.isShowingWinDialog = false;
+			return;
+		}
+
 		this.dialogs.checkAndShowWinDialog(this, payout, bet, {
 			pushToQueue: (p, b) => this.winQueue.push({ payout: p, bet: b }),
 			scheduleProcessQueue: () => {
@@ -1009,8 +989,8 @@ export class Game extends Scene {
 				}
 			}
 
-			const computed = paylineWin + tumbleWin;
-			return computed > 0 ? computed : explicitTotal;
+			const derivedTotal = paylineWin + tumbleWin;
+			return Math.max(0, explicitTotal, derivedTotal);
 		} catch {
 			return 0;
 		}

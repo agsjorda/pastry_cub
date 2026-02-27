@@ -6,6 +6,7 @@ import { ensureSpineFactory } from '../../../utils/SpineGuard';
 import { gameStateManager } from '../../../managers/GameStateManager';
 import { startAnimation } from '../../../utils/SpineAnimationHelper';
 import type { GameData } from '../GameData';
+import { SoundEffectType } from '../../../managers/AudioManager';
 
 export interface TurboButtonCallbacks {
   getGameData: () => GameData | null;
@@ -54,6 +55,11 @@ export class TurboButtonController {
     turboButton.setInteractive();
     turboButton.on('pointerdown', () => {
       console.log('[SlotController] Turbo button clicked');
+      const audioManager =
+        (this.scene as any)?.audioManager || (window as any)?.audioManager;
+      if (audioManager && typeof audioManager.playSoundEffect === 'function') {
+        audioManager.playSoundEffect(SoundEffectType.MENU_CLICK);
+      }
       this.handleTurboButtonClick();
     });
     this.buttons.set('turbo', turboButton);

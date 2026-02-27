@@ -4,6 +4,7 @@ import { QUALIFYING_CLUSTER_COUNT, getOutCount, getOutWin } from './Spin';
 import { UI_CONFIG } from '../../config/GameConfig';
 import { Logger } from '../../utils/Logger';
 import { CurrencyManager } from './CurrencyManager';
+import { formatCurrencyNumber } from '../../utils/NumberPrecisionFormatter';
 
 interface WinTrackerLayoutOptions {
   offsetX?: number;
@@ -333,7 +334,7 @@ export class WinTracker {
       (() => {
         const isDemo = (this.scene as any).gameAPI?.getDemoState();
         const currencyPrefix = isDemo ? '' : CurrencyManager.getInlinePrefix();
-        return `${currencyPrefix}${data.totalWin.toFixed(2)}`;
+        return `${currencyPrefix}${formatCurrencyNumber(data.totalWin)}`;
       })(),
       {
         fontSize: `${this.labelFontSize}px`,

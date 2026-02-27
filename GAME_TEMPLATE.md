@@ -64,10 +64,10 @@ File: `src/game/components/MenuTabs/HelpScreen.ts`
 | Main background and overlays | `public/assets/portrait/high/background/` and `public/assets/portrait/low/background/` | `src/config/AssetConfig.ts` -> `getBackgroundAssets()` |
 | Bonus background | `public/assets/portrait/high/bonus_background/` | `src/config/AssetConfig.ts` -> `getBonusBackgroundAssets()` |
 | Header art | `public/assets/portrait/high/header/` | `src/config/AssetConfig.ts` -> `getHeaderAssets()` |
-| Symbol Spine art (scatter + regular) | `public/assets/symbols/high/pastry_cub_symbols/Symbol0_PC.*` through `Symbol7_PC.*` | `src/config/AssetConfig.ts` -> `getSymbolAssets()` |
-| Bonus grid character overlay (Jimboy) | `public/assets/characters/JimboyBonus_PC.*` | `src/config/AssetConfig.ts` -> `getSymbolAssets()` and `src/game/components/symbols/Symbols.ts` |
-| Static symbol icons (help/paytable) | `public/assets/symbols/high/pastry_cub_symbols/statics/symbol0.png` through `symbol7.png` | `src/config/AssetConfig.ts` -> `getSymbolAssets()` |
-| Bonus marker images | `public/assets/symbols/high/pastry_cub_symbols/multiplier_symbols/x1.webp` ... `x128.webp` | `src/config/GameConfig.ts` and `src/config/AssetConfig.ts` |
+| Symbol Spine art (scatter + regular) | `public/assets/portrait/high/symbols/Symbol0_PC.*` through `Symbol7_PC.*` | `src/config/AssetConfig.ts` -> `getSymbolAssets()` |
+| Bonus grid character overlay (Jimboy) | `public/assets/portrait/high/characters/JimboyBonus_PC.*` | `src/config/AssetConfig.ts` -> `getSymbolAssets()` and `src/game/components/symbols/Symbols.ts` |
+| Static symbol icons (help/paytable) | `public/assets/portrait/high/symbols/statics/symbol0.png` through `symbol7.png` | `src/config/AssetConfig.ts` -> `getSymbolAssets()` |
+| Bonus marker images | `public/assets/portrait/high/symbols/multiplier_symbols/x1.webp` ... `x128.webp` | `src/config/GameConfig.ts` and `src/config/AssetConfig.ts` |
 | Dialog Spine assets | `public/assets/portrait/high/dialogs/` | `src/config/AssetConfig.ts` dialog mapping |
 | Buttons and controller icons | `public/assets/controller/portrait/high/` and `public/assets/controller/portrait/low/` | `src/config/AssetConfig.ts` -> `getButtonAssets()` |
 | Audio | `public/assets/sounds/` | `src/config/AssetConfig.ts` and `src/managers/AudioManager.ts` |
@@ -93,6 +93,89 @@ Notes:
 | Animation timings | `src/config/GameConfig.ts` -> `TIMING_CONFIG`, `ANIMATION_CONFIG`, and related timing constants |
 | Debug toggles | `src/config/GameConfig.ts` -> `SHOW_*` flags (including `SHOW_HEADER_SCENE_CONTAINER_BORDER`, `SHOW_HEADER_BORDER`) |
 
+### Grid semantics (area → visual grid)
+
+Backend/demo data (`slot.area` and `public/fake_spin_data.json`) use a **column-major** layout:
+
+```ts
+const area = [
+  [4, 7, 7, 3, 3, 6, 6], // column 0: bottom → top
+  [0, 7, 6, 7, 2, 7, 7], // column 1
+  [7, 0, 3, 1, 5, 5, 6], // column 2
+  [0, 6, 5, 5, 7, 4, 6], // column 3
+  [1, 1, 5, 5, 6, 4, 3], // column 4
+  [6, 5, 5, 7, 4, 6, 5], // column 5
+  [2, 6, 2, 3, 1, 5, 6]  // column 6
+];
+
+// Helper to view the grid as rows (top → bottom)
+function convertColumnsToGrid(columns: number[][]): number[][] {
+  if (!columns.length) return [];
+
+  const height = columns[0].length;
+  const width = columns.length;
+  const grid: number[][] = [];
+
+  for (let row = height - 1; row >= 0; row--) {
+    const newRow: number[] = [];
+    for (let col = 0; col < width; col++) {
+      newRow.push(columns[col][row]);
+    }
+    grid.push(newRow);
+  }
+
+  return grid;
+}
+```
+
+For the `area` above, the visual grid (top row first) is:
+
+```text
+ 6  7  6  6  3  5  6
+ 6  7  5  4  4  6  5
+ 3  2  5  7  6  4  1
+ 3  7  1  5  5  7  3
+ 7  6  3  5  5  5  2
+ 7  7  0  6  1  5  6
+ 4  0  7  0  1  6  2
+```
+
+- Columns are left → right.
+- Rows are bottom → top.
+- Scatter symbols (Symbol0) are the `0` entries in this grid.
+
+In code, use `columnsToRowMajor(area)` from `src/utils/scatterGrid.ts` to obtain this row-major view (`grid[row][col]` with row 0 = top) for any grid-based logic (e.g. scatter detection).
+
+## 6. Scatter Trigger / Retrigger Flow
+
+All scatter flows (normal trigger, scatter retrigger in bonus, and buy-feature trigger) should use **one unified sequence**:
+
+1. **Detect scatters from the final grid**
+   - After reels and all tumbles finish, detect Symbol0 on the settled grid:
+     - Use `symbolsToUse = slot.area` (base game) or `freeSpinItem.area` (bonus).
+     - Convert to row-major with `columnsToRowMajor(symbolsToUse)`.
+     - Run `getScatterGrids(grid, SCATTER_SYMBOL_ID)` to get `(col,row)` positions.
+   - For retrigger, store these positions (e.g. in `pendingScatterRetrigger.scatterGrids`) and reuse them; do **not** re-derive them from a different grid shape.
+
+2. **Unified animation flow**
+   - Entry point: a single controller (`ScatterAnimationManager.runScatterFlow(...)`) used by:
+     - normal game trigger,
+     - bonus scatter retrigger,
+     - buy-feature trigger.
+   - Sequence:
+     1. **Merge / gather**: convert each Symbol0 at `(col,row)` into a Spine symbol (if needed), move them to the center and bring them to the front.
+     2. **Play win animation**: on the merged Symbol0 instances, play `Symbol0_PC_win` (loop).
+        - Read the Spine animation duration (e.g. via `skeleton.data.findAnimation('Symbol0_PC_win')`) and hold the scene for ~70% of that duration so the win is clearly visible.
+     3. **Show dialog**:
+        - After the win hold, show `FreeSpin_PC` (or `FreeSpinRetrigger` for retrigger).
+        - When the dialog’s fade-in completes (`dialogFullyDisplayed`), switch the merged Symbol0 to idle (`Symbol0_PC_idle`) so it sits calmly behind the dialog.
+     4. **Unmerge on dialog close**:
+        - When dialog animations complete (`dialogAnimationsComplete`), run the unmerge animation: shrink merged Symbol0 and move symbols back to their original `(col,row)` cells.
+
+3. **Consistency rules**
+   - Do not implement separate scatter flows for normal game, bonus, and buy-feature; they should all call into the same merge → win → hold → dialog → idle → unmerge pipeline.
+   - Any future timing tweaks (e.g. making win linger longer) should be applied in the shared controller, not in per-flow hacks.
+
 ## 6. Bonus Marker (Multiplier Spot) Rules
 
 Current setup uses image tiers through x128.
@@ -105,7 +188,7 @@ Current setup uses image tiers through x128.
 
 If adding tiers (example x256):
 
-1. Add files under `public/assets/symbols/high/pastry_cub_symbols/multiplier_symbols/`.
+1. Add files under `public/assets/portrait/high/symbols/pastry_cub_symbols/multiplier_symbols/`.
 2. Extend `BONUS_MULTIPLIER_IMAGE_BY_MARK_COUNT`.
 3. Increase `BONUS_MULTIPLIER_MAX_VALUE`.
 

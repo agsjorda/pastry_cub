@@ -1,5 +1,6 @@
 import type { Scene } from 'phaser';
 import { EventBus } from '../../EventBus';
+import { SoundEffectType } from '../../../managers/AudioManager';
 
 export class MenuButtonController {
   private scene: Scene;
@@ -34,6 +35,11 @@ export class MenuButtonController {
     menuButton.setInteractive();
     menuButton.on('pointerdown', () => {
       console.log('[SlotController] Menu button clicked');
+      const audioManager =
+        (this.scene as any)?.audioManager || (window as any)?.audioManager;
+      if (audioManager && typeof audioManager.playSoundEffect === 'function') {
+        audioManager.playSoundEffect(SoundEffectType.MENU_CLICK);
+      }
       EventBus.emit('menu');
     });
     this.buttons.set('menu', menuButton);

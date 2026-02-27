@@ -13,14 +13,11 @@ import { SymbolAnimations } from './SymbolAnimations';
 import type { SymbolOverlay } from './SymbolOverlay';
 import { gameStateManager } from '../../../managers/GameStateManager';
 
-/** Resolve symbol animation name - pastry_cub uses _PC for symbols 1-7 */
+/** Resolve symbol animation name (pastry_cub: PC naming only). */
 export function resolveSymbolAnimationName(skeletonData: any, value: number, type: 'drop' | 'idle' | 'win'): string | null {
   if (!skeletonData?.findAnimation) return null;
-  for (const suffix of ['_BZ_', '_PC_']) {
-    const name = `Symbol${value}${suffix}${type}`;
-    if (skeletonData.findAnimation(name)) return name;
-  }
-  return null;
+  const name = `Symbol${value}_PC_${type}`;
+  return skeletonData.findAnimation(name) ? name : null;
 }
 
 /**
@@ -157,8 +154,8 @@ export class SymbolFactory {
   private playDropThenIdle(spineObj: any, value: number): void {
     try {
       const skelData = spineObj?.skeleton?.data;
-      const dropName = resolveSymbolAnimationName(skelData, value, 'drop') ?? `Symbol${value}_BZ_drop`;
-      const idleName = resolveSymbolAnimationName(skelData, value, 'idle') ?? `Symbol${value}_BZ_idle`;
+      const dropName = resolveSymbolAnimationName(skelData, value, 'drop') ?? `Symbol${value}_PC_drop`;
+      const idleName = resolveSymbolAnimationName(skelData, value, 'idle') ?? `Symbol${value}_PC_idle`;
 
       const animState = spineObj.animationState;
       if (!animState || typeof animState.setAnimation !== 'function') {

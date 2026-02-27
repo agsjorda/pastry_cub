@@ -410,7 +410,6 @@ export class StudioLoadingScreen {
     }
 
     public beginLoading(assetLoader: AssetLoader): void {
-        assetLoader.loadCoinAssets(this.scene);
         assetLoader.loadBuyFeatureAssets(this.scene);
         assetLoader.loadBackgroundAssets(this.scene);
         assetLoader.loadBonusBackgroundAssets(this.scene);
@@ -429,7 +428,6 @@ export class StudioLoadingScreen {
 }
 
 export function queueGameAssetLoading(scene: Scene, assetLoader: AssetLoader): void {
-    assetLoader.loadCoinAssets(scene);
     assetLoader.loadBuyFeatureAssets(scene);
     assetLoader.loadBackgroundAssets(scene);
     assetLoader.loadBonusBackgroundAssets(scene);

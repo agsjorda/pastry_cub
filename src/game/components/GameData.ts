@@ -37,6 +37,8 @@ export class GameData {
 	public clusterWinPreAnimDelayMs: number = ANIMATION_CONFIG.CLUSTER_WIN_PRE_ANIM_DELAY_MS;
 	/** Time scale for symbol win animations (1 = normal, 0.5 = half speed). From GameConfig ANIMATION_CONFIG. */
 	public symbolWinAnimTimeScale: number = ANIMATION_CONFIG.SYMBOL_WIN_ANIM_TIME_SCALE;
+	/** Offset in ms to shift box_close SFX relative to the end of the cluster win animation (negative = earlier, positive = later). */
+	public boxCloseOffsetMs: number = -600;
 
 	public constructor() {
 		setSpeed(this, 1.0);

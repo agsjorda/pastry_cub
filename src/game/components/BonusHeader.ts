@@ -272,6 +272,7 @@ export class BonusHeader {
 
 	// Depth above RadialLightTransition overlay (20000) so Total win stays visible during candy/radial light
 	private static readonly WIN_BAR_DEPTH = 20001;
+	private static readonly WIN_BAR_SCALE_EPSILON = 0.01;
 
 	private createWinBarText(scene: Scene, x: number, y: number): void {
 		// Line 1: "YOU WON"
@@ -300,6 +301,17 @@ export class BonusHeader {
 		// Hide by default - only show when bonus is triggered
 		this.youWonText.setVisible(false);
 		this.amountText.setVisible(false);
+	}
+
+	private isScaleAtTarget(current: number, target: number): boolean {
+		return Math.abs(current - target) <= BonusHeader.WIN_BAR_SCALE_EPSILON;
+	}
+
+	private isWinbarAtBaseScale(): boolean {
+		return this.isScaleAtTarget(this.youWonText.scaleX, HEADER_CONFIG.WIN_BAR_TEXT_SCALE)
+			&& this.isScaleAtTarget(this.youWonText.scaleY, HEADER_CONFIG.WIN_BAR_TEXT_SCALE)
+			&& this.isScaleAtTarget(this.amountText.scaleX, HEADER_CONFIG.WIN_BAR_TEXT_VALUE_SCALE)
+			&& this.isScaleAtTarget(this.amountText.scaleY, HEADER_CONFIG.WIN_BAR_TEXT_VALUE_SCALE);
 	}
 
 	private getBonusHeaderFrameRect(scene: Scene, centerXView?: number): Phaser.Geom.Rectangle | null {
@@ -428,8 +440,8 @@ export class BonusHeader {
 			return;
 		}
 		if (this.amountText && this.youWonText) {
-			this.currentWinnings = winnings;
 			const formattedWinnings = this.formatCurrency(winnings);
+			const valueChanged = Math.abs(this.currentWinnings - winnings) > 0.01;
 			this.amountText.setText(formattedWinnings);
 			
 			// Stop any existing tweens on these objects
@@ -437,41 +449,48 @@ export class BonusHeader {
 				this.scene.tweens.killTweensOf(this.youWonText);
 				this.scene.tweens.killTweensOf(this.amountText);
 			}
-			
+
+			// Check if already visible and scaled
+			const isAlreadyVisible = this.youWonText.visible && this.amountText.visible;
+			const isAlreadyScaled = this.isWinbarAtBaseScale();
+
 			// Show both texts first
 			this.youWonText.setVisible(true);
 			this.amountText.setVisible(true);
-			
-			// Check if already visible and scaled
-			const isAlreadyVisible = this.youWonText.visible && this.amountText.visible;
-			const currentScale = this.youWonText.scaleX;
-			const isAlreadyScaled = currentScale > 0.9;
-			
+			this.currentWinnings = winnings;
+
 			if (isAlreadyVisible && isAlreadyScaled) {
-				// Already visible and scaled - do a pulse animation (enlarge then revert); label and value scale independently
-				if (this.scene) {
-					this.scene.tweens.add({
-						targets: this.youWonText,
-						scaleX: HEADER_CONFIG.WIN_BAR_TEXT_SCALE * 1.2,
-						scaleY: HEADER_CONFIG.WIN_BAR_TEXT_SCALE * 1.2,
-						duration: 150,
-						ease: 'Power2',
-						yoyo: true,
-						repeat: 0,
-						onComplete: () => { this.youWonText.setScale(HEADER_CONFIG.WIN_BAR_TEXT_SCALE); }
-					});
-					this.scene.tweens.add({
-						targets: this.amountText,
-						scaleX: HEADER_CONFIG.WIN_BAR_TEXT_VALUE_SCALE * 1.2,
-						scaleY: HEADER_CONFIG.WIN_BAR_TEXT_VALUE_SCALE * 1.2,
-						duration: 150,
-						ease: 'Power2',
-						yoyo: true,
-						repeat: 0,
-						onComplete: () => { this.amountText.setScale(HEADER_CONFIG.WIN_BAR_TEXT_VALUE_SCALE); }
-					});
+				if (valueChanged) {
+					// Already visible/scaled and value changed: pulse animation.
+					if (this.scene) {
+						this.scene.tweens.add({
+							targets: this.youWonText,
+							scaleX: HEADER_CONFIG.WIN_BAR_TEXT_SCALE * 1.2,
+							scaleY: HEADER_CONFIG.WIN_BAR_TEXT_SCALE * 1.2,
+							duration: 150,
+							ease: 'Power2',
+							yoyo: true,
+							repeat: 0,
+							onComplete: () => { this.youWonText.setScale(HEADER_CONFIG.WIN_BAR_TEXT_SCALE); }
+						});
+						this.scene.tweens.add({
+							targets: this.amountText,
+							scaleX: HEADER_CONFIG.WIN_BAR_TEXT_VALUE_SCALE * 1.2,
+							scaleY: HEADER_CONFIG.WIN_BAR_TEXT_VALUE_SCALE * 1.2,
+							duration: 150,
+							ease: 'Power2',
+							yoyo: true,
+							repeat: 0,
+							onComplete: () => { this.amountText.setScale(HEADER_CONFIG.WIN_BAR_TEXT_VALUE_SCALE); }
+						});
+					}
+					console.log(`[BonusHeader] Winnings updated with pulse animation: ${formattedWinnings} (raw: ${winnings})`);
+				} else {
+					// Value unchanged: keep persistent without animation.
+					this.youWonText.setScale(HEADER_CONFIG.WIN_BAR_TEXT_SCALE);
+					this.amountText.setScale(HEADER_CONFIG.WIN_BAR_TEXT_VALUE_SCALE);
+					console.log(`[BonusHeader] Winnings value unchanged, skipping animation: ${formattedWinnings} (raw: ${winnings})`);
 				}
-				console.log(`[BonusHeader] Winnings updated with pulse animation: ${formattedWinnings} (raw: ${winnings})`);
 			} else {
 				// Not visible or not scaled - do full scale-in animation
 				// Set initial scale to 0 for scale-in effect
@@ -676,6 +695,8 @@ export class BonusHeader {
 		if (this.cumulativeBonusWin > 0 && this.youWonText && this.amountText) {
 			this.youWonText.setText('TOTAL WIN');
 			this.showWinningsDisplay(this.cumulativeBonusWin);
+			this.showingTotalWin = true;
+			console.log(`[BonusHeader] Showing cumulative total immediately: $${this.cumulativeBonusWin}`);
 		}
 	}
 
@@ -765,8 +786,7 @@ export class BonusHeader {
 			
 			// Check if already visible and scaled
 			const isAlreadyVisible = this.youWonText.visible && this.amountText.visible;
-			const currentScale = this.youWonText.scaleX;
-			const isAlreadyScaled = currentScale > 0.9;
+			const isAlreadyScaled = this.isWinbarAtBaseScale();
 			
 			// Show both texts first
 			this.youWonText.setVisible(true);
@@ -1009,7 +1029,13 @@ export class BonusHeader {
 		// so it stays visible when transitioning from Free Spin dialog to first bonus spin
 		if (this.scene) {
 			this.scene.events.on('dialogAnimationsComplete', () => {
-				if (gameStateManager.isBonus && this.cumulativeBonusWin > 0 && this.bonusHeaderContainer?.visible) {
+				if (
+					gameStateManager.isBonus &&
+					this.justSeededWin &&
+					!this.showingTotalWin &&
+					this.cumulativeBonusWin > 0 &&
+					this.bonusHeaderContainer?.visible
+				) {
 					this.showCumulativeTotalIfReady();
 					console.log('[BonusHeader] dialogAnimationsComplete: re-showing cumulative total after radial light transition');
 				}
@@ -1140,11 +1166,10 @@ export class BonusHeader {
 			}
 			
 			// Always change to "YOU WIN" or "YOU WON" when wins start (unless in initial scatter phase)
-			if (!this.justSeededWin && this.youWonText) {
-				this.youWonText.setText('YOU WIN');
-			}
-			
 			if (spinWin > 0) {
+				if (!this.justSeededWin && this.youWonText) {
+					this.youWonText.setText('YOU WIN');
+				}
 				this.showWinningsDisplay(spinWin);
 			} else {
 				// Don't hide if we're showing cumulative total - only hide if truly no wins
@@ -1155,6 +1180,10 @@ export class BonusHeader {
 		// On WIN_STOP during bonus, finalize cumulative tracking and show "TOTAL WIN" for this spin
 		gameEventManager.on(GameEventType.WIN_STOP, () => {
 			if (!gameStateManager.isBonus) {
+				return;
+			}
+			if (this.showingTotalWin) {
+				console.log('[BonusHeader] WIN_STOP (bonus): duplicate TOTAL WIN update suppressed');
 				return;
 			}
 
@@ -1231,10 +1260,15 @@ export class BonusHeader {
 
 				if (isFinalSpin) {
 					const backendTotal = this.calculateBackendTotalWin(spinData);
-					if (backendTotal > 0) {
+					if (backendTotal > this.cumulativeBonusWin + 0.01) {
 						this.cumulativeBonusWin = backendTotal;
 						this.hasStartedBonusTracking = true;
 						console.log(`[BonusHeader] WIN_STOP (bonus): aligned cumulative total to backend totalWin=$${backendTotal}`);
+					} else if (backendTotal > 0) {
+						console.log(
+							`[BonusHeader] WIN_STOP (bonus): keeping frontend cumulative total=$${this.cumulativeBonusWin} ` +
+							`(backend totalWin=$${backendTotal})`
+						);
 					}
 				}
 			} catch { }

@@ -213,7 +213,7 @@ export class SymbolAnimations {
             : null;
           
           if (value !== null) {
-            idleName = `Symbol${value}_SW_Idle`;
+            idleName = `Symbol${value}_PC_idle`;
           }
         } catch { /* ignore */ }
 
@@ -273,8 +273,8 @@ export class SymbolAnimations {
       const symbolValue = (symbol as any)?.symbolValue;
       if (typeof symbolValue !== 'number') return;
       
-      const dropName = `Symbol${symbolValue}_SW_Drop`;
-      const idleName = `Symbol${symbolValue}_SW_Idle`;
+      const dropName = `Symbol${symbolValue}_PC_drop`;
+      const idleName = `Symbol${symbolValue}_PC_idle`;
       
       const hasDrop = !!(symbol as any)?.skeleton?.data?.findAnimation?.(dropName);
       if (!hasDrop) return;

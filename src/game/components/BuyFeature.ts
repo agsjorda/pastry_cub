@@ -2,6 +2,7 @@ import { Scene } from 'phaser';
 import { SlotController } from './controller/SlotController';
 import { CurrencyManager } from './CurrencyManager';
 import { ensureSpineFactory } from '../../utils/SpineGuard';
+import { formatCurrencyNumber } from '../../utils/NumberPrecisionFormatter';
 
 export interface BuyFeatureConfig {
 	position?: { x: number; y: number };
@@ -254,23 +255,17 @@ export class BuyFeature {
 					this.container.add(this.scatterSpine);
 				}
 
-				// Play continuous "idle" loop (or win loop if requested) for the scatter symbol (BZ assets)
+				// Play continuous "idle" loop (or win loop if requested) for the scatter symbol (pastry_cub: PC animations only).
 				try {
 					const symbolValue = 0;
-					const preferredIdle = `Symbol${symbolValue}_BZ_idle`;
-					const fallbackIdle = `Symbol${symbolValue}_SW_Idle`;
-					const preferredWin = `Symbol${symbolValue}_BZ_win`;
-					const fallbackWin = `Symbol${symbolValue}_SW_Win`;
+					const idleCandidates = [`Symbol${symbolValue}_PC_idle`];
+					const winCandidates = [`Symbol${symbolValue}_PC_win`];
 					const state: any = this.scatterSpine.animationState;
 					const skeleton: any = this.scatterSpine.skeleton;
 					const hasAnimation = (name: string) =>
 						!!(skeleton?.data && typeof skeleton.data.findAnimation === 'function' && skeleton.data.findAnimation(name));
-					const idleAnimationName = hasAnimation(preferredIdle)
-						? preferredIdle
-						: (hasAnimation(fallbackIdle) ? fallbackIdle : preferredIdle);
-					const winAnimationName = hasAnimation(preferredWin)
-						? preferredWin
-						: (hasAnimation(fallbackWin) ? fallbackWin : null);
+					const idleAnimationName = idleCandidates.find(hasAnimation) ?? idleCandidates[0];
+					const winAnimationName = winCandidates.find(hasAnimation) ?? null;
 					const animationName = this.scatterShouldLoopWin && winAnimationName
 						? winAnimationName
 						: idleAnimationName;
@@ -474,7 +469,7 @@ export class BuyFeature {
 	}
 
 	private formatNumberWithCommas(num: number): string {
-		return num.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+		return formatCurrencyNumber(num);
 	}
 
 	private animateIn(): void {
@@ -558,7 +553,7 @@ export class BuyFeature {
 		// Check if demo mode is active - if so, use blank currency symbol
 		const isDemoBet = (scene as any).gameAPI?.getDemoState();
 		const currencyPrefixBet = isDemoBet ? '' : CurrencyManager.getInlinePrefix();
-		this.betDisplay = scene.add.text(x, y, `${currencyPrefixBet}${this.getCurrentBet().toFixed(2)}`, {
+		this.betDisplay = scene.add.text(x, y, `${currencyPrefixBet}${formatCurrencyNumber(this.getCurrentBet())}`, {
 			fontSize: '24px',
 			color: '#00ff00', // GREEN for diagnostic
 			fontFamily: 'Arial'
@@ -646,7 +641,7 @@ export class BuyFeature {
 		if (this.betDisplay) {
 			const isDemo = (this.container?.scene as any)?.gameAPI?.getDemoState?.();
 			const currencyPrefix = isDemo ? '' : CurrencyManager.getInlinePrefix();
-			this.betDisplay.setText(`${currencyPrefix}${this.getCurrentBet().toFixed(2)}`);
+			this.betDisplay.setText(`${currencyPrefix}${formatCurrencyNumber(this.getCurrentBet())}`);
 			this.betDisplay.setColor('#00ff00');
 			this.betDisplay.setStyle({ color: '#00ff00', fontFamily: 'Arial' });
 			this.betDisplay.setBlendMode(Phaser.BlendModes.NORMAL);
@@ -706,16 +701,10 @@ export class BuyFeature {
 			!!(skeleton?.data && typeof skeleton.data.findAnimation === 'function' && skeleton.data.findAnimation(name));
 
 		const symbolValue = 0;
-		const preferredWin = `Symbol${symbolValue}_BZ_win`;
-		const fallbackWin = `Symbol${symbolValue}_SW_Win`;
-		const preferredIdle = `Symbol${symbolValue}_BZ_idle`;
-		const fallbackIdle = `Symbol${symbolValue}_SW_Idle`;
-		const winName = hasAnimation(preferredWin)
-			? preferredWin
-			: (hasAnimation(fallbackWin) ? fallbackWin : null);
-		const idleName = hasAnimation(preferredIdle)
-			? preferredIdle
-			: (hasAnimation(fallbackIdle) ? fallbackIdle : preferredIdle);
+		const preferredWin = `Symbol${symbolValue}_PC_win`;
+		const preferredIdle = `Symbol${symbolValue}_PC_idle`;
+		const winName = hasAnimation(preferredWin) ? preferredWin : null;
+		const idleName = hasAnimation(preferredIdle) ? preferredIdle : preferredIdle;
 
 		if (!winName) {
 			try { state.setAnimation(0, idleName, true); } catch {}

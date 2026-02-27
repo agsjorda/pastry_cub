@@ -186,7 +186,7 @@ export function createCurrencyDisplay(
     fontFamily: 'poppins-regular',
   }).setOrigin(0.5, 0.5);
 
-  // Amount text
+  // Amount text (local format: toLocaleString with decimals)
   const amountText = scene.add.text(0, 0, formatAmount(amount, decimals), {
     fontSize,
     color: '#ffffff',
@@ -223,7 +223,7 @@ export function createCurrencyDisplay(
 }
 
 /**
- * Format a numeric amount for display
+ * Format a numeric amount for display (local toLocaleString)
  */
 export function formatAmount(amount: number, decimals: number = 2): string {
   return amount.toLocaleString('en-US', {

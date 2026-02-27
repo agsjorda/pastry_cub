@@ -357,6 +357,8 @@ export const SHOW_BUTTON_HITBOXES: boolean = false;
 export const SHOW_HEADER_SCENEFRAME_BORDER: boolean = false;
 /** When true, draw a red debug border around the full header area (scene, frame, win bar, win text). */
 export const SHOW_HEADER_BORDER: boolean = false;
+/** When true, draw red debug borders for scatter payout section in HelpScreen (scatter image + header/grid/text). */
+export const HELPSCREEN_PAYOUT_SCATTER_DEBUG_LINE: boolean = false;
 
 // =============================================================================
 // SYMBOL DEPTH (Z-ordering)

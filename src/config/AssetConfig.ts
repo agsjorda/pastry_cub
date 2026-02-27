@@ -72,12 +72,12 @@ export class AssetConfig {
 					json: `${prefix}/conveyor/BG_ConveyorTop_PC.json`
 				},
 				'JimboyNormal_PC': {
-					atlas: `assets/characters/JimboyNormal_PC.atlas`,
-					json: `assets/characters/JimboyNormal_PC.json`
+					atlas: `assets/portrait/high/characters/JimboyNormal_PC.atlas`,
+					json: `assets/portrait/high/characters/JimboyNormal_PC.json`
 				},
 				'BG_Animals_PC': {
-					atlas: `assets/characters/BG_Animals_PC.atlas`,
-					json: `assets/characters/BG_Animals_PC.json`
+					atlas: `assets/portrait/high/characters/BG_Animals_PC.atlas`,
+					json: `assets/portrait/high/characters/BG_Animals_PC.json`
 				}
 			}
 		};
@@ -98,7 +98,6 @@ export class AssetConfig {
 				'header_logo': `${prefix}/background/HeaderLogo.png`,
 				'button_bg': `${prefix}/loading/button_bg.png`,
 				'button_spin': `${prefix}/loading/button_spin.png`,
-				'logo_loading': `${prefix}/loading/logo-loading.png`,
 				'loading_frame': `${prefix}/loading/loading-frame.png`,
 				'loading_frame_2': `${prefix}/loading/loading-frame-2.png`,
 				'dijoker_logo': `${prefix}/loading/DiJoker-logo.png`,
@@ -115,16 +114,16 @@ export class AssetConfig {
 
 	// Add more asset groups as needed
 	getSymbolAssets(): AssetGroup {
-		const prefix = this.getAssetPrefix(); // This gives us assets/{orientation}/{quality}
-		const suffix = 'PC'
-		console.log(`[AssetConfig] Loading symbol assets from: ${prefix}/symbols/`);
+		// Symbols and related bonus art live under portrait/high for pastry_cub.
+		const suffix = 'PC';
+		const pcPath = 'assets/portrait/high/symbols/';
+		console.log(`[AssetConfig] Loading symbol assets from: ${pcPath}`);
 
 		// Generate symbol assets for all symbols (0-10)
 		const symbolImages: { [key: string]: string } = {};
 		const symbolSpine: { [key: string]: { atlas: string; json: string } } = {};
 
 		// Symbol Spine: 0-7 (scatter + regular)
-		const pcPath = 'assets/symbols/high/pastry_cub_symbols';
 		for (const i of [0, 1, 2, 3, 4, 5, 6, 7]) {
 			const spineKey = `symbol_${i}_sugar_spine`;
 			symbolSpine[spineKey] = { atlas: `${pcPath}/Symbol${i}_${suffix}.atlas`, json: `${pcPath}/Symbol${i}_${suffix}.json` };
@@ -137,23 +136,18 @@ export class AssetConfig {
 			symbolImages[`symbol_${i}`] = spritePath;
 		}
 
-		// Symbol removal explosion VFX
-		symbolSpine['Explosion_BZ_VFX'] = {
-			atlas: `assets/symbols/high/pastry_cub_symbols/Explosion_BZ_VFX.atlas`,
-			json: `assets/symbols/high/pastry_cub_symbols/Explosion_BZ_VFX.json`
-		};
 		// Bonus-grid Jimboy character (separate from symbol cells)
 		symbolSpine['JimboyBonus_PC'] = {
-			atlas: `assets/characters/JimboyBonus_PC.atlas`,
-			json: `assets/characters/JimboyBonus_PC.json`
+			atlas: `assets/portrait/high/characters/JimboyBonus_PC.atlas`,
+			json: `assets/portrait/high/characters/JimboyBonus_PC.json`
 		};
-		console.log('[AssetConfig] Explosion VFX spine: Explosion_BZ_VFX');
+		console.log('[AssetConfig] Explosion VFX spine: Explosion_VFX');
 
 		// Multiplier overlays for bonus grid image tiers (1st mark->x1, 2nd->x2, ...).
-		// Files expected in: assets/symbols/high/pastry_cub_symbols/multiplier_symbols/x1.webp, x2.webp, ...
+		// Files expected in: assets/portrait/high/symbols/pastry_cub_symbols/multiplier_symbols/x1.webp, x2.webp, ...
 		BONUS_MULTIPLIER_IMAGE_BY_MARK_COUNT.forEach((mult, index) => {
 			const key = `bonus_multiplier_x${mult}`;
-			const path = `assets/symbols/high/pastry_cub_symbols/multiplier_symbols/x${mult}.webp`;
+			const path = `${pcPath}/multiplier_symbols/x${mult}.webp`;
 			symbolImages[key] = path;
 			console.log(`[AssetConfig] Bonus multiplier mark#${index + 1} -> ${mult}x: ${path}`);
 		});
@@ -234,10 +228,8 @@ export class AssetConfig {
 
 		return {
 			fonts: {
-				'poppins-thin': 'assets/fonts/poppins/Poppins-Thin.ttf',
 				'poppins-bold': 'assets/fonts/poppins/Poppins-Bold.ttf',
 				'poppins-regular': 'assets/fonts/poppins/Poppins-Regular.ttf'
-
 			}
 		};
 	}
@@ -264,12 +256,36 @@ export class AssetConfig {
 
 	getHelpScreenAssets(): AssetGroup {
 		const prefix = this.getAssetPrefix();
+		
 		return {
 			images: {
-				'helpscreen_0': `${prefix}/help_screen/helpscreen_0.webp`,
-				'helpscreen_1': `${prefix}/help_screen/helpscreen_1.webp`,
-				'helpscreen_2': `${prefix}/help_screen/helpscreen_2.webp`,
-				'helpscreen_3': `${prefix}/help_screen/helpscreen_3.webp`,
+				// Payline visuals
+				'paylineMobileWin': `${prefix}/help_screen/game_settings_content/paylineMobileWin.webp`,
+				'paylineMobileNoWin': `${prefix}/help_screen/game_settings_content/paylineMobileNoWin.webp`,
+				// Alias for existing GameSettingsContent key
+				'help_paylines': `${prefix}/help_screen/game_settings_content/paylineMobileWin.webp`,
+
+				// Scatter / Tumble / Multiplier visuals
+				'scatterGame': `${prefix}/help_screen/bonus_game_content/scatterGame.png`,
+				'tumbleWin': `${prefix}/help_screen/bonus_game_content/tumbleWin.png`,
+				'multiplierGame': `${prefix}/help_screen/bonus_game_content/multiplierGame.png`,
+
+				// How To Play || Bet controls
+				'betControlsMinus': `${prefix}/help_screen/how_to_play_content/betControls_minus.png`,
+				'betControlsPlus': `${prefix}/help_screen/how_to_play_content/betControls_plus.png`,
+
+				// How To Play || Game actions
+				'spin_button': `${prefix}/help_screen/how_to_play_content/spin_button.png`,
+				'enhanced_bet_button': `${prefix}/help_screen/how_to_play_content/enhanced_bet.png`,
+				'amplify_bet_button': `${prefix}/help_screen/how_to_play_content/enhanced_bet.png`,
+				'autoplay_button': `${prefix}/help_screen/how_to_play_content/autoplay.png`,
+				'turbo_button': `${prefix}/help_screen/how_to_play_content/turbo.png`,
+
+				// How To Play || General controls
+				'sound_icon_on': `${prefix}/help_screen/how_to_play_content/sound_icon_on.png`,
+				'sound_icon_off': `${prefix}/help_screen/how_to_play_content/sound_icon_off.png`,
+				'settings_icon': `${prefix}/help_screen/how_to_play_content/settings.png`,
+				'info_icon': `${prefix}/help_screen/how_to_play_content/info.png`,
 			}
 		};
 	}
@@ -312,10 +328,6 @@ export class AssetConfig {
 				'FreeSpin': {
 					atlas: `${prefix}/dialogs/FreeSpin_PC.atlas`,
 					json: `${prefix}/dialogs/FreeSpin_PC.json`
-				},
-				'FreeSpinRetrigger': {
-					atlas: `${prefix}/dialogs/FreeSpinRetri_BZ.atlas`,
-					json: `${prefix}/dialogs/FreeSpinRetri_BZ.json`
 				}
 			}
 		};
@@ -365,18 +377,6 @@ export class AssetConfig {
 		};
 	}
 
-	getCoinAssets(): AssetGroup {
-		const prefix = this.getAssetPrefix();
-
-		console.log(`[AssetConfig] Loading coin assets with prefix: ${prefix}`);
-
-		return {
-			images: {
-				'coin': `${prefix}/coin/coin.png`
-			}
-		};
-	}
-
 	getBuyFeatureAssets(): AssetGroup {
 		const prefix = this.getAssetPrefix();
 
@@ -400,7 +400,7 @@ export class AssetConfig {
 		return {
 			audio: {
 				// Menu/UI clicks
-				'click': 'assets/sounds/click_sw.ogg',
+				'click': 'assets/sounds/SFX/click_2.ogg',
 				//BG sounds
 				'mainbg': 'assets/sounds/BG/normalbg_PC.ogg',
 				'bonusbg': 'assets/sounds/BG/bonusbg_PC.ogg',
@@ -414,8 +414,8 @@ export class AssetConfig {
 				'scatterdrop3': 'assets/sounds/SFX/symbol_win/scatterdrop_brass_3.ogg',
 				'scatterdrop4': 'assets/sounds/SFX/symbol_win/scatterdrop_brass_4.ogg',
 				'turbodrop': 'assets/sounds/SFX/turbo_PC.ogg',
-				// Tumble bomb SFX
-				'tbomb': 'assets/sounds/SFX/tbomb_PC.ogg',
+				// Non-scatter box close SFX (played once when all regular symbol wins finish)
+				'box_close': 'assets/sounds/SFX/box_close.ogg',
 				// Radial light transition whistle SFX
 				'whistle': 'assets/sounds/SFX/whistle_BB.ogg',
 				'scatter': 'assets/sounds/SFX/scatter_PC.ogg',
@@ -449,7 +449,6 @@ export class AssetConfig {
 			fonts: this.getFontAssets(),
 			dialogs: this.getDialogAssets(),
 			numbers: this.getNumberAssets(),
-			coin: this.getCoinAssets(),
 			buyFeature: this.getBuyFeatureAssets(),
 			audio: this.getAudioAssets(),
 		};

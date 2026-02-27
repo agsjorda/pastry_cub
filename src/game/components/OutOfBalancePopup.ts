@@ -1,4 +1,5 @@
 import { Scene, GameObjects } from 'phaser';
+import { SoundEffectType } from '../../managers/AudioManager';
 
 export class OutOfBalancePopup extends GameObjects.Container {
     private background: GameObjects.Graphics;
@@ -100,8 +101,10 @@ export class OutOfBalancePopup extends GameObjects.Container {
 
         this.buttonImage.setInteractive({ useHandCursor: true });
         this.buttonImage.on('pointerdown', () => {
-            if ((window as any).audioManager) {
-                (window as any).audioManager.playSoundEffect('button_fx');
+            const audioManager =
+                (this.scene as any)?.audioManager || (window as any)?.audioManager;
+            if (audioManager && typeof audioManager.playSoundEffect === 'function') {
+                audioManager.playSoundEffect(SoundEffectType.MENU_CLICK);
             }
             this.hide();
         });

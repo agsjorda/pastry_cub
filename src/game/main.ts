@@ -131,11 +131,14 @@ const StartGame = (parent: string) => {
 			return true;
 		};
 		const onHidden = () => {
+			// When the page loses focus or becomes hidden, only mute audio.
+			// Do not pause the game loop so gameplay continues uninterrupted
+			// (e.g. when opening developer tools or switching tabs).
 			applyMuteToAllScenes(true);
-			applyPauseToGameLoop(true);
 		};
 		const onVisible = () => {
-			applyPauseToGameLoop(false);
+			// When the page becomes visible/focused again, unmute
+			// unless the user explicitly muted audio via the in-game controls.
 			if (shouldUnmute()) {
 				applyMuteToAllScenes(false);
 			}
@@ -268,6 +271,29 @@ const StartGame = (parent: string) => {
     }
 
     (window as any).phaserGame = game;
+    /** Call from browser console to open a dialog by type and optional values. Example: showDialog({ type: 'TotalWin', winAmount: 50000 }) */
+    (window as any).showDialog = (params: { type: string; winAmount?: number; freeSpins?: number; betAmount?: number; isRetrigger?: boolean; [key: string]: unknown }) => {
+        const g = (window as any).phaserGame;
+        if (!g) {
+            console.warn('showDialog: phaserGame not found');
+            return;
+        }
+        const scene = g.scene.getScene('Game');
+        if (!scene || !(scene as any).dialogs) {
+            console.warn('showDialog: Game scene or dialogs not found (ensure game has started)');
+            return;
+        }
+        const dialogs = (scene as any).dialogs;
+        const config: Record<string, unknown> = { type: params.type };
+        if (params.winAmount != null) config.winAmount = params.winAmount;
+        if (params.freeSpins != null) config.freeSpins = params.freeSpins;
+        if (params.betAmount != null) config.betAmount = params.betAmount;
+        if (params.isRetrigger != null) config.isRetrigger = params.isRetrigger;
+        Object.keys(params).forEach((k) => {
+            if (!['type', 'winAmount', 'freeSpins', 'betAmount', 'isRetrigger'].includes(k)) (config as any)[k] = (params as any)[k];
+        });
+        dialogs.showDialog(scene, config);
+    };
     const appElement = document.getElementById('root');
     if (appElement) {
         (game.scale as any).fullscreenTarget = appElement as unknown as HTMLElement;

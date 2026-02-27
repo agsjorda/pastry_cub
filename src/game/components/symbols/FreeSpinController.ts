@@ -513,6 +513,14 @@ export class FreeSpinController {
             });
             return;
           }
+          const scatterResetAnimating = !!(symbolsAny && typeof symbolsAny.isScatterResetAnimationInProgress === 'function' && symbolsAny.isScatterResetAnimationInProgress());
+          if (scatterResetAnimating) {
+            console.log('[FreeSpinController] Scatter reset/unmerge still running - waiting before scheduling next spin');
+            this.scene.time.delayedCall(100, () => {
+              this.waitForAllDialogsToCloseThenResume();
+            });
+            return;
+          }
         } catch { }
 
         const showingNow = !!(dialogs && typeof dialogs.isDialogShowing === 'function' && dialogs.isDialogShowing());

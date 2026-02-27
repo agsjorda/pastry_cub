@@ -5,12 +5,15 @@ import { gameStateManager } from "../../managers/GameStateManager";
 import { ensureSpineFactory } from "../../utils/SpineGuard";
 import { CurrencyManager } from "./CurrencyManager";
 import { startAnimation } from "../../utils/SpineAnimationHelper";
+import { formatCurrencyNumber } from "../../utils/NumberPrecisionFormatter";
+import { SoundEffectType } from "../../managers/AudioManager";
 
 export interface AutoplayOptionsConfig {
 	position?: { x: number; y: number };
 	scale?: number;
 	onClose?: () => void;
 	onConfirm?: (autoplayCount: number) => void;
+	onBetChange?: (betAmount: number) => void;
 	currentAutoplayCount?: number;
 	/**
 	 * Current base bet (without enhanced multiplier).
@@ -69,6 +72,7 @@ export class AutoplayOptions {
 	private enhanceBetIdleAnimation: any = null;
 	private onCloseCallback?: () => void;
 	private onConfirmCallback?: (autoplayCount: number) => void;
+	private onBetChangeCallback?: (betAmount: number) => void;
 
 	private getAutoplaySpinCost(): number {
 		const baseBet = this.currentBet || 0;
@@ -193,6 +197,11 @@ export class AutoplayOptions {
 		this.closeButton.setOrigin(0.5, 0.5);
 		this.closeButton.setInteractive();
 		this.closeButton.on('pointerdown', () => {
+			const audioManager =
+				(this.container?.scene as any)?.audioManager || (window as any)?.audioManager;
+			if (audioManager && typeof audioManager.playSoundEffect === 'function') {
+				audioManager.playSoundEffect(SoundEffectType.MENU_CLICK);
+			}
 			// Create slide-down animation
 			if (this.container.scene) {
 				this.container.scene.tweens.add({
@@ -318,6 +327,11 @@ export class AutoplayOptions {
 		// Make interactive
 		container.setInteractive(new Phaser.Geom.Rectangle(0, 0, width, height), Phaser.Geom.Rectangle.Contains);
 		container.on('pointerdown', () => {
+			const audioManager =
+				(this.container?.scene as any)?.audioManager || (window as any)?.audioManager;
+			if (audioManager && typeof audioManager.playSoundEffect === 'function') {
+				audioManager.playSoundEffect(SoundEffectType.MENU_CLICK);
+			}
 			this.selectButton(index, value);
 		});
 		
@@ -360,13 +374,18 @@ export class AutoplayOptions {
 		this.minusButton.setOrigin(0.5, 0.5);
 		this.minusButton.setInteractive();
 		this.minusButton.on('pointerdown', () => {
+			const audioManager =
+				(this.container?.scene as any)?.audioManager || (window as any)?.audioManager;
+			if (audioManager && typeof audioManager.playSoundEffect === 'function') {
+				audioManager.playSoundEffect(SoundEffectType.MENU_CLICK);
+			}
 			this.selectPreviousBet();
 		});
 		this.container.add(this.minusButton);
 		
 		// Bet display
 		const displayPrefix = ((scene as any).gameAPI?.getDemoState?.() ? '' : CurrencyManager.getInlinePrefix());
-		this.autoplayDisplay = scene.add.text(x, y, `${displayPrefix}${this.currentBet.toFixed(2)}` , {
+		this.autoplayDisplay = scene.add.text(x, y, `${displayPrefix}${formatCurrencyNumber(this.currentBet)}` , {
 			fontSize: '24px',
 			color: '#ffffff',
 			fontFamily: 'Poppins-Bold'
@@ -383,6 +402,11 @@ export class AutoplayOptions {
 		this.plusButton.setOrigin(0.5, 0.5);
 		this.plusButton.setInteractive();
 		this.plusButton.on('pointerdown', () => {
+			const audioManager =
+				(this.container?.scene as any)?.audioManager || (window as any)?.audioManager;
+			if (audioManager && typeof audioManager.playSoundEffect === 'function') {
+				audioManager.playSoundEffect(SoundEffectType.MENU_CLICK);
+			}
 			this.selectNextBet();
 		});
 		this.container.add(this.plusButton);
@@ -478,6 +502,11 @@ export class AutoplayOptions {
 		buttonImage.setInteractive();
 		buttonImage.on('pointerdown', () => {
 			console.log('[AutoplayOptions] START AUTOPLAY clicked');
+			const audioManager =
+				(this.container?.scene as any)?.audioManager || (window as any)?.audioManager;
+			if (audioManager && typeof audioManager.playSoundEffect === 'function') {
+				audioManager.playSoundEffect(SoundEffectType.MENU_CLICK);
+			}
 
 			// Click safety guard
 			if (!this.canStartAutoplay()) {
@@ -552,7 +581,7 @@ export class AutoplayOptions {
 			const displayBet = this.isEnhancedBet ? this.currentBet * 1.25 : this.currentBet;
 			const isDemo = (this.container?.scene as any)?.gameAPI?.getDemoState?.();
 			const prefix = isDemo ? '' : CurrencyManager.getInlinePrefix();
-			this.autoplayDisplay.setText(`${prefix}${displayBet.toFixed(2)}`);
+			this.autoplayDisplay.setText(`${prefix}${formatCurrencyNumber(displayBet)}`);
 		}
 	}
 
@@ -560,7 +589,7 @@ export class AutoplayOptions {
 		if (this.balanceAmountText) {
 			const isDemo = (this.container?.scene as any)?.gameAPI?.getDemoState?.();
 			const prefix = isDemo ? '' : CurrencyManager.getInlinePrefix();
-			this.balanceAmountText.setText(`${prefix}${this.currentBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+			this.balanceAmountText.setText(`${prefix}${formatCurrencyNumber(this.currentBalance)}`);
 		}
 	}
 
@@ -615,6 +644,12 @@ export class AutoplayOptions {
 		this.updateAutoplayDisplay();
 		this.updateStartAutoplayButtonState();
 		this.updateBetLimitButtons();
+		// Keep external bet (controller) in sync while adjusting inside autoplay
+		if (this.onBetChangeCallback) {
+			try {
+				this.onBetChangeCallback(this.currentBet);
+			} catch { /* ignore callback errors */ }
+		}
 	}
 
 	private selectPreviousBet(): void {
@@ -655,6 +690,7 @@ export class AutoplayOptions {
 			}
 			this.onCloseCallback = config.onClose;
 			this.onConfirmCallback = config.onConfirm;
+			this.onBetChangeCallback = config.onBetChange;
 		}
 		
 		// Update the balance display with current balance

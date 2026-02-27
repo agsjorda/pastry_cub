@@ -18,6 +18,7 @@ import {
   OVERLAY_FADE_OUT_DURATION_MS,
 } from '../../../config/GameConfig';
 import { CurrencyManager } from '../CurrencyManager';
+import { formatCurrencyNumber } from '../../../utils/NumberPrecisionFormatter';
 
 /**
  * Manages overlay graphics and win text for the symbol grid
@@ -239,11 +240,7 @@ export class SymbolOverlay {
     // Format the amount
     let textValue: string;
     try {
-      if (Number.isInteger(amount)) {
-        textValue = `${currencyPrefix}${amount}`;
-      } else {
-        textValue = `${currencyPrefix}${Number(amount).toFixed(2)}`;
-      }
+      textValue = `${currencyPrefix}${formatCurrencyNumber(amount)}`;
     } catch {
       textValue = `${currencyPrefix}${amount}`;
     }

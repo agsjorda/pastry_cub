@@ -1,0 +1,12 @@
+Symbol0_PC.webp
+size:192,192
+filter:Linear,Linear
+pma:false
+Envelop
+bounds:2,100,89,88
+offsets:1,1,91,90
+Letter
+bounds:2,14,84,84
+offsets:1,1,86,86
+Scatter
+bounds:88,57,100,41

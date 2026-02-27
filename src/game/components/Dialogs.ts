@@ -7,13 +7,14 @@ import { NumberDisplay, NumberDisplayConfig } from './NumberDisplay';
 import { RadialLightTransition } from './RadialLightTransition';
 import { gameStateManager } from '../../managers/GameStateManager';
 import { gameEventManager, GameEventType } from '../../event/EventManager';
+import { EventBus } from '../EventBus';
 import { UI_CONFIG, WIN_THRESHOLDS, TIMING_CONFIG } from '../../config/GameConfig';
 import { Logger } from '../../utils/Logger';
 import { queueAnimation, startAnimation } from '../../utils/SpineAnimationHelper';
 import { CurrencyManager } from './CurrencyManager';
 
 export interface DialogConfig {
-	type: 'Congrats' | 'FreeSpin' | 'FreeSpinRetrigger' | 'BigWin' | 'MegaWin' | 'EpicWin' | 'SuperWin' | 'TotalWin';
+	type: 'Congrats' | 'FreeSpin' | 'FreeSpinRetrigger' | 'BigWin' | 'MegaWin' | 'EpicWin' | 'SuperWin' | 'MaxWin' | 'TotalWin';
 	position?: { x: number; y: number };
 	scale?: number;
 	// Non-uniform scale/offsets are intended for TotalWin only.
@@ -110,6 +111,7 @@ export class Dialogs {
 		'MegaWin': 1,
 		'EpicWin': 1,
 		'SuperWin': 1,
+		'MaxWin': 1,
 		'TotalWin': 1
 	};
 
@@ -121,6 +123,7 @@ export class Dialogs {
 		'MegaWin': { x: 0.5, y: 0.4 },
 		'EpicWin': { x: 0.5, y: 0.4 },
 		'SuperWin': { x: 0.5, y: 0.4 },
+		'MaxWin': { x: 0.5, y: 0.5 },
 		'TotalWin': { x: 0.5, y: 0.4 }
 	};
 
@@ -132,6 +135,7 @@ export class Dialogs {
 		'MegaWin': -70,
 		'EpicWin': -70,
 		'SuperWin': -70,
+		'MaxWin': -70,
 		'TotalWin': 150
 	};
 
@@ -142,6 +146,7 @@ export class Dialogs {
 		'MegaWin': true,
 		'EpicWin': true,
 		'SuperWin': true,
+		'MaxWin': true,
 		'TotalWin': true
 	};
 
@@ -247,8 +252,8 @@ export class Dialogs {
 			console.log('[Dialogs] FreeSpinDialog retrigger state:', this.isRetriggerFreeSpin);
 		}
 
-		// If congrats dialog is appearing, suppress the SlotController's spins-left display
-		if (normalizedConfig.type === 'Congrats' || normalizedConfig.type === 'TotalWin') {
+		// If congrats / total-win / max-win dialog is appearing, suppress the SlotController's spins-left display
+		if (normalizedConfig.type === 'Congrats' || normalizedConfig.type === 'TotalWin' || normalizedConfig.type === 'MaxWin') {
 			try {
 				const gameSceneAny = scene as any;
 				const slotController = gameSceneAny?.slotController;
@@ -371,9 +376,18 @@ export class Dialogs {
 				ease: 'Power2',
 				delay: contentDelay,
 				onComplete: () => {
-					console.log('[Dialogs] Dialog content fade-in complete');
+					try {
+						EventBus.emit('dialogFullyDisplayed', this.currentDialogType);
+					} catch (e) {
+						console.warn('[Dialogs] EventBus.emit dialogFullyDisplayed failed', e);
+					}
+					try {
+						scene.events.emit('dialogFullyDisplayed', this.currentDialogType);
+					} catch { }
 				}
 			});
+		} else {
+			console.warn('[Dialogs] No currentDialog for fade-in — dialogFullyDisplayed will not be emitted');
 		}
 
 		// Create number display(s) if win amount or free spins are provided
@@ -436,32 +450,8 @@ export class Dialogs {
 	 */
 	private normalizeDialogType(type: string): DialogConfig['type'] {
 		const normalizedMap: Record<string, DialogConfig['type']> = {
-			SmallW_KA: 'BigWin',
-			MediumW_KA: 'MegaWin',
-			LargeW_KA: 'EpicWin',
-			SuperW_KA: 'SuperWin',
-			BigW_BZ: 'BigWin',
-			MegaW_BZ: 'MegaWin',
-			EpicW_BZ: 'EpicWin',
-			SuperW_BZ: 'SuperWin',
-			Congrats_KA: 'Congrats',
-			Congrats_BZ: 'Congrats',
-			FreeSpin_KA: 'FreeSpin',
-			FreeSpin_BZ: 'FreeSpin',
-			FreeSpinRetri_BZ: 'FreeSpinRetrigger',
-			TotalW_BZ: 'TotalWin',
-			congrats_bz: 'Congrats',
-			freespin_bz: 'FreeSpin',
-			freespinretri_bz: 'FreeSpinRetrigger',
-			totalw_bz: 'TotalWin',
-			smallW_KA: 'BigWin',
-			mediumW_KA: 'MegaWin',
-			largeW_KA: 'EpicWin',
-			superW_KA: 'SuperWin',
-			bigw_bz: 'BigWin',
-			megaw_bz: 'MegaWin',
-			epicw_bz: 'EpicWin',
-			superw_bz: 'SuperWin'
+			MaxW_PC: 'MaxWin',
+			maxw_pc: 'MaxWin'
 		};
 
 		return normalizedMap[type] || (type as DialogConfig['type']);
@@ -473,14 +463,15 @@ export class Dialogs {
 	 */
 	private getDialogAnimationCandidates(dialogType: string): string[] {
 		const legacyMap: Record<string, string[]> = {
-			BigWin: ['BigW_PC', 'BigW_BZ'],
-			MegaWin: ['MegaW_PC', 'MegaW_BZ'],
-			EpicWin: ['EpicW_PC', 'EpicW_BZ'],
-			SuperWin: ['SuperW_PC', 'SuperW_BZ'],
-			FreeSpin: ['FreeSpin_BZ'],
-			FreeSpinRetrigger: ['FreeSpinRetri_BZ'],
-			TotalWin: ['TotalW_BZ'],
-			Congrats: ['Congrats_BZ', 'Congrats']
+			BigWin: ['BigW_PC'],
+			MegaWin: ['MegaW_PC'],
+			EpicWin: ['EpicW_PC'],
+			SuperWin: ['SuperW_PC'],
+			MaxWin: ['MaxW_PC'],
+			FreeSpin: ['FreeSpin_PC'],
+			FreeSpinRetrigger: ['FreeSpin_PC'],
+			TotalWin: [],
+			Congrats: ['Congrats_PC']
 		};
 
 		const bases = [dialogType, ...(legacyMap[dialogType] || [])];
@@ -596,7 +587,19 @@ export class Dialogs {
 			this.currentDialogAssetType = renderType as DialogConfig['type'];
 			this.currentDialog.setOrigin(0.5, 0.5);
 
-			if (isTotalWinDialog) {
+			// MaxWin: scale to fill full screen (cover aspect ratio)
+			if (renderType === 'MaxWin') {
+				const rawWidth = this.currentDialog.width || 1;
+				const rawHeight = this.currentDialog.height || 1;
+				const fitScaleX = scene.scale.width / rawWidth;
+				const fitScaleY = scene.scale.height / rawHeight;
+				const fillScale = Math.max(
+					isFinite(fitScaleX) && fitScaleX > 0 ? fitScaleX : 1,
+					isFinite(fitScaleY) && fitScaleY > 0 ? fitScaleY : 1
+				);
+				scaleX = fillScale;
+				scaleY = fillScale;
+			} else if (isTotalWinDialog) {
 				const shouldClamp = config.scale === undefined && config.scaleX === undefined && config.scaleY === undefined && !scaleOverride;
 				if (shouldClamp) {
 					const rawWidth = this.currentDialog.width || 1;
@@ -674,6 +677,12 @@ export class Dialogs {
 		if (this.autoCloseTimer) {
 			this.autoCloseTimer.destroy();
 			this.autoCloseTimer = null;
+		}
+
+		// MaxWin dialog never auto-closes (user must dismiss).
+		if (this.currentDialogType === 'MaxWin') {
+			console.log('[Dialogs] MaxWin dialog - auto-close disabled');
+			return;
 		}
 
 		// If caller explicitly requested auto-close, apply it for any dialog type.
@@ -867,10 +876,11 @@ export class Dialogs {
 			offsetY: this.getNumberDisplayOffsetY(this.currentDialogType),
 			decimalPlaces: freeSpins !== undefined ? 0 : 2, // No decimals for free spins
 			showCommas: freeSpins === undefined, // No commas for free spins
-			// For Congrats dialog totals, show a currency prefix.
-			// Other dialogs remain unchanged.
-			prefix: isTotalWinDialog ? (isDemo ? '' : CurrencyManager.getInlinePrefix()) : '',
-			suffix: '' // No suffix - only display numbers
+			// NumberDisplay only has sprite textures for 0-9, comma, dot. Do not use
+			// a currency prefix (e.g. "USD ") here or you get "Missing texture for character" for U, S, D, space.
+			// For Congrats/TotalWin, show currency elsewhere (e.g. art or a separate text) if needed.
+			prefix: '',
+			suffix: ''
 		});
 
 		// Create the number display (primary win amount / free spins, depending on dialog)
@@ -960,6 +970,7 @@ export class Dialogs {
 			prefix?: string;
 			suffix?: string;
 			scale?: number;
+			formatValue?: (value: number) => string;
 		}
 	): NumberDisplayConfig {
 		return {
@@ -974,7 +985,8 @@ export class Dialogs {
 			prefix: opts.prefix ?? '',
 			suffix: opts.suffix ?? '',
 			commaYOffset: 12,
-			dotYOffset: 10
+			dotYOffset: 10,
+			formatValue: opts.formatValue
 		};
 	}
 
@@ -1023,7 +1035,7 @@ export class Dialogs {
 	 * Helper: determine if a type is one of the win dialogs.
 	 */
 	private isWinDialogType(type: string): boolean {
-		return type === 'BigWin' || type === 'MegaWin' || type === 'EpicWin' || type === 'SuperWin';
+		return type === 'BigWin' || type === 'MegaWin' || type === 'EpicWin' || type === 'SuperWin' || type === 'MaxWin';
 	}
 
 	private isTotalWinDialogType(type: string): boolean {
@@ -1245,9 +1257,6 @@ export class Dialogs {
 
 		// Set dialog as inactive immediately
 		this.isDialogActive = false;
-		console.log('[Dialogs] Dialog marked as inactive');
-
-		console.log('[Dialogs] All win dialog elements disabled successfully');
 	}
 
 	private hideBlackOverlay(): void {
@@ -1327,12 +1336,13 @@ export class Dialogs {
 						console.log('[Dialogs] Free spin dialog clicked!');
 						this.handleDialogClick(scene);
 					});
-					console.log('[Dialogs] Click handler enabled for free spin dialog');
 				}
+				try {
+					EventBus.emit('freeSpinDialogReady', this.currentDialogType);
+				} catch { }
 			});
 		}
 
-		console.log('[Dialogs] Click handler created for dialog');
 	}
 
 
@@ -1406,7 +1416,8 @@ export class Dialogs {
 		return this.currentDialogType === 'BigWin' ||
 			this.currentDialogType === 'MegaWin' ||
 			this.currentDialogType === 'EpicWin' ||
-			this.currentDialogType === 'SuperWin';
+			this.currentDialogType === 'SuperWin' ||
+			this.currentDialogType === 'MaxWin';
 	}
 
 	private fadeInDialogDimmer(scene: Scene): void {
@@ -2057,6 +2068,17 @@ export class Dialogs {
 	}
 
 	/**
+	 * Check if radial light transition is currently animating.
+	 */
+	public isRadialLightTransitionInProgress(): boolean {
+		try {
+			return !!(this.radialLightTransition && this.radialLightTransition.isRunning());
+		} catch {
+			return false;
+		}
+	}
+
+	/**
 	 * Get the current dialog type
 	 */
 	getCurrentDialogType(): string | null {
@@ -2398,7 +2420,7 @@ export class Dialogs {
 			// If we're in autoplay and the original auto-close timer was cleared due to a manual
 			// skip, ensure the final staged tier still auto-closes after a sensible dwell.
 			try {
-				if (!this.autoCloseTimer && this.isWinDialog()) {
+				if (!this.autoCloseTimer && this.isWinDialog() && this.currentDialogType !== 'MaxWin') {
 					// Detect free spin autoplay (bonus autoplay) via Symbols component on the scene
 					let isFreeSpinAutoplay = false;
 					try {
@@ -2659,6 +2681,10 @@ export class Dialogs {
 
 	showSuperWin(scene: Scene, config?: Partial<DialogConfig>): void {
 		this.showDialog(scene, { type: 'SuperWin', ...config });
+	}
+
+	showMaxWin(scene: Scene, config?: Partial<DialogConfig>): void {
+		this.showDialog(scene, { type: 'MaxWin', ...config });
 	}
 
 	/**

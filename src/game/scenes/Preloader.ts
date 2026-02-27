@@ -126,7 +126,6 @@ export class Preloader extends Scene
 		this.assetLoader.loadScatterAnticipationAssets(this);
 		this.assetLoader.loadBonusBackgroundAssets(this);
 		this.assetLoader.loadNumberAssets(this);
-		this.assetLoader.loadCoinAssets(this);
 		this.assetLoader.loadBuyFeatureAssets(this);
 		this.assetLoader.loadMenuAssets(this);
 		this.assetLoader.loadHelpScreenAssets(this);
@@ -223,7 +222,7 @@ export class Preloader extends Scene
             this.buttonBg.setAlpha(1);
         }
 
-		// Start game on click – use radial dimmer transition (from beelze_bop) then start Game
+		// Start game on click – use radial dimmer transition then start Game
         this.buttonSpin?.once('pointerdown', () => {
             playRadialDimmerTransition(this, () => {
                 console.log('[Preloader] Starting Game scene after radial dimmer');

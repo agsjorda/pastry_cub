@@ -14,13 +14,13 @@ import { SoundEffectType } from '../../../managers/AudioManager';
 import { LoadingSpinner } from '../LoadingSpinner';
 import { ensureSpineFactory } from '../../../utils/SpineGuard';
 import { startAnimation, startAnimationWithEntry } from '../../../utils/SpineAnimationHelper';
-import { getOutWin } from '../Spin';
 import { AmplifyBetController } from './AmplifyBetController';
 import { TurboButtonController } from './TurboButtonController';
 import { MenuButtonController } from './MenuButtonController';
 import { BuyFeatureController } from './BuyFeatureController';
 import { BalanceController } from './BalanceController';
 import { CurrencyManager } from '../CurrencyManager';
+import { formatCurrencyNumber } from '../../../utils/NumberPrecisionFormatter';
 import { 
 	BetController, 
 	AutoplayController, 
@@ -139,6 +139,8 @@ export class SlotController {
 	private pendingWinLock: boolean = false;
 	// Guard so bonus total is credited once when TotalWin appears
 	private hasFinalizedBonusBalanceForCurrentRound: boolean = false;
+	// Set when TotalWin is shown; consumed when that dialog fully closes.
+	private pendingTotalWinBalanceFinalize: boolean = false;
 
 	// Debug: visualize button hitboxes (red outlines); default from GameConfig.SHOW_BUTTON_HITBOXES
 	private showButtonHitboxes: boolean = SHOW_BUTTON_HITBOXES;
@@ -1444,6 +1446,11 @@ export class SlotController {
 		autoplayButton.setInteractive();
 		autoplayButton.on('pointerdown', () => {
 			console.log('[SlotController] Autoplay button clicked');
+			const audioManager =
+				(this.scene as any)?.audioManager || (window as any)?.audioManager;
+			if (audioManager && typeof audioManager.playSoundEffect === 'function') {
+				audioManager.playSoundEffect(SoundEffectType.MENU_CLICK);
+			}
 			this.handleAutoplayButtonClick();
 		});
 		this.buttons.set('autoplay', autoplayButton);
@@ -1574,6 +1581,11 @@ export class SlotController {
 		this.betAmountText.setInteractive();
 		this.betAmountText.on('pointerdown', () => {
 			console.log('[SlotController] Bet amount clicked');
+			const audioManager =
+				(this.scene as any)?.audioManager || (window as any)?.audioManager;
+			if (audioManager && typeof audioManager.playSoundEffect === 'function') {
+				audioManager.playSoundEffect(SoundEffectType.MENU_CLICK);
+			}
 
 			// Prevent opening bet options while reels are spinning or autoplay is active
 			if (gameStateManager.isReelSpinning || gameStateManager.isAutoPlaying) {
@@ -1621,6 +1633,10 @@ export class SlotController {
 		decreaseBetButton.setInteractive();
 		decreaseBetButton.on('pointerdown', () => {
 			console.log('[SlotController] Decrease bet button clicked');
+			const audioManager = (this.scene as any)?.audioManager || (window as any)?.audioManager;
+			if (audioManager && typeof audioManager.playSoundEffect === 'function') {
+				audioManager.playSoundEffect(SoundEffectType.MENU_CLICK);
+			}
 			this.adjustBetByStep(-1);
 		});
 		this.buttons.set('decrease_bet', decreaseBetButton);
@@ -1635,6 +1651,10 @@ export class SlotController {
 		increaseBetButton.setInteractive();
 		increaseBetButton.on('pointerdown', () => {
 			console.log('[SlotController] Increase bet button clicked');
+			const audioManager = (this.scene as any)?.audioManager || (window as any)?.audioManager;
+			if (audioManager && typeof audioManager.playSoundEffect === 'function') {
+				audioManager.playSoundEffect(SoundEffectType.MENU_CLICK);
+			}
 			this.adjustBetByStep(1);
 		});
 		this.buttons.set('increase_bet', increaseBetButton);
@@ -1699,7 +1719,7 @@ export class SlotController {
 		this.buttons.set('feature', featureButton);
 		this.controllerContainer.add(featureButton);
 
-		// Interactable area (slightly smaller than the visual) as an invisible rectangle (shuten_doji approach)
+		// Interactable area (slightly smaller than the visual) as an invisible rectangle
 		const baseWidth = featureButton.displayWidth;
 		const baseHeight = featureButton.displayHeight;
 		const hitbox = scene.add.rectangle(
@@ -1961,12 +1981,16 @@ export class SlotController {
 		try {
 			this.updateBetAmount(betAmount);
 
+			// Also update the underlying base bet so future openings of the
+			// autoplay popup (and API/base-bet consumers) use this value.
+			this.baseBetAmount = betAmount;
+
 			// If enhance/amplify bet is currently ON, keep the displayed bet at +25%
 			// while the underlying base bet (used for API and Buy Feature price) is betAmount.
 			const gameData = this.getGameData();
 			if (gameData && gameData.isEnhancedBet && this.betAmountText) {
 				const increasedBet = betAmount * 1.25;
-				this.betAmountText.setText(increasedBet.toFixed(2));
+				this.betAmountText.setText(formatCurrencyNumber(increasedBet));
 			}
 		} finally {
 			this.isInternalBetChange = false;
@@ -1979,7 +2003,7 @@ export class SlotController {
 		const isEnhanced = !!gameData?.isEnhancedBet;
 		const displayBet = isEnhanced ? betAmount * 1.25 : betAmount;
 		if (this.betAmountText) {
-			this.betAmountText.setText(displayBet.toFixed(2));
+			this.betAmountText.setText(formatCurrencyNumber(displayBet));
 		}
 
 		// Update base bet amount when changed externally (not by amplify bet)
@@ -2251,7 +2275,9 @@ export class SlotController {
 			
 			// Update balance from server every time reels stop (skip during scatter/bonus)
 			if (!gameStateManager.isScatter && !gameStateManager.isBonus) {
-				if (this.balanceController?.hasPendingBalanceUpdate()) {
+				if (this.shouldDeferBalanceSyncToTotalWinDialog()) {
+					console.log('[SlotController] Skipping REELS_STOP balance sync (buy feature/TotalWin flow active)');
+				} else if (this.balanceController?.hasPendingBalanceUpdate()) {
 					console.log('[SlotController] Deferring REELS_STOP balance update (pending winnings will apply on WIN_STOP)');
 				} else {
 					this.updateBalanceFromServer();
@@ -2575,7 +2601,9 @@ export class SlotController {
 
 			// Finalize base-spin balance only after WIN_STOP (post-tumbles).
 			if (!gameStateManager.isScatter && !gameStateManager.isBonus) {
-				if (this.balanceController?.hasPendingBalanceUpdate()) {
+				if (this.shouldDeferBalanceSyncToTotalWinDialog()) {
+					console.log('[SlotController] Skipping WIN_STOP base balance finalization (buy feature/TotalWin flow active)');
+				} else if (this.balanceController?.hasPendingBalanceUpdate()) {
 					this.balanceController.applyPendingBalanceUpdateIfAny();
 				} else {
 					try {
@@ -2593,6 +2621,13 @@ export class SlotController {
 			// If scatter bonus is in progress or bonus mode is active, keep buttons disabled
 			if (gameStateManager.isScatter || gameStateManager.isBonus) {
 				console.log('[SlotController] Scatter/Bonus in progress - skipping UI re-enable in WIN_STOP');
+				return;
+			}
+
+			// If free-round mode is active, don't re-enable buttons (only turbo and menu stay enabled)
+			const gsmWinStop: any = gameStateManager as any;
+			if (gsmWinStop.isInFreeSpinRound === true) {
+				console.log('[SlotController] Free-round mode active - skipping UI re-enable in WIN_STOP');
 				return;
 			}
 			
@@ -2718,11 +2753,19 @@ export class SlotController {
 		this.setAutoplayButtonState(false);
 		this.disableAutoplayButton();
 		this.hideAutoplaySpinsRemainingText();
+		// Stop the underlying autoplay controller without emitting AUTO_STOP
+		// (we will emit AUTO_STOP ourselves below after state is fully synced).
 		this.autoplayController?.stopAutoplay(false);
 		this.isFreeRoundAutoplay = false;
 		this.shouldReenableSpinButtonAfterFirstAutoplay = false;
 
 		console.log('[SlotController] After stopAutoplay - isAutoPlaying:', gameStateManager.isAutoPlaying, 'isReelSpinning:', gameStateManager.isReelSpinning);
+		
+		// Emit AUTO_STOP so UI listeners (including this controller) can re-enable
+		// appropriate buttons even if WIN_STOP already fired earlier in the spin.
+		try {
+			gameEventManager.emit(GameEventType.AUTO_STOP);
+		} catch { /* avoid breaking stop flow on emit issues */ }
 		
 		// Update UI
 		// Show and resume spin icon after autoplay stops, hide stop icon
@@ -2754,6 +2797,27 @@ export class SlotController {
 			}
 			this.updateAutoplayButtonState();
 			console.log('[SlotController] Autoplay stopped - controls re-enabled (autoplay button stays disabled until TUMBLE_SEQUENCE_DONE)');
+		} else {
+			// Safety: if the final spin had no tumbles or missed the TUMBLE_SEQUENCE_DONE path,
+			// ensure controls are re-enabled shortly after reels fully stop.
+			this.scene?.time.delayedCall(300, () => {
+				if (gameStateManager.isReelSpinning) return;
+				if (gameStateManager.isScatter || gameStateManager.isBonus) return;
+				this.updateSpinButtonState();
+				if (!this.isBuyFeatureControlsLocked()) {
+					this.enableBetButtons();
+					this.enableAmplifyButton();
+					this.enableBetBackgroundInteraction('after stopAutoplay (safety)');
+				}
+				if (!this.canEnableFeatureButton || gameStateManager.isBonus) {
+					// Keep feature disabled during bonus or when explicitly disallowed
+				} else {
+					this.enableFeatureButton();
+				}
+				this.updateAutoplayButtonState();
+				this.updateTurboButtonStateWithLock();
+				console.log('[SlotController] Safety re-enable after stopAutoplay - controls restored after reels stopped');
+			});
 		}
 	}
 
@@ -2899,7 +2963,7 @@ export class SlotController {
 		
 		// Only update the display, keep baseBetAmount unchanged for API calls
 		if (this.betAmountText) {
-			this.betAmountText.setText(increasedBet.toFixed(2));
+			this.betAmountText.setText(formatCurrencyNumber(increasedBet));
 		}
 		
 		// Even though base bet doesn't change, price uses base bet x100
@@ -2914,7 +2978,7 @@ export class SlotController {
 	private restoreOriginalBetAmount(): void {
 		// Restore display to base bet amount
 		if (this.betAmountText) {
-			this.betAmountText.setText(this.baseBetAmount.toFixed(2));
+			this.betAmountText.setText(formatCurrencyNumber(this.baseBetAmount));
 		}
 		
 		// Keep Buy Feature price in sync
@@ -3336,13 +3400,11 @@ export class SlotController {
 				}
 			} catch {}
 
-			// Strict fake-data behavior: if we can't area-match, do NOT fall back to any
-			// other derivation (first positive / next item / fs.count). Those fallbacks can
-			// produce unexpected jumps (e.g. showing 12 on retrigger).
-			console.warn('[SlotController] Fake-data mode: failed to area-match freeSpin.items for spinsLeft; returning 0', {
-				hasItems: Array.isArray(items) && items.length > 0,
-				area: (spinData as any)?.slot?.area
-			});
+			// No area match (e.g. trigger spin: slot.area has scatters, items[0].area is first free spin result).
+			// Use first item's spinsLeft as initial count so display shows correct remaining.
+			if (items.length > 0 && typeof items[0]?.spinsLeft === 'number') {
+				return items[0].spinsLeft;
+			}
 			return 0;
 		}
 
@@ -3426,9 +3488,30 @@ export class SlotController {
 		return false;
 	}
 
+	/**
+	 * During buy-feature free spins, balance must only be finalized on TotalWin close.
+	 * This blocks intermediate REELS_STOP/WIN_STOP balance syncs.
+	 */
+	private shouldDeferBalanceSyncToTotalWinDialog(): boolean {
+		const buyFeatureSpinLocked = !!this.buyFeatureController?.isSpinLocked?.();
+		return (
+			buyFeatureSpinLocked ||
+			this.isBuyFeatureFreeSpinsActive ||
+			this.pendingTotalWinBalanceFinalize ||
+			!!gameStateManager.isBuyFeatureSpin
+		);
+	}
+
 	private getBaseSpinWinForBalance(spinData: SpinData): number {
 		try {
 			const slotAny: any = spinData?.slot;
+			const fs = slotAny?.freespin || slotAny?.freeSpin;
+			const fsCount = Number(fs?.count ?? 0);
+			const hasFreeSpinItems = Array.isArray(fs?.items) && fs.items.length > 0;
+			// If this spin carries free-spin payload, defer all win credit to TotalWin.
+			if (hasFreeSpinItems || (Number.isFinite(fsCount) && fsCount > 0) || SpinDataUtils.hasFreeSpins(spinData)) {
+				return 0;
+			}
 			const slotTotalWin = Number(slotAny?.totalWin ?? 0);
 			if (Number.isFinite(slotTotalWin) && slotTotalWin > 0) {
 				return slotTotalWin;
@@ -3446,7 +3529,7 @@ export class SlotController {
 						? (tumble as any).symbols.out
 						: [];
 					for (const out of outsArr) {
-						const ow = getOutWin(out as any);
+						const ow = Number(out?.win ?? 0);
 						total += Number.isFinite(ow) ? ow : 0;
 					}
 				}
@@ -3703,6 +3786,7 @@ export class SlotController {
 			if (isBonus) {
 				console.log('[SlotController] Bonus mode activated - hiding primary controller');
 				this.hasFinalizedBonusBalanceForCurrentRound = false;
+				this.pendingTotalWinBalanceFinalize = false;
 				this.balanceController?.clearPendingBalanceUpdate();
 				this.hidePrimaryController();
 				// Always keep the buy feature disabled during bonus mode
@@ -3715,18 +3799,22 @@ export class SlotController {
 				}
 			} else {
 				console.log('[SlotController] Bonus mode deactivated - showing primary controller');
-				this.hasFinalizedBonusBalanceForCurrentRound = false;
+				// Do not clear TotalWin finalization flags here.
+				// For end-of-free-spin flow, Dialogs emits setBonusMode(false) before
+				// dialogAnimationsComplete, and clearing these flags here can skip
+				// the final bonus credit to balance.
 				this.showPrimaryController();
-				// Clear buy feature free spins flag when bonus ends
+				// Clear buy feature free spins flag when bonus ends and release buy-feature locks.
+				// Do NOT gate on gameStateManager.isBonusFinished: Game clears this flag early in setBonusMode(false),
+				// which can leave controller buttons permanently disabled after the final free spin.
+				const hadBuyFeatureLock =
+					(this.buyFeatureController?.isSpinLocked?.() ?? false) || this.isBuyFeatureFreeSpinsActive;
 				this.isBuyFeatureFreeSpinsActive = false;
-				// Only release buy feature spin lock if bonus has actually finished
-				if (gameStateManager.isBonusFinished) {
-					console.log('[SlotController] Bonus finished - releasing buy feature spin lock');
+				if (hadBuyFeatureLock) {
+					console.log('[SlotController] Bonus ended - releasing buy feature spin lock');
 					this.buyFeatureController.setSpinLock(false);
 					// Re-enable all auxiliary buttons now that buy feature sequence is complete
 					this.updateAllAuxiliaryButtonStates();
-				} else {
-					console.log('[SlotController] Bonus ended but may retrigger - keeping spin locked');
 				}
 				// Clear any pending free spins data when bonus mode ends
 				if (this.pendingFreeSpinsData) {
@@ -3830,14 +3918,11 @@ export class SlotController {
 			console.log('[SlotController] Dialog animations completed - checking if free spin display should be shown');
 			console.log('[SlotController] Current pendingFreeSpinsData:', this.pendingFreeSpinsData);
 			const isFake = !!this.gameAPI?.isFakeDataEnabled?.();
-			const shouldShowFreeSpins = gameStateManager.isBonus || !!this.pendingFreeSpinsData;
-			if (!shouldShowFreeSpins) {
-				// Ensure free spin UI never appears in normal mode.
-				this.hideFreeSpinDisplay();
-				this.freeSpinDisplayOverride = null;
-				this.shouldSubtractOneFromServerFsDisplay = false;
-				this.uiFsDecrementApplied = false;
-				return;
+
+			// Finalize bonus balance only after TotalWin has been closed by the player.
+			if (this.pendingTotalWinBalanceFinalize) {
+				this.pendingTotalWinBalanceFinalize = false;
+				this.finalizeBonusBalanceAfterTotalWinDialog();
 			}
 
 			// Fake-data mode: free spin remaining display must come only from the current SpinData item's spinsLeft.
@@ -4144,15 +4229,13 @@ export class SlotController {
 		this.scene.events.on('dialogShown', (dialogType: string) => {
 			console.log(`[SlotController] Dialog shown: ${dialogType}, isBuyFeatureFreeSpinsActive: ${this.isBuyFeatureFreeSpinsActive}`);
 			if (dialogType === 'TotalWin') {
-				this.finalizeBonusBalanceAfterTotalWinDialog();
+				this.pendingTotalWinBalanceFinalize = true;
 			}
 			
 			// If the TotalWin dialog is shown at the end of bonus, release buy-feature locks
 			// and re-evaluate control states so buttons are not left disabled.
 			if (dialogType === 'TotalWin' && (this.isBuyFeatureFreeSpinsActive || this.buyFeatureController?.isSpinLocked?.())) {
-				if (gameStateManager.isBonusFinished) {
-					this.buyFeatureController?.setSpinLock(false);
-				}
+				this.buyFeatureController?.setSpinLock(false);
 				this.isBuyFeatureFreeSpinsActive = false;
 				this.updateBetButtonsStateWithLock();
 				this.updateAutoplayButtonStateWithLock();
@@ -4163,40 +4246,72 @@ export class SlotController {
 		});
 	}
 
-	private finalizeBonusBalanceAfterTotalWinDialog(): void {
+	private async finalizeBonusBalanceAfterTotalWinDialog(): Promise<void> {
 		if (this.hasFinalizedBonusBalanceForCurrentRound) {
 			console.log('[SlotController] TotalWin balance finalization already performed for this bonus round');
 			return;
 		}
-		this.hasFinalizedBonusBalanceForCurrentRound = true;
 
 		try {
+			const bonusTotal = this.getFinalBonusTotalForBalance();
+			if (!(bonusTotal > 0)) {
+				console.log('[SlotController] TotalWin bonus total is 0 - no balance credit applied');
+				return;
+			}
+			this.hasFinalizedBonusBalanceForCurrentRound = true;
+
 			if (this.gameAPI?.getDemoState?.()) {
-				const bonusTotal = this.getFinalBonusTotalForBalance();
-				if (bonusTotal > 0) {
-					const oldBalance = this.getBalanceAmount();
-					const newBalance = oldBalance + bonusTotal;
-					this.updateBalanceAmount(newBalance);
-					this.gameAPI?.updateDemoBalance(newBalance);
-					console.log(`[SlotController] Demo bonus total credited on TotalWin: +$${bonusTotal} (${oldBalance} -> ${newBalance})`);
-				} else {
-					console.log('[SlotController] Demo bonus total on TotalWin is 0 - no balance credit applied');
-				}
+				const oldBalance = this.getBalanceAmount();
+				const newBalance = oldBalance + bonusTotal;
+				this.updateBalanceAmount(newBalance);
+				this.gameAPI?.updateDemoBalance(newBalance);
+				console.log(`[SlotController] Demo bonus total credited on TotalWin: +$${bonusTotal} (${oldBalance} -> ${newBalance})`);
 				return;
 			}
 
-			this.updateBalanceFromServer();
+			// Free spins are simulated client-side; server balance may not include this total yet.
+			// Sync from server first, then top up locally if the expected bonus credit is still missing.
+			const beforeSyncBalance = this.getBalanceAmount();
+			const expectedAfterBonus = beforeSyncBalance + bonusTotal;
+			await this.updateBalanceFromServer();
+			const afterSyncBalance = this.getBalanceAmount();
+
+			if (afterSyncBalance + 0.01 < expectedAfterBonus) {
+				const missing = expectedAfterBonus - afterSyncBalance;
+				this.updateBalanceAmount(expectedAfterBonus);
+				console.log(
+					`[SlotController] TotalWin: server balance did not include full bonus. ` +
+					`Applied local top-up +$${missing.toFixed(2)} to reach $${expectedAfterBonus.toFixed(2)}`
+				);
+			} else {
+				console.log(
+					`[SlotController] TotalWin: server balance already includes bonus credit (${afterSyncBalance} >= ${expectedAfterBonus})`
+				);
+			}
 		} catch (e) {
+			this.hasFinalizedBonusBalanceForCurrentRound = false;
 			console.error('[SlotController] Failed to finalize balance on TotalWin:', e);
 		}
 	}
 
 	private getFinalBonusTotalForBalance(): number {
 		try {
+			const dialogsAny: any = (this.scene as any)?.dialogs;
+			const dialogValue = Number(dialogsAny?.numberTargetValue ?? 0);
+			if (Number.isFinite(dialogValue) && dialogValue > 0) {
+				return dialogValue;
+			}
+		} catch { }
+
+		try {
 			const bonusHeader = (this.scene as any)?.bonusHeader;
 			const cumulative = Number(bonusHeader?.getCumulativeBonusWin?.() ?? 0);
 			if (Number.isFinite(cumulative) && cumulative > 0) {
 				return cumulative;
+			}
+			const currentDisplayed = Number(bonusHeader?.getCurrentWinnings?.() ?? 0);
+			if (Number.isFinite(currentDisplayed) && currentDisplayed > 0) {
+				return currentDisplayed;
 			}
 		} catch { }
 

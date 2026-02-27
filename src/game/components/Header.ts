@@ -217,7 +217,8 @@ export class Header {
 		this.jimboyNormal?.destroy();
 		this.jimboyNormal = new JimboyCharacter(scene, {
 			assetKey: 'JimboyNormal_PC',
-			depth: 9502
+			// Render Jimboy above the header container (9500) but below menu popups (9501+)
+			depth: 9500.5
 		});
 		this.jimboyNormal.create(centerXView);
 		this.jimboyNormal.registerGlobal('Jimboy');

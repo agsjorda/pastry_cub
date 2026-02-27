@@ -2,7 +2,7 @@ import { Scene } from 'phaser';
 import { SpinData } from '../backend/SpinData';
 import { gameEventManager, GameEventType } from '../event/EventManager';
 import { gameStateManager } from './GameStateManager';
-import { TurboConfig } from '../config/TurboConfig';
+import { EventBus } from '../game/EventBus';
 import { SCATTER_SYMBOL_ID } from '../config/GameConfig';
 import { SoundEffectType } from './AudioManager';
 
@@ -14,37 +14,22 @@ export interface ScatterData {
 }
 
 export interface ScatterAnimationConfig {
-  scatterRevealDelay: number;
-  slideInDuration: number;
-  spinDelay: number;
-  slideDistance: number;
-  dialogDelay: number;
+  /** Extra delay after the FreeSpin / FreeSpinRetrigger dialog is fully displayed before switching scatters to idle. */
+  scatterIdleAfterDialogDelayMs: number;
 }
 
 export class ScatterAnimationManager {
   private static instance: ScatterAnimationManager;
   private scene: Scene | null = null;
   private symbolsContainer: Phaser.GameObjects.Container | null = null;
-  private dialogsComponent: any = null; // Reference to the Dialogs component
+  private dialogsComponent: any = null;
   private isAnimating: boolean = false;
   public delayedScatterData: any = null;
-  private scatterSymbols: any[] = []; // Store references to scatter symbols
-  
-  
-  private config: ScatterAnimationConfig = {
-    scatterRevealDelay: 2500,
-    slideInDuration: 3500,
-    spinDelay: 500,
-    slideDistance: 200,
-    dialogDelay: 300
-  };
+  private scatterSymbols: any[] = [];
 
-  // Apply turbo mode to delays for consistent timing
-  // Note: Scatter animations always use normal speed for better visual experience
-  private getTurboAdjustedDelay(baseDelay: number): number {
-    // Always use normal speed for scatter animations, regardless of turbo mode
-    return baseDelay;
-  }
+  private config: ScatterAnimationConfig = {
+    scatterIdleAfterDialogDelayMs: 0,
+  };
 
   private constructor() {}
 
@@ -59,15 +44,73 @@ export class ScatterAnimationManager {
     this.scene = scene;
     this.symbolsContainer = symbolsContainer;
     this.dialogsComponent = dialogsComponent;
-    
-    console.log('[ScatterAnimationManager] Initialized with containers and dialogs component (spinner removed)');
   }
 
   public setConfig(config: Partial<ScatterAnimationConfig>): void {
     this.config = { ...this.config, ...config };
   }
 
-  // Wheel event listeners removed (spinner removed)
+  /**
+   * Run the unified scatter flow: mergeScatterSymbols -> playScatterWinAnimation -> (delay) -> showFreeSpinDialog
+   * -> (when dialog fully displayed) playScatterIdleAnimation -> (when dialog closed) unmergeScatterSymbols.
+   * Used by normal trigger, retrigger, and buy feature.
+   */
+  public async runScatterFlow(
+    data: ScatterData,
+    options?: { isRetrigger?: boolean; newSpins?: number; suppressBlackOverlay?: boolean; scatterGridsOverride?: { x: number; y: number }[] }
+  ): Promise<void> {
+    if (!this.scene) return;
+    const symbolsModule = (this.scene as any)?.symbols;
+    if (!symbolsModule?.mergeScatterSymbols || !symbolsModule?.playScatterWinAnimation) {
+      console.warn('[ScatterAnimationManager] Symbols or scatter methods not available');
+      return;
+    }
+
+    const scatterGrids =
+      options?.scatterGridsOverride && options.scatterGridsOverride.length
+        ? options.scatterGridsOverride.map((g) => ({ x: g.x, y: g.y }))
+        : this.getScatterGridsFromData(data).map((g: { x: number; y: number }) => ({ x: g.x, y: g.y }));
+    if (!scatterGrids.length) {
+      console.warn('[ScatterAnimationManager] No scatter positions in data');
+      return;
+    }
+
+    await symbolsModule.mergeScatterSymbols(scatterGrids);
+    const winDurationMs: number = await symbolsModule.playScatterWinAnimation(
+      { playNomnomSfx: true },
+      scatterGrids
+    );
+
+    // Prefer waiting on the actual win animation loop completion, falling back to a timed delay if needed.
+    let waitedOnAnimation = false;
+    try {
+      if (typeof symbolsModule.waitForScatterWinLoopComplete === 'function') {
+        waitedOnAnimation = true;
+        await symbolsModule.waitForScatterWinLoopComplete();
+      }
+    } catch (e) {
+      console.warn('[ScatterAnimationManager] waitForScatterWinLoopComplete failed, falling back to timed delay', e);
+      waitedOnAnimation = false;
+    }
+
+    if (!waitedOnAnimation) {
+      // Fallback: if we couldn't reliably wait on the animation event, use a small delay
+      // based on the reported animation duration (if available), otherwise a short fixed pause.
+      let holdMs = 800;
+      if (winDurationMs && winDurationMs > 0) {
+        const animHold = winDurationMs * 0.7; // show ~70% of the loop
+        holdMs = Math.max(600, animHold);    // minimum readable hold
+      }
+      await this.delay(holdMs);
+    }
+
+    this.determineFreeSpins(data);
+    if (options?.isRetrigger && typeof options.newSpins === 'number') {
+      this.showRetriggerFreeSpinsDialog(options.newSpins);
+    } else {
+      this.showFreeSpinsDialog(data, { suppressBlackOverlay: options?.suppressBlackOverlay });
+    }
+  }
 
   public async playScatterAnimation(data: ScatterData): Promise<void> {
     if (this.isAnimating || !this.scene || !this.symbolsContainer) {
@@ -76,88 +119,68 @@ export class ScatterAnimationManager {
     }
 
     this.isAnimating = true;
-    console.log('[ScatterAnimationManager] Starting scatter animation sequence - player will see scatter symbols for 1 second');
 
-    // While the scatter animation / free-spin intro is playing, make sure the
-    // SlotController's "spins left" display is completely hidden so it doesn't
-    // pop in early underneath the animations or dialogs.
     try {
       const gameSceneAny = this.scene as any;
       const slotController = gameSceneAny?.slotController;
       if (slotController && typeof slotController.suppressFreeSpinDisplay === 'function') {
         slotController.suppressFreeSpinDisplay();
-        console.log('[ScatterAnimationManager] Suppressed SlotController free spin display for scatter animation');
       }
     } catch (e) {
-      console.warn('[ScatterAnimationManager] Failed to suppress SlotController free spin display at scatter start:', e);
+      console.warn('[ScatterAnimationManager] Failed to suppress SlotController free spin display:', e);
     }
 
-    // Switch BG music to Free Spin track when scatter animation starts
-    // Only switch music for initial scatter triggers, not retriggers (when already in bonus mode)
     if (!gameStateManager.isBonus) {
       try {
         const audioMgr = (window as any).audioManager;
-        if (audioMgr && typeof audioMgr.switchToFreeSpinMusic === 'function') {
-          audioMgr.switchToFreeSpinMusic();
-          console.log('[ScatterAnimationManager] Requested switch to free spin background music');
-        }
+        if (audioMgr?.switchToFreeSpinMusic) audioMgr.switchToFreeSpinMusic();
       } catch (e) {
         console.warn('[ScatterAnimationManager] Failed to switch to free spin music', e);
       }
-    } else {
-      console.log('[ScatterAnimationManager] Skipping free spin music switch - already in bonus mode (retrigger)');
     }
 
     const isBuyFeature = gameStateManager.isBuyFeatureSpin;
-
     try {
-      // Step 1: Wait for player to see scatter symbols (sugar_wonderland style: delay then show dialog)
-      console.log('[ScatterAnimationManager] Waiting for player to see scatter symbols...');
-      await this.delay(this.getTurboAdjustedDelay(this.config.scatterRevealDelay));
-
-      // Step 2: Directly determine free spins and show dialog (no merge/transition)
-      this.determineFreeSpins(data);
-      this.showFreeSpinsDialog(data);
-
-      if (isBuyFeature) {
-        gameStateManager.isBuyFeatureSpin = false;
-      }
-
-      console.log('[ScatterAnimationManager] Scatter bonus sequence completed, waiting for dialog animations to finish');
+      await this.runScatterFlow(data);
+      if (isBuyFeature) gameStateManager.isBuyFeatureSpin = false;
     } catch (error) {
-      console.error('[ScatterAnimationManager] Error during scatter animation:', error);
+      console.error('[ScatterAnimationManager] Error during scatter flow:', error);
     } finally {
-      if (isBuyFeature && gameStateManager.isBuyFeatureSpin) {
-        gameStateManager.isBuyFeatureSpin = false;
-      }
+      if (isBuyFeature && gameStateManager.isBuyFeatureSpin) gameStateManager.isBuyFeatureSpin = false;
       this.isAnimating = false;
     }
   }
 
-
-
   private async delay(ms: number): Promise<void> {
     return new Promise<void>((resolve) => {
-      this.scene!.time.delayedCall(ms, () => {
-        resolve();
-      });
+      this.scene!.time.delayedCall(ms, () => resolve());
+    });
+  }
+
+  /**
+   * Listen for the dialog fully-displayed event and switch scatter symbols to idle,
+   * optionally after the configured delay (scatterIdleAfterDialogDelayMs).
+   */
+  private scheduleIdleOnDialogDisplayed(expectedDialogType: string): void {
+    EventBus.once('dialogFullyDisplayed', (dialogType: string) => {
+      if (dialogType !== expectedDialogType) return;
+      const delayMs = this.config.scatterIdleAfterDialogDelayMs ?? 0;
+      const applyIdle = () => {
+        const symbolsModule = (this.scene as any)?.symbols;
+        if (symbolsModule?.playScatterIdleAnimation) symbolsModule.playScatterIdleAnimation();
+      };
+      if (delayMs > 0) {
+        setTimeout(applyIdle, delayMs);
+      } else {
+        applyIdle();
+      }
     });
   }
 
   private determineFreeSpins(data: ScatterData): void {
-    // Determine free spins from SpinData using first item's spinsLeft
     const freeSpinsFromSpin = this.getFreeSpinsFromSpinData();
-    if (freeSpinsFromSpin > 0) {
-      data.freeSpins = freeSpinsFromSpin;
-      // Estimate scatter index from current grid (no multiplier table)
-      data.scatterIndex = this.estimateScatterIndexFromGrid(data);
-      console.log(`[ScatterAnimationManager] Free spins from SpinData: freeSpins=${freeSpinsFromSpin}, estimated scatterIndex=${data.scatterIndex}`);
-    } else {
-      // Fallback: estimate from grid if SpinData unavailable
-      data.scatterIndex = this.estimateScatterIndexFromGrid(data);
-      data.freeSpins = 0;
-      console.log(`[ScatterAnimationManager] SpinData unavailable, estimated scatterIndex=${data.scatterIndex}, freeSpins=${data.freeSpins}`);
-    }
+    data.scatterIndex = this.estimateScatterIndexFromGrid(data);
+    data.freeSpins = freeSpinsFromSpin > 0 ? freeSpinsFromSpin : 0;
     gameStateManager.isScatter = true;
     gameStateManager.scatterIndex = data.scatterIndex || 0;
   }
@@ -188,21 +211,26 @@ export class ScatterAnimationManager {
   }
 
   /**
-   * Get scatter grids from the data to calculate scatter index
+   * Get scatter (Symbol0) positions from the data.
+   * API area is column-major: data.symbols[col][row] with row 0 = bottom of column, last row = top.
+   * Game grid uses row 0 = top, so we convert: gameRow = rowCount - 1 - apiRow.
    */
-  private getScatterGridsFromData(data: ScatterData): any[] {
-    const scatterGrids: any[] = [];
-    for (let y = 0; y < data.symbols.length; y++) {
-      for (let x = 0; x < data.symbols[y].length; x++) {
-        if (data.symbols[y][x] === SCATTER_SYMBOL_ID) {
-          scatterGrids.push({ x, y, symbol: data.symbols[y][x] });
+  private getScatterGridsFromData(data: ScatterData): { x: number; y: number }[] {
+    const scatterGrids: { x: number; y: number }[] = [];
+    if (!Array.isArray(data.symbols)) return scatterGrids;
+    for (let col = 0; col < data.symbols.length; col++) {
+      const column = data.symbols[col];
+      if (!Array.isArray(column)) continue;
+      const rowCount = column.length;
+      for (let apiRow = 0; apiRow < rowCount; apiRow++) {
+        if (column[apiRow] === SCATTER_SYMBOL_ID) {
+          const gameRow = rowCount - 1 - apiRow;
+          scatterGrids.push({ x: col, y: gameRow });
         }
       }
     }
     return scatterGrids;
   }
-
-  // Spinner wait removed; dialogs shown immediately
 
   private showFreeSpinsDialog(data: ScatterData, options: { suppressBlackOverlay?: boolean } = {}): void {
     if (!this.dialogsComponent) {
@@ -225,7 +253,9 @@ export class ScatterAnimationManager {
     // Update game state to reflect bonus mode
     gameStateManager.isBonus = true;
 
-    // Show the FreeSpin dialog with all effects - this will trigger bonus mode when clicked
+    this.scheduleIdleOnDialogDisplayed('FreeSpin');
+
+    // Show the FreeSpin dialog — triggers bonus mode when clicked
     try {
       this.dialogsComponent.showDialog(this.scene, {
         type: 'FreeSpin',
@@ -235,7 +265,7 @@ export class ScatterAnimationManager {
       
       // Emit IS_BONUS event through the EventManager
       gameEventManager.emit(GameEventType.IS_BONUS, {
-        scatterCount: data.scatterIndex,
+        scatterCount: data.scatterIndex ?? 0,
         bonusType: 'freeSpins'
       });
       
@@ -262,18 +292,14 @@ export class ScatterAnimationManager {
    */
   public showRetriggerFreeSpinsDialog(newSpins: number): void {
     if (!this.scene) return;
-    console.log('[ScatterAnimationManager] ===== SHOW RETRIGGER FREE SPINS DIALOG =====');
-    console.log('[ScatterAnimationManager] Dialogs component available:', !!this.dialogsComponent);
-    
     if (!this.dialogsComponent) {
       console.warn('[ScatterAnimationManager] Dialogs component not available');
       return;
     }
     
     const spins = Math.max(0, Number(newSpins) || 0);
-    console.log(`[ScatterAnimationManager] Showing retrigger dialog for +${spins} free spins`);
-    
-    // Keep bonus mode active; do not toggle music here
+
+    // Keep bonus mode active
     gameStateManager.isBonus = true;
     try {
       const audioMgr = (window as any).audioManager;
@@ -287,12 +313,11 @@ export class ScatterAnimationManager {
     // tentative "bonus finished" state set earlier in the spin (e.g. from
     // REELS_STOP heuristics) is cleared before congrats logic can react to it.
     try {
-      if (gameStateManager.isBonusFinished) {
-        console.log('[ScatterAnimationManager] Retrigger detected - clearing isBonusFinished to prevent premature congrats');
-      }
       gameStateManager.isBonusFinished = false;
     } catch {}
     
+    this.scheduleIdleOnDialogDisplayed('FreeSpinRetrigger');
+
     try {
       this.dialogsComponent.showDialog(this.scene, {
         type: 'FreeSpinRetrigger',
@@ -300,16 +325,13 @@ export class ScatterAnimationManager {
         isRetrigger: true
       });
       
-      // Emit scatter bonus activated event with explicit spin count for UI syncing
       const eventData = {
-        scatterIndex: 0, // not used for retrigger visuals
+        scatterIndex: 0,
         actualFreeSpins: spins,
         isRetrigger: true
       };
-      console.log(`[ScatterAnimationManager] Emitting retrigger scatterBonusActivated with ${spins} spins (isRetrigger=true)`);
       this.scene.events.emit('scatterBonusActivated', eventData);
       
-      // Ensure we reset symbols/animations when the dialog finishes
       this.setupDialogCompletionListener();
     } catch (error) {
       console.error('[ScatterAnimationManager] Error showing retrigger dialog:', error);
@@ -324,7 +346,6 @@ export class ScatterAnimationManager {
    * Set delayed scatter animation data (called when win dialogs need to show first)
    */
   public setDelayedScatterAnimation(data: any): void {
-    console.log('[ScatterAnimationManager] Setting delayed scatter animation data');
     this.delayedScatterData = data;
   }
 
@@ -334,211 +355,85 @@ export class ScatterAnimationManager {
    */
   public tryPlayDelayedScatterAnimation(): void {
     if (!this.delayedScatterData) return;
-    const data = this.delayedScatterData;
+    const raw = this.delayedScatterData;
     this.delayedScatterData = null;
     if (!this.scene) return;
-    console.log('[ScatterAnimationManager] Playing delayed scatter animation after win dialogs');
+    const data: ScatterData = (raw && Array.isArray((raw as ScatterData).symbols))
+      ? (raw as ScatterData)
+      : { symbols: (raw as any)?.slot?.area ?? (raw as any)?.area ?? [] };
     this.scene.time.delayedCall(100, () => {
       this.playScatterAnimation(data);
     });
   }
 
-  public resetSymbolsVisibility(): void {
-    if (this.symbolsContainer) {
-      console.log('[ScatterAnimationManager] WARNING: resetSymbolsVisibility called - this should not happen during scatter bonus!');
-      console.log('[ScatterAnimationManager] Stack trace:', new Error().stack);
-      this.symbolsContainer.setAlpha(1);
-    }
-  }
-
-  /**
-   * Set up listener for when dialog animations complete
-   */
   private setupDialogCompletionListener(): void {
     if (!this.scene) return;
     
-    console.log('[ScatterAnimationManager] Setting up dialog completion listener...');
-    
-    // Listen for dialog completion event
-    this.scene.events.once('dialogAnimationsComplete', () => {
-      console.log('[ScatterAnimationManager] Dialog animations completed, resetting all symbols and animations');
+    let completionHandled = false;
+    let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+    const finish = () => {
+      if (completionHandled) return;
+      completionHandled = true;
+      if (fallbackTimer) {
+        clearTimeout(fallbackTimer);
+        fallbackTimer = null;
+      }
       this.resetAllSymbolsAndAnimations();
-    });
-    
-    // Also set up a fallback timer in case the event doesn't fire
-    setTimeout(() => {
-      console.log('[ScatterAnimationManager] Fallback timer triggered for symbol reset');
-      this.resetAllSymbolsAndAnimations();
-    }, 3000); // 3 second fallback
+    };
+
+    this.scene.events.once('dialogAnimationsComplete', finish);
+
+    // Fallback poll: recover after dialog is actually gone
+    const pollUntilDialogClosed = () => {
+      fallbackTimer = setTimeout(() => {
+        if (completionHandled) return;
+        const dialogsAny = this.dialogsComponent as any;
+        const dialogShowing = typeof dialogsAny?.isDialogShowing === 'function' && dialogsAny.isDialogShowing();
+        const radialLightRunning = typeof dialogsAny?.isRadialLightTransitionInProgress === 'function'
+          && dialogsAny.isRadialLightTransitionInProgress();
+        if (dialogShowing || radialLightRunning) {
+          pollUntilDialogClosed();
+          return;
+        }
+        finish();
+      }, 1000);
+    };
+    pollUntilDialogClosed();
   }
 
-  /**
-   * Check if we're currently in an active bonus mode (free spins)
-   */
   private isInActiveBonusMode(): boolean {
-    // Check if we have free spins remaining or if we're in bonus mode
-    // Use SpinData freespin count
-    const hasFreeSpins = this.getCurrentFreeSpinsCount() > 0;
-    const isBonusMode = gameStateManager.isBonus;
-    
-    console.log(`[ScatterAnimationManager] Checking bonus mode: hasFreeSpins=${hasFreeSpins}, isBonus=${isBonusMode}`);
-    
-    return hasFreeSpins || isBonusMode;
+    const freespinCount = (this.scene as any)?.symbols?.currentSpinData?.slot?.freespin?.count ?? 0;
+    return freespinCount > 0 || gameStateManager.isBonus;
   }
 
-  /**
-   * Get the current free spins count from SpinData
-   */
-  private getCurrentFreeSpinsCount(): number {
-    // Try to get free spins count from the current spin data
-    if (this.scene) {
-      const gameScene = this.scene as any; // Cast to access symbols property
-      if (gameScene.symbols) {
-        const currentSpinData = gameScene.symbols.currentSpinData;
-        if (currentSpinData && currentSpinData.slot && currentSpinData.slot.freespin) {
-          return currentSpinData.slot.freespin.count || 0;
-        }
-      }
-    }
-    
-    // No SpinData available - return 0
-    return 0;
-  }
-
-  /**
-   * Consume one free spin (decrement count)
-   * Note: freespin.count should remain the original total count from API response
-   */
-  public consumeFreeSpin(): void {
-    const currentCount = this.getCurrentFreeSpinsCount();
-    if (currentCount > 0) {
-      const newCount = currentCount - 1;
-      console.log(`[ScatterAnimationManager] Consuming free spin: ${currentCount} -> ${newCount}`);
-      
-      // Note: We should NOT modify freespin.count as it represents the original total won
-      // The remaining spins should be tracked separately for display purposes
-      
-      // Free spins count updated in SpinData
-      
-      // If no more free spins, end bonus mode
-      if (newCount === 0) {
-        this.endBonusMode();
-      }
-    }
-  }
-
-  /**
-   * End bonus mode when free spins are completed
-   */
-  public endBonusMode(): void {
-    console.log('[ScatterAnimationManager] Ending bonus mode');
-    gameStateManager.isBonus = false;
-    
-    // Note: We should NOT modify freespin.count as it represents the original total won
-    // Only clear the items array and totalWin for cleanup
-    if (this.scene) {
-      const gameScene = this.scene as any; // Cast to access symbols property
-      if (gameScene.symbols && gameScene.symbols.currentSpinData) {
-        if (gameScene.symbols.currentSpinData.slot && gameScene.symbols.currentSpinData.slot.freespin) {
-          // Keep original count - don't modify freespin.count
-          gameScene.symbols.currentSpinData.slot.freespin.totalWin = 0;
-          gameScene.symbols.currentSpinData.slot.freespin.items = [];
-        }
-      }
-    }
-    
-    // Free spins data cleared from SpinData (except original count)
-    
-    // Emit events to switch back to normal mode
-    if (this.scene) {
-      this.scene.events.emit('hideBonusBackground');
-      this.scene.events.emit('hideBonusHeader');
-    }
-  }
-
-  /**
-   * Reset all symbols and animations after scatter bonus completes
-   */
   private async resetAllSymbolsAndAnimations(): Promise<void> {
-    console.log('[ScatterAnimationManager] Resetting all symbols and animations...');
-    
-    // Free spin music will be stopped when the dialog closes
-    // Bonus music will be triggered when showBonusBackground event is emitted
-
     try {
-      // Reset game state - but don't reset isBonus if we're in an active bonus mode
       gameStateManager.isScatter = false;
-      
-      // Only reset isBonus if we're not in an active bonus mode (free spins)
-      // The bonus mode should persist throughout the free spins
       if (!this.isInActiveBonusMode()) {
-        console.log('[ScatterAnimationManager] Not in active bonus mode, resetting isBonus to false');
         gameStateManager.isBonus = false;
-      } else {
-        console.log('[ScatterAnimationManager] In active bonus mode, keeping isBonus as true');
       }
-      
       gameStateManager.scatterIndex = 0;
-      
-      // Reset symbols container visibility
+
       if (this.symbolsContainer) {
         this.symbolsContainer.setAlpha(1);
         this.symbolsContainer.setVisible(true);
-        console.log('[ScatterAnimationManager] Symbols container reset to visible with alpha 1');
       }
-      
-      // Re-enable scatter symbols
+
       this.showScatterSymbols();
-      
-      // Spinner container cleanup removed
-      
-      // Do not kill symbol container tweens; keep animations running
-      
-      // Emit event to notify Symbols component to restore symbol visibility
+
       if (this.scene) {
         this.scene.events.emit('scatterBonusCompleted');
-        console.log('[ScatterAnimationManager] Emitted scatterBonusCompleted event');
       }
-      
-      console.log('[ScatterAnimationManager] All symbols and animations reset successfully');
-      
     } catch (error) {
       console.error('[ScatterAnimationManager] Error resetting symbols and animations:', error);
     }
   }
 
-  // hideSpinner removed (spinner removed)
-
-  private hideScatterSymbols(): void {
-    if (!this.scene) return;
-
-    console.log('[ScatterAnimationManager] Hiding scatter symbols...');
-    
-    // Hide all registered scatter symbols
-    this.scatterSymbols.forEach(symbol => {
-      if (symbol && !symbol.destroyed) {
-        symbol.setVisible(false);
-        console.log('[ScatterAnimationManager] Hidden scatter symbol');
-      }
-    });
-    
-    console.log(`[ScatterAnimationManager] Hidden ${this.scatterSymbols.length} scatter symbols`);
-  }
-
   private showScatterSymbols(): void {
     if (!this.scene) return;
-
-    console.log('[ScatterAnimationManager] Showing scatter symbols...');
-    
-    // Show all registered scatter symbols
     this.scatterSymbols.forEach(symbol => {
-      if (symbol && !symbol.destroyed) {
-        symbol.setVisible(true);
-        console.log('[ScatterAnimationManager] Shown scatter symbol');
-      }
+      if (symbol && !symbol.destroyed) symbol.setVisible(true);
     });
-    
-    console.log(`[ScatterAnimationManager] Shown ${this.scatterSymbols.length} scatter symbols`);
   }
 
   /**
@@ -547,35 +442,23 @@ export class ScatterAnimationManager {
   public registerScatterSymbol(symbol: any): void {
     if (symbol && !this.scatterSymbols.includes(symbol)) {
       this.scatterSymbols.push(symbol);
-      console.log('[ScatterAnimationManager] Registered scatter symbol');
     }
   }
 
-  /**
-   * Unregister a scatter symbol from management
-   */
   public unregisterScatterSymbol(symbol: any): void {
     const index = this.scatterSymbols.indexOf(symbol);
     if (index !== -1) {
       this.scatterSymbols.splice(index, 1);
-      console.log('[ScatterAnimationManager] Unregistered scatter symbol');
     }
   }
 
-  /**
-   * Clear all registered scatter symbols
-   */
   public clearScatterSymbols(): void {
     this.scatterSymbols = [];
-    console.log('[ScatterAnimationManager] Cleared all scatter symbol references');
   }
 
   public destroy(): void {
     this.scene = null;
     this.symbolsContainer = null;
     this.isAnimating = false;
-    this.wheelSpinStartListener = null;
-    this.wheelSpinDoneListener = null;
-    console.log('[ScatterAnimationManager] Destroyed');
   }
 } 

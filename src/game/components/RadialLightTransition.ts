@@ -96,4 +96,8 @@ export class RadialLightTransition {
 		this.overlay.setVisible(false);
 		this.isAnimating = false;
 	}
+
+	public isRunning(): boolean {
+		return this.isAnimating;
+	}
 }

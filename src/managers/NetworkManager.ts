@@ -7,14 +7,8 @@ export class NetworkManager {
     }
 
     private detectNetworkSpeed(): boolean {
-        const connection = (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection;
-        if (!connection) {
-            console.log('[NetworkManager] Network API unavailable, defaulting to HIGH speed');
-            return true; // Default to high speed if API unavailable
-        }
-        const effectiveType = connection.effectiveType;
-        console.log(`[NetworkManager] Network effective type: ${effectiveType}`);
-        return effectiveType !== 'slow-2g' && effectiveType !== '2g';
+        // Always use high (portrait/high) assets; low-quality fallback disabled for now.
+        return true;
     }
 
     public getNetworkSpeed(): boolean {

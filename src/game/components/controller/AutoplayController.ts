@@ -12,6 +12,7 @@ import { TurboConfig } from '../../../config/TurboConfig';
 import { ensureSpineFactory } from '../../../utils/SpineGuard';
 import { Logger } from '../../../utils/Logger';
 import { startAnimation } from '../../../utils/SpineAnimationHelper';
+import { SoundEffectType } from '../../../managers/AudioManager';
 
 const log = Logger.slot;
 
@@ -87,6 +88,11 @@ export class AutoplayController {
     
     this.autoplayButton.on('pointerdown', () => {
       log.debug('Autoplay button clicked');
+      const audioManager =
+        (this.scene as any)?.audioManager || (window as any)?.audioManager;
+      if (audioManager && typeof audioManager.playSoundEffect === 'function') {
+        audioManager.playSoundEffect(SoundEffectType.MENU_CLICK);
+      }
       this.handleAutoplayButtonClick();
     });
     

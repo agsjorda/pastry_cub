@@ -15,6 +15,8 @@ export interface NumberDisplayConfig {
 	suffix?: string;
 	commaYOffset?: number;
 	dotYOffset?: number;
+	/** When set, used for display instead of internal formatting (e.g. formatCurrencyNumber). */
+	formatValue?: (value: number) => string;
 }
 
 export class NumberDisplay {
@@ -143,8 +145,10 @@ export class NumberDisplay {
 		// Clear existing sprites
 		this.clearSprites();
 
-		// Format the number
-		const formattedNumber = this.formatNumber(this.currentValue);
+		// Format the number (use formatValue when provided, e.g. for currency precision)
+		const formattedNumber = this.config.formatValue
+			? (this.config.prefix ?? '') + this.config.formatValue(this.currentValue) + (this.config.suffix ?? '')
+			: this.formatNumber(this.currentValue);
 		console.log(`[NumberDisplay] Displaying: ${formattedNumber}`);
 
 		// Create sprites for each character

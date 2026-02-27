@@ -147,28 +147,6 @@ export class AssetLoader {
 		console.log('[AssetLoader] Number assets loaded');
 	}
 
-	loadCoinAssets(scene: Scene): void {
-		console.log('[AssetLoader] Loading coin assets...');
-		
-		// Load coin as a sprite sheet with frame configuration
-		const coinAssets = this.assetConfig.getCoinAssets();
-		if (coinAssets.images && coinAssets.images.coin) {
-			const coinPath = coinAssets.images.coin;
-			console.log(`[AssetLoader] Loading coin sprite sheet: ${coinPath}`);
-			
-			// Load as sprite sheet with frame configuration
-			// 10 frames, each 85x85 pixels
-			scene.load.spritesheet('coin', coinPath, {
-				frameWidth: 85,
-				frameHeight: 85,
-				startFrame: 0,
-				endFrame: 9
-			});
-		}
-		
-		console.log('[AssetLoader] Coin assets loaded');
-	}
-
 	loadBuyFeatureAssets(scene: Scene): void {
 		console.log('[AssetLoader] Loading buy feature assets...');
 		this.loadAssetGroup(scene, this.assetConfig.getBuyFeatureAssets());
@@ -192,18 +170,8 @@ export class AssetLoader {
 	}
 
 	private preloadFont(fontFamily: string, fontPath: string): void {
-		// Create a link element to preload the font
-		const link = document.createElement('link');
-		link.rel = 'preload';
-		link.as = 'font';
-		link.type = 'font/ttf';
-		link.href = fontPath;
-		link.crossOrigin = 'anonymous';
-		
-		// Add to document head
-		document.head.appendChild(link);
-		
-		// Also create a style element to ensure the font is available
+		// Only register @font-face so the font loads when first used. Avoid <link rel="preload" as="font">
+		// so we don't get "preloaded but not used within a few seconds" (game uses fonts after Boot/Preloader).
 		const style = document.createElement('style');
 		style.textContent = `
 			@font-face {
@@ -213,8 +181,6 @@ export class AssetLoader {
 			}
 		`;
 		document.head.appendChild(style);
-		
-		console.log(`[AssetLoader] Font ${fontFamily} preloaded from ${fontPath}`);
 	}
 
 	private ensureFontsLoaded(): void {

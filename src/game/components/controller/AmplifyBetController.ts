@@ -5,6 +5,7 @@ import { NetworkManager } from '../../../managers/NetworkManager';
 import { ensureSpineFactory } from '../../../utils/SpineGuard';
 import { startAnimation } from '../../../utils/SpineAnimationHelper';
 import type { GameData } from '../GameData';
+import { SoundEffectType } from '../../../managers/AudioManager';
 
 export interface AmplifyBetCallbacks {
   getGameData: () => GameData | null;
@@ -57,6 +58,11 @@ export class AmplifyBetController {
     amplifyButton.setInteractive();
     amplifyButton.on('pointerdown', () => {
       console.log('[SlotController] Amplify button clicked');
+      const audioManager =
+        (this.scene as any)?.audioManager || (window as any)?.audioManager;
+      if (audioManager && typeof audioManager.playSoundEffect === 'function') {
+        audioManager.playSoundEffect(SoundEffectType.MENU_CLICK);
+      }
       this.handleAmplifyButtonClick();
     });
     this.buttons.set('amplify', amplifyButton);

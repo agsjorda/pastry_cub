@@ -10,6 +10,8 @@ import { gameEventManager, GameEventType } from '../../../event/EventManager';
 import { ensureSpineFactory } from '../../../utils/SpineGuard';
 import { Logger } from '../../../utils/Logger';
 import { startAnimation } from '../../../utils/SpineAnimationHelper';
+import { formatCurrencyNumber } from '../../../utils/NumberPrecisionFormatter';
+import { SoundEffectType } from '../../../managers/AudioManager';
 
 const log = Logger.slot;
 
@@ -130,6 +132,11 @@ export class BetController {
         console.log('[BetController] Decrease bet clicked but buttons are disabled');
         return;
       }
+      const audioManager =
+        (this.scene as any)?.audioManager || (window as any)?.audioManager;
+      if (audioManager && typeof audioManager.playSoundEffect === 'function') {
+        audioManager.playSoundEffect(SoundEffectType.MENU_CLICK);
+      }
       log.debug('Decrease bet clicked');
       this.adjustBetByStep(-1);
     });
@@ -146,6 +153,11 @@ export class BetController {
       if (this.isButtonsDisabled) {
         console.log('[BetController] Increase bet clicked but buttons are disabled');
         return;
+      }
+      const audioManager =
+        (this.scene as any)?.audioManager || (window as any)?.audioManager;
+      if (audioManager && typeof audioManager.playSoundEffect === 'function') {
+        audioManager.playSoundEffect(SoundEffectType.MENU_CLICK);
       }
       log.debug('Increase bet clicked');
       this.adjustBetByStep(1);
@@ -167,9 +179,7 @@ export class BetController {
     this.baseBetAmount = amount;
     
     if (this.betAmountText) {
-      const formattedAmount = Number.isInteger(amount) 
-        ? amount.toString() 
-        : amount.toFixed(2);
+      const formattedAmount = formatCurrencyNumber(amount);
       this.betAmountText.setText(formattedAmount);
     }
     

@@ -1,5 +1,7 @@
 import type { SlotInitializeData } from "../../backend/GameAPI";
 import { Scene, GameObjects } from "phaser";
+import { formatCurrencyNumber } from "../../utils/NumberPrecisionFormatter";
+import { SoundEffectType } from "../../managers/AudioManager";
 
 type CurrencyInit = Pick<SlotInitializeData, "currency" | "currencySymbol">;
 
@@ -88,9 +90,23 @@ export class CurrencyManager {
 	public static formatAmount(amount: number, decimals = 2): string {
 		const safe = Number.isFinite(amount) ? amount : 0;
 		const currencyCode = CurrencyManager.getCurrencyCode();
-		// Ensure there's always a space between currency and amount
 		const space = currencyCode ? ' ' : '';
-		return currencyCode ? `${currencyCode}${space}${safe.toFixed(decimals)}` : safe.toFixed(decimals);
+		const normalizedDecimals = Number.isFinite(decimals) ? Math.max(0, Math.floor(decimals)) : 2;
+		let formatted: string;
+		if (normalizedDecimals === 2) {
+			formatted = formatCurrencyNumber(safe);
+		} else {
+			// Shuten-style: trim trailing zeros (e.g. 3.300 → 3.30, not 3.300)
+			const fixedValue = safe.toFixed(normalizedDecimals);
+			const decimalPart = fixedValue.split(".")[1] ?? "";
+			const hasNonZeroTenths = decimalPart.length > 0 && decimalPart[0] !== "0";
+			const minimumFractionDigits = hasNonZeroTenths ? Math.min(2, normalizedDecimals) : 0;
+			formatted = safe.toLocaleString("en-US", {
+				minimumFractionDigits,
+				maximumFractionDigits: normalizedDecimals,
+			});
+		}
+		return currencyCode ? `${currencyCode}${space}${formatted}` : formatted;
 	}
 
 	/**
@@ -256,8 +272,10 @@ class CurrencyErrorPopup extends GameObjects.Container {
 		this.buttonImage.setInteractive({ useHandCursor: true });
 		this.buttonImage.on("pointerdown", () => {
 			try {
-				if ((window as any).audioManager) {
-					(window as any).audioManager.playSoundEffect("button_fx");
+				const audioManager =
+					(this.scene as any)?.audioManager || (window as any)?.audioManager;
+				if (audioManager && typeof audioManager.playSoundEffect === "function") {
+					audioManager.playSoundEffect(SoundEffectType.MENU_CLICK);
 				}
 			} catch {}
 			try { window.location.reload(); } catch {}
