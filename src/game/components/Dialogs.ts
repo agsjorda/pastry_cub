@@ -3,7 +3,6 @@ import { NetworkManager } from '../../managers/NetworkManager';
 import { ScreenModeManager } from '../../managers/ScreenModeManager';
 import { SoundEffectType } from '../../managers/AudioManager';
 import { NumberDisplay, NumberDisplayConfig } from './NumberDisplay';
-// import { SymbolExplosionTransition } from './SymbolExplosionTransition';
 import { RadialLightTransition } from './RadialLightTransition';
 import { gameStateManager } from '../../managers/GameStateManager';
 import { gameEventManager, GameEventType } from '../../event/EventManager';
@@ -87,6 +86,8 @@ export class Dialogs {
 	private numberYCongrats: number | null = null;
 	private readonly defaultNumberDisplayScale: number = 0.5;
 	private readonly minNumberDisplayScale: number = 0.18;
+	private readonly numberDisplayPaddingXRatio: number = 0.05;
+	private readonly numberDisplayMinPaddingX: number = 16;
 
 	// Managers
 	private networkManager: NetworkManager;
@@ -99,8 +100,6 @@ export class Dialogs {
 	private stagedWinCurrentStageIndex: number = 0;
 	private stagedWinStageTimer: Phaser.Time.TimerEvent | null = null;
 
-	// Symbol explosion transition for free spin dialog dismissal
-	// private candyTransition: SymbolExplosionTransition | null = null;
 	private radialLightTransition: RadialLightTransition | null = null;
 
 	// Dialog configuration
@@ -171,8 +170,6 @@ export class Dialogs {
 		// Store scene reference for later use
 		this.currentScene = scene;
 
-		// Initialize symbol explosion transition for free spin dialog dismissal
-			   // this.candyTransition = new SymbolExplosionTransition(scene);
 		this.radialLightTransition = new RadialLightTransition(scene);
 
 		// Create main dialog overlay container
@@ -998,7 +995,8 @@ export class Dialogs {
 	): void {
 		try {
 			const bounds = display.getContainer().getBounds();
-			const maxWidth = scene.scale.width * maxWidthRatio;
+			const paddingX = this.getNumberDisplayPaddingX(scene);
+			const maxWidth = Math.max(1, scene.scale.width * maxWidthRatio - paddingX * 2);
 			if (bounds.width <= maxWidth) {
 				return;
 			}
@@ -1007,6 +1005,11 @@ export class Dialogs {
 		} catch {
 			// Ignore measurement failures; display will render with its configured base scale.
 		}
+	}
+
+	private getNumberDisplayPaddingX(scene: Scene): number {
+		const ratioPadding = Math.round(scene.scale.width * this.numberDisplayPaddingXRatio);
+		return Math.max(this.numberDisplayMinPaddingX, ratioPadding);
 	}
 
 	/**
@@ -1357,6 +1360,14 @@ export class Dialogs {
 			return;
 		}
 
+		// Route MaxWin through the same normal black-screen transition as TotalWin/Congrats.
+		if (this.currentDialogType === 'MaxWin') {
+			console.log('[Dialogs] MaxWin dialog clicked - starting normal transition');
+			this.disableAllWinDialogElements();
+			this.startNormalTransition(scene);
+			return;
+		}
+
 		// Check if this is a win dialog - handle differently than free spin dialog
 		if (this.isWinDialog()) {
 			console.log('[Dialogs] Win dialog clicked - starting direct fade-out sequence');
@@ -1516,6 +1527,17 @@ export class Dialogs {
 
 		// Store the dialog type before cleanup for bonus mode check
 		const dialogTypeBeforeCleanup = this.currentDialogType;
+		// Keep MaxWin close behavior consistent with previous win-dialog path (fade out active win SFX).
+		if (dialogTypeBeforeCleanup === 'MaxWin') {
+			try {
+				const audioManager = (window as any).audioManager;
+				if (audioManager && typeof audioManager.fadeOutCurrentWinSfx === 'function') {
+					audioManager.fadeOutCurrentWinSfx(450);
+				}
+			} catch (e) {
+				console.warn('[Dialogs] Failed to fade out win dialog SFX:', e);
+			}
+		}
 
 		// Create centralized black screen overlay
 		const blackScreen = scene.add.graphics();
@@ -1557,7 +1579,7 @@ export class Dialogs {
 					}
 				} else {
 					// If end-of-bonus dialog closed while in bonus mode, revert to base visuals and reset symbols
-					if (dialogTypeBeforeCleanup === 'Congrats' || dialogTypeBeforeCleanup === 'TotalWin') {
+					if (dialogTypeBeforeCleanup === 'Congrats' || dialogTypeBeforeCleanup === 'TotalWin' || dialogTypeBeforeCleanup === 'MaxWin') {
 						console.log('[Dialogs] Bonus total dialog closed - reverting from bonus visuals to base');
 						// Switch off bonus mode visuals and music
 						scene.events.emit('setBonusMode', false);
@@ -1601,10 +1623,15 @@ export class Dialogs {
 							blackScreen.destroy();
 
 							// Ensure UI is back to normal only when end-of-bonus dialog closes
-							if (dialogTypeBeforeCleanup === 'Congrats' || dialogTypeBeforeCleanup === 'TotalWin') {
+							if (dialogTypeBeforeCleanup === 'Congrats' || dialogTypeBeforeCleanup === 'TotalWin' || dialogTypeBeforeCleanup === 'MaxWin') {
 								console.log('[Dialogs] Black screen faded out after bonus total dialog - restoring normal background and header');
 								scene.events.emit('hideBonusBackground');
 								scene.events.emit('hideBonusHeader');
+							}
+							// Preserve WIN_DIALOG_CLOSED emission for MaxWin flow.
+							if (dialogTypeBeforeCleanup === 'MaxWin') {
+								gameEventManager.emit(GameEventType.WIN_DIALOG_CLOSED);
+								console.log('[Dialogs] WIN_DIALOG_CLOSED event emitted after MaxWin normal transition');
 							}
 
 							console.log('[Dialogs] Black screen transition complete');
@@ -1654,6 +1681,7 @@ export class Dialogs {
 	 * Perform the actual fade-out sequence for win dialogs
 	 */
 	private performWinDialogFadeOut(scene: Scene): void {
+		const dialogTypeBeforeCleanup = this.currentDialogType;
 		// Fade out any currently playing win SFX
 		try {
 			const audioManager = (window as any).audioManager;
@@ -1781,42 +1809,52 @@ export class Dialogs {
 					console.log('[Dialogs] Spine animation visible after fade-out:', this.currentDialog.visible);
 				}
 
-				// Wait a moment to ensure fade-out is completely visible before cleanup
-				scene.time.delayedCall(100, () => {
-					console.log('[Dialogs] Starting cleanup after fade-out completion');
+				console.log('[Dialogs] Starting cleanup after fade-out completion');
 
-					// Clean up dialog content after fade-out
-					this.cleanupDialogContent();
+				// Clean up dialog content after fade-out
+				this.cleanupDialogContent();
 
-					// Now perform the actual cleanup of destroyed elements
-					this.performDialogCleanup();
-					console.log('[Dialogs] Dialog elements cleaned up after fade-out');
+				// Now perform the actual cleanup of destroyed elements
+				this.performDialogCleanup();
+				console.log('[Dialogs] Dialog elements cleaned up after fade-out');
 
-					// Reset alpha to 1 for next dialog
-					this.dialogOverlay.setAlpha(1);
-
-					// Ensure black overlay is completely hidden after win dialog closes
-					if (this.blackOverlay) {
-						this.blackOverlay.setVisible(false);
-						this.blackOverlay.setAlpha(0);
-						console.log('[Dialogs] Black overlay completely hidden after win dialog fade-out');
-					}
-
-					// Emit dialog animations complete event
-					scene.events.emit('dialogAnimationsComplete');
-					console.log('[Dialogs] Win dialog animations complete event emitted');
-
-					// Emit win dialog closed event for autoplay
-					gameEventManager.emit(GameEventType.WIN_DIALOG_CLOSED);
-					console.log('[Dialogs] WIN_DIALOG_CLOSED event emitted after fade-out');
-					// Restore background music volume
+				// If MaxWin was closed at end of bonus, revert to base visuals like TotalWin.
+				if (dialogTypeBeforeCleanup === 'MaxWin') {
+					console.log('[Dialogs] MaxWin dialog closed - reverting from bonus visuals to base');
+					scene.events.emit('setBonusMode', false);
+					scene.events.emit('hideBonusBackground');
+					scene.events.emit('hideBonusHeader');
+					scene.events.emit('resetSymbolsForBase');
 					try {
-						const audioManager = (window as any).audioManager;
-						if (audioManager && typeof audioManager.restoreBackground === 'function') {
-							audioManager.restoreBackground();
-						}
+						gameEventManager.emit(GameEventType.WIN_STOP);
+						console.log('[Dialogs] Emitted WIN_STOP after MaxWin close');
 					} catch { }
-				});
+				}
+
+				// Reset alpha to 1 for next dialog
+				this.dialogOverlay.setAlpha(1);
+
+				// Ensure black overlay is completely hidden after win dialog closes
+				if (this.blackOverlay) {
+					this.blackOverlay.setVisible(false);
+					this.blackOverlay.setAlpha(0);
+					console.log('[Dialogs] Black overlay completely hidden after win dialog fade-out');
+				}
+
+				// Emit dialog animations complete event
+				scene.events.emit('dialogAnimationsComplete');
+				console.log('[Dialogs] Win dialog animations complete event emitted');
+
+				// Emit win dialog closed event for autoplay
+				gameEventManager.emit(GameEventType.WIN_DIALOG_CLOSED);
+				console.log('[Dialogs] WIN_DIALOG_CLOSED event emitted after fade-out');
+				// Restore background music volume
+				try {
+					const audioManager = (window as any).audioManager;
+					if (audioManager && typeof audioManager.restoreBackground === 'function') {
+						audioManager.restoreBackground();
+					}
+				} catch { }
 			}
 		});
 

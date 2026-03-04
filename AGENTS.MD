@@ -18,6 +18,7 @@ For game-specific replacement context, always read `GAME_TEMPLATE.md` first.
 
 Follow existing naming patterns unless the user asks for a rename.
 
+- File naming for classes/scenes: `PascalCase` (example: `GameScene.ts`)
 - TypeScript classes/components/types: `PascalCase`
 - Functions/variables/methods: `camelCase`
 - Constants in config files: `UPPER_SNAKE_CASE`
@@ -45,3 +46,14 @@ When adding a new replace point (new assets folder, config constant, or game rul
 
 - Ask the user for confirmation before changing any file.
 - Do not make code or config edits until the user explicitly approves.
+
+## 8. VSCode File Reference Rule
+
+- When referencing files in responses, use clickable markdown links with line numbers so they jump to exact changes in VSCode.
+- Use workspace-relative targets with `#L` anchors (example: `[BonusHeader.ts#L120](pastry_cub/src/game/components/BonusHeader.ts#L120)`).
+- Avoid absolute-path link targets (for this setup they may open in the browser).
+
+## 9. Change Link Requirement
+
+- Always include clickable file links for all modified files in the final response.
+- Include at least one line anchor per changed file (prefer the main edit location).

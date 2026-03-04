@@ -112,7 +112,7 @@ export class SymbolFactory {
     y: number,
     alpha: number
   ): SymbolObject | null {
-    const spineKey = `symbol_${value}_sugar_spine`;
+    const spineKey = `symbol_${value}_spine`;
     const atlasKey = `${spineKey}-atlas`;
     
     // Check if add.spine exists

@@ -14,6 +14,7 @@ export class GameStateManager {
   private _isBonus: boolean = false;
   private _isReelSpinning: boolean = false;
   private _isNormalSpin: boolean = false;
+  private _isProcessingSpin: boolean = false;
   private _isAutoPlaying: boolean = false;
   private _isTurbo: boolean = false;
   private _isAutoPlaySpinRequested: boolean = false;
@@ -21,6 +22,7 @@ export class GameStateManager {
   private _scatterIndex: number = 0;
   private _isBonusFinished: boolean = false;
   private _isBuyFeatureSpin: boolean = false;
+  private _suppressTotalWinDialog: boolean = false;
 
   private constructor() {
     this.initializeEventListeners();
@@ -58,6 +60,11 @@ export class GameStateManager {
       console.log('[GameStateManager] AUTO_STOP received, setting isAutoPlaying to false');
       this._isAutoPlaying = false;
     });
+
+    // When WIN_STOP fires, all tumbles and win resolution have completed for this spin
+    gameEventManager.on(GameEventType.WIN_STOP, () => {
+      this._isProcessingSpin = false;
+    });
   }
 
   /**
@@ -74,6 +81,7 @@ export class GameStateManager {
   public get isBonus(): boolean { return this._isBonus; }
   public get isReelSpinning(): boolean { return this._isReelSpinning; }
   public get isNormalSpin(): boolean { return this._isNormalSpin; }
+  public get isProcessingSpin(): boolean { return this._isProcessingSpin; }
   public get isAutoPlaying(): boolean { return this._isAutoPlaying; }
   public get isTurbo(): boolean { return this._isTurbo; }
   public get isAutoPlaySpinRequested(): boolean { return this._isAutoPlaySpinRequested; }
@@ -81,6 +89,7 @@ export class GameStateManager {
   public get scatterIndex(): number { return this._scatterIndex; }
   public get isBonusFinished(): boolean { return this._isBonusFinished; }
   public get isBuyFeatureSpin(): boolean { return this._isBuyFeatureSpin; }
+  public get suppressTotalWinDialog(): boolean { return this._suppressTotalWinDialog; }
 
   // Setters for state properties (with event emission where appropriate)
   public set timeScale(value: number) {
@@ -109,6 +118,10 @@ export class GameStateManager {
 
   public set isNormalSpin(value: boolean) {
     this._isNormalSpin = value;
+  }
+
+  public set isProcessingSpin(value: boolean) {
+    this._isProcessingSpin = value;
   }
 
   public set isAutoPlaying(value: boolean) {
@@ -144,6 +157,9 @@ export class GameStateManager {
 
   public set isBuyFeatureSpin(value: boolean) {
     this._isBuyFeatureSpin = value;
+  }
+  public set suppressTotalWinDialog(value: boolean) {
+    this._suppressTotalWinDialog = value;
   }
 
   /**
@@ -184,6 +200,7 @@ export class GameStateManager {
     this._isBonus = false;
     this._isReelSpinning = false;
     this._isNormalSpin = false;
+    this._isProcessingSpin = false;
     this._isAutoPlaying = false;
     this._isTurbo = false;
     this._isAutoPlaySpinRequested = false;
@@ -191,6 +208,7 @@ export class GameStateManager {
     this._scatterIndex = 0;
     this._isBonusFinished = false;
     this._isBuyFeatureSpin = false;
+    this._suppressTotalWinDialog = false;
   }
 
   /**
@@ -209,7 +227,8 @@ export class GameStateManager {
       isShowingWinDialog: this._isShowingWinDialog,
       scatterIndex: this._scatterIndex,
       isBonusFinished: this._isBonusFinished,
-      isBuyFeatureSpin: this._isBuyFeatureSpin
+      isBuyFeatureSpin: this._isBuyFeatureSpin,
+      suppressTotalWinDialog: this._suppressTotalWinDialog
     };
   }
 }

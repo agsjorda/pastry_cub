@@ -456,6 +456,11 @@ export function getHighCountSymbolsFromOuts(outs: TumbleOut[] | null | undefined
  * Get total win for a single tumble (tumble.win or sum of symbols.out[].win).
  */
 export function getTumbleTotal(tumble: Tumble | any): number {
+  const winObj = tumble?.win;
+  if (winObj && typeof winObj === 'object') {
+    const total = Number((winObj as any)?.total);
+    if (Number.isFinite(total) && total > 0) return total;
+  }
   const w = Number(tumble?.win ?? 0);
   if (Number.isFinite(w) && w > 0) return w;
   const outs = tumble?.symbols?.out ?? [];

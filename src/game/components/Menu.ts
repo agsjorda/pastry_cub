@@ -5,6 +5,7 @@ import { AudioManager, SoundEffectType } from "../../managers/AudioManager";
 import { GameAPI } from "../../backend/GameAPI";
 import { HelpScreen } from "./MenuTabs/HelpScreen";
 import { CurrencyManager } from "./CurrencyManager";
+import { formatCurrencyNumber } from "../../utils/NumberPrecisionFormatter";
 
 interface ButtonBase {
   isButton: boolean;
@@ -713,18 +714,11 @@ export class Menu {
     result.data?.forEach((v: any, index: number) => {
       const spinDate = this.formatISOToDMYHM(v?.createdAt);
       const currency = !v?.currency ? "usd" : v.currency;
-      const bet = v?.bet ?? "";
-      const rawWin = v?.win;
-      const winNumber =
-        typeof rawWin === "number"
-          ? rawWin
-          : typeof rawWin === "string"
-            ? Number(rawWin) || 0
-            : 0;
-      const winText = winNumber.toLocaleString("en-US", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      });
+      const betAmount = Number(v?.bet);
+      const bet = formatCurrencyNumber(Number.isFinite(betAmount) ? betAmount : 0);
+      const winAmount = Number(v?.win);
+      const winNumber = Number.isFinite(winAmount) ? winAmount : 0;
+      const winText = formatCurrencyNumber(winNumber);
 
       contentY += 30;
       // Create row centered per column
@@ -746,11 +740,12 @@ export class Menu {
       contentY += 20;
     });
 
-    // Subtle scale tween on the topmost row every time a new first row is rendered.
-    // This acts as a visual cue that a new history entry has appeared at the top.
-    if (firstRowTexts.length > 0) {
-      this.lastHistoryTopRowSignature = firstRowSignature || null;
-      this.applyHistoryRowUpdateTween(scene, firstRowTexts);
+    // Subtle scale tween on the topmost row only when a new spin entry appears.
+    if (firstRowTexts.length > 0 && firstRowSignature) {
+      if (this.lastHistoryTopRowSignature !== null && this.lastHistoryTopRowSignature !== firstRowSignature) {
+        this.applyHistoryRowUpdateTween(scene, firstRowTexts);
+      }
+      this.lastHistoryTopRowSignature = firstRowSignature;
     }
 
     // Add pagination buttons at bottom-center (clear previous buttons first)

@@ -7,10 +7,11 @@ import { PaylineData } from '../../backend/SpinData';
 import { CurrencyManager } from './CurrencyManager';
 import { Animals } from './Animals';
 import { JimboyCharacter } from './JimboyCharacter';
-import { HEADER_CONFIG, SHOW_HEADER_BORDER, SHOW_HEADER_SCENEFRAME_BORDER } from '../../config/GameConfig';
+import { HEADER_CONFIG, SHOW_HEADER_BORDER, SHOW_HEADER_CONFETTI_BORDER, SHOW_HEADER_SCENEFRAME_BORDER } from '../../config/GameConfig';
 import { ensureSpineFactory } from '../../utils/SpineGuard';
 import { startAnimation, stopAnimation } from '../../utils/SpineAnimationHelper';
 import { getTotalWinFromPaylines } from './Spin';
+import { GlowEffect } from './vfx/GlowEffect';
 
 
 export class Header {
@@ -26,13 +27,18 @@ export class Header {
 	private headerSceneContentMaskGraphics?: Phaser.GameObjects.Graphics;
 	private headerSceneContentMask?: Phaser.Display.Masks.GeometryMask;
 	private conveyorTopSpine: any = null;
+	private confettiVfxSpine: any = null;
+	private winBarGlowLeft: GlowEffect | null = null;
+	private winBarGlowRight: GlowEffect | null = null;
 	private animals: Animals | null = null;
 	private jimboyNormal: JimboyCharacter | null = null;
 	private debugHeaderFrameBorder?: Phaser.GameObjects.Graphics;
 	private debugHeaderBorder?: Phaser.GameObjects.Graphics;
+	private debugConfettiBorder?: Phaser.GameObjects.Graphics;
 	private currentWinnings: number = 0;
 	private pendingWinnings: number = 0;
 	private scene: Scene | null = null;
+	// Shared win-bar glow tuning lives in GlowEffect.WIN_BAR_*.
 
 	constructor(networkManager: NetworkManager, screenModeManager: ScreenModeManager) {
 		this.networkManager = networkManager;
@@ -64,6 +70,7 @@ export class Header {
 			this.animals?.update(delta);
 			this.updateHeaderSceneContainerDebugBorder(scene);
 			this.updateHeaderDebugBorder();
+			this.updateConfettiDebugBorder(scene);
 		});
 		
 		// Set up event listeners for winnings updates
@@ -115,6 +122,7 @@ export class Header {
 
 		// Conveyor top: at top inside Header_SceneFrame, higher depth than Header_Scene (added after so it draws on top)
 		this.createConveyorTopSpine(scene);
+		this.createConfettiVfxSpine(scene);
 
 		// Header_WinBar: below the frame (same formula as BonusHeader for identical layout)
 		if (scene.textures.exists('Header_WinBar')) {
@@ -126,6 +134,8 @@ export class Header {
 			this.headerWinBarImage = this.createScaledHeaderImage(scene, 'Header_WinBar', centerX, winBarY);
 			this.headerWinBarImage.setScale((scene.scale.width / this.headerWinBarImage.width) * HEADER_CONFIG.WIN_BAR_SCALE);
 			this.headerContainer.add(this.headerWinBarImage);
+			this.createWinBarGlows(scene);
+			this.updateWinBarGlowTransform();
 		}
 		if (this.headerSceneContainer) {
 			this.headerContainer.bringToTop(this.headerSceneContainer);
@@ -213,6 +223,75 @@ export class Header {
 		}
 	}
 
+	private createConfettiVfxSpine(scene: Scene): void {
+		if (!ensureSpineFactory(scene, '[Header] createConfettiVfxSpine')) {
+			console.warn('[Header] Spine factory missing - cannot create confetti');
+			scene.time.delayedCall(300, () => this.createConfettiVfxSpine(scene));
+			return;
+		}
+		if (!scene.cache.json.has('Confetti_VFX_PC')) {
+			console.warn('[Header] Confetti_VFX_PC JSON not in cache yet');
+			scene.time.delayedCall(300, () => this.createConfettiVfxSpine(scene));
+			return;
+		}
+		try {
+			this.confettiVfxSpine?.destroy?.();
+		} catch {}
+
+		try {
+			this.confettiVfxSpine = scene.add.spine(0, 0, 'Confetti_VFX_PC', 'Confetti_VFX_PC-atlas');
+			this.confettiVfxSpine.setOrigin(0.5, 0);
+			this.confettiVfxSpine.setDepth(9602);
+			this.confettiVfxSpine.setVisible(false);
+			if (this.headerSceneContainer) {
+				this.headerSceneContainer.add(this.confettiVfxSpine);
+				if (this.headerSceneFrameImage) {
+					this.headerSceneContainer.bringToTop(this.confettiVfxSpine);
+				}
+			} else {
+				this.headerContainer.add(this.confettiVfxSpine);
+			}
+			this.updateConfettiTransform(scene);
+			if (gameStateManager.isProcessingSpin || gameStateManager.isReelSpinning) {
+				this.playConfettiVfx();
+			}
+		} catch (e) {
+			console.warn('[Header] Failed to create confetti VFX spine:', e);
+		}
+	}
+
+	private updateConfettiTransform(scene: Scene): void {
+		if (!this.confettiVfxSpine) return;
+		const frameBaseWidth = this.getHeaderImageDisplayWidth(scene, 'Header_SceneFrame');
+		const confettiRefWidth = 1756;
+		const scale = ((frameBaseWidth > 0 ? frameBaseWidth : scene.scale.width) / confettiRefWidth) * HEADER_CONFIG.CONFETTI_SCALE;
+		try { this.confettiVfxSpine.setScale(scale); } catch {}
+		try {
+			this.confettiVfxSpine.setPosition(
+				HEADER_CONFIG.CONFETTI_OFFSET_X,
+				HEADER_CONFIG.CONFETTI_OFFSET_Y
+			);
+		} catch {}
+	}
+
+	private playConfettiVfx(): void {
+		if (!this.confettiVfxSpine) return;
+		try { this.confettiVfxSpine.setVisible(true); } catch {}
+		startAnimation(this.confettiVfxSpine, {
+			animationName: 'Confetti_Pop',
+			loop: true,
+			trackIndex: 0,
+			logWhenMissing: true,
+			fallbackToFirstAvailable: true
+		});
+	}
+
+	private stopConfettiVfx(): void {
+		if (!this.confettiVfxSpine) return;
+		stopAnimation(this.confettiVfxSpine, { fadeOut: 0.2, trackIndex: 0 });
+		try { this.confettiVfxSpine.setVisible(false); } catch {}
+	}
+
 	private createJimboyNormalSpine(scene: Scene, centerXView: number): void {
 		this.jimboyNormal?.destroy();
 		this.jimboyNormal = new JimboyCharacter(scene, {
@@ -245,10 +324,12 @@ export class Header {
 
 	private startAnimalsMoveAnimation(): void {
 		this.animals?.start();
+		this.playConfettiVfx();
 	}
 
 	private stopAnimalsMoveAnimation(): void {
 		this.animals?.stop();
+		this.stopConfettiVfx();
 	}
 
 	/** Play conveyor top animation (during spin). */
@@ -319,10 +400,50 @@ export class Header {
 			this.headerSceneContainer.setPosition(anchorX, anchorY);
 			this.headerSceneContainer.setSize(containerWidth, containerHeight);
 			this.fitHeaderSceneToContainer(scene, containerWidth, containerHeight);
+			this.updateConfettiTransform(scene);
 		}
 		const rect = this.getHeaderSceneFrameRect(scene, centerXView);
 		this.updateHeaderSceneContentMask(scene, rect);
 		this.updateHeaderSceneContainerDebugBorder(scene, rect);
+	}
+
+	private createWinBarGlows(scene: Scene): void {
+		this.destroyWinBarGlows();
+		this.winBarGlowLeft = new GlowEffect(scene, {
+			scale: GlowEffect.WIN_BAR_SCALE,
+			depth: GlowEffect.WIN_BAR_DEPTH,
+			visible: true
+		});
+		this.winBarGlowRight = new GlowEffect(scene, {
+			scale: GlowEffect.WIN_BAR_SCALE,
+			depth: GlowEffect.WIN_BAR_DEPTH,
+			visible: true
+		});
+		this.winBarGlowLeft.create(undefined, 'normal');
+		this.winBarGlowRight.create(undefined, 'normal');
+	}
+
+	private updateWinBarGlowTransform(): void {
+		if (!this.headerWinBarImage) return;
+		const centerX = this.headerWinBarImage.x;
+		const topY = this.headerWinBarImage.y;
+		const halfW = this.headerWinBarImage.displayWidth * 0.5;
+		const leftX = centerX - halfW + GlowEffect.WIN_BAR_SIDE_INSET_X + GlowEffect.WIN_BAR_OFFSET_X;
+		const rightX = centerX + halfW - GlowEffect.WIN_BAR_SIDE_INSET_X + GlowEffect.WIN_BAR_OFFSET_X;
+		const y = topY + GlowEffect.WIN_BAR_OFFSET_Y;
+		this.winBarGlowLeft?.setPosition(leftX, y);
+		this.winBarGlowRight?.setPosition(rightX, y);
+		this.winBarGlowLeft?.setScale(GlowEffect.WIN_BAR_SCALE);
+		this.winBarGlowRight?.setScale(GlowEffect.WIN_BAR_SCALE);
+		this.winBarGlowLeft?.setDepth(GlowEffect.WIN_BAR_DEPTH);
+		this.winBarGlowRight?.setDepth(GlowEffect.WIN_BAR_DEPTH);
+	}
+
+	private destroyWinBarGlows(): void {
+		try { this.winBarGlowLeft?.destroy(); } catch {}
+		try { this.winBarGlowRight?.destroy(); } catch {}
+		this.winBarGlowLeft = null;
+		this.winBarGlowRight = null;
 	}
 
 	private fitHeaderSceneToContainer(scene: Scene, containerWidth: number, containerHeight: number): void {
@@ -347,6 +468,7 @@ export class Header {
 		if (!rect) {
 			try { this.headerSceneImage?.clearMask?.(false); } catch {}
 			try { this.conveyorTopSpine?.clearMask?.(false); } catch {}
+			try { this.confettiVfxSpine?.clearMask?.(false); } catch {}
 			return;
 		}
 
@@ -362,6 +484,7 @@ export class Header {
 
 		try { this.headerSceneImage?.setMask?.(this.headerSceneContentMask); } catch {}
 		try { this.conveyorTopSpine?.setMask?.(this.headerSceneContentMask); } catch {}
+		try { this.confettiVfxSpine?.setMask?.(this.headerSceneContentMask); } catch {}
 	}
 
 	private updateHeaderSceneContainerDebugBorder(scene: Scene, rect?: Phaser.Geom.Rectangle | null): void {
@@ -521,6 +644,7 @@ export class Header {
 			const winBarY = frameTopY + containerHeight + HEADER_CONFIG.WIN_BAR_OFFSET_Y;
 			this.headerWinBarImage.setPosition(centerX, winBarY);
 			this.headerWinBarImage.setScale((scene.scale.width / this.headerWinBarImage.width) * HEADER_CONFIG.WIN_BAR_SCALE);
+			this.updateWinBarGlowTransform();
 		}
 		this.updateHeaderDebugBorder();
 	}
@@ -532,8 +656,13 @@ export class Header {
 	/** Set visibility of the whole header (container + scene frame when not in container). */
 	setVisible(visible: boolean): void {
 		this.headerContainer.setVisible(visible);
+		this.winBarGlowLeft?.setVisible(visible);
+		this.winBarGlowRight?.setVisible(visible);
 		if (this.headerSceneFrameImage) {
 			this.headerSceneFrameImage.setVisible(visible);
+		}
+		if (!visible) {
+			this.stopConfettiVfx();
 		}
 		if (visible && !gameStateManager.isBonus) {
 			this.resumeJimboyNormal();
@@ -711,6 +840,70 @@ export class Header {
 				}
 			}
 		});
+	}
+
+	private updateConfettiDebugBorder(scene: Scene): void {
+		if (!SHOW_HEADER_CONFETTI_BORDER) {
+			if (this.debugConfettiBorder) {
+				this.debugConfettiBorder.clear();
+				this.debugConfettiBorder.setVisible(false);
+			}
+			return;
+		}
+
+		if (!this.headerContainer) return;
+
+		const visible = this.headerContainer.visible && (this.confettiVfxSpine.visible ?? true);
+		if (!this.debugConfettiBorder) {
+			this.debugConfettiBorder = scene.add.graphics().setDepth(9604);
+		}
+		// Keep debug border on the scene display list (world coords) for consistent visibility.
+		if ((this.debugConfettiBorder as any).parentContainer) {
+			try { (this.debugConfettiBorder as any).parentContainer.remove(this.debugConfettiBorder); } catch {}
+		}
+
+		try {
+			let x = 0;
+			let y = 0;
+			let w = 0;
+			let h = 0;
+			if (this.confettiVfxSpine) {
+				const scaleX = Number(this.confettiVfxSpine.scaleX ?? this.confettiVfxSpine.scale ?? 1);
+				const scaleY = Number(this.confettiVfxSpine.scaleY ?? this.confettiVfxSpine.scale ?? 1);
+				w = Math.max(1, 1756 * (Number.isFinite(scaleX) ? scaleX : 1));
+				h = Math.max(1, 516 * (Number.isFinite(scaleY) ? scaleY : 1));
+				const posX = Number(this.confettiVfxSpine.x ?? 0);
+				const posY = Number(this.confettiVfxSpine.y ?? 0);
+				// Confetti origin is (0.5, 0). Convert local-to-world using headerSceneContainer position.
+				const baseX = Number(this.headerSceneContainer?.x ?? 0);
+				const baseY = Number(this.headerSceneContainer?.y ?? 0);
+				x = baseX + posX - (w * 0.5);
+				y = baseY + posY;
+			} else {
+				const frameBaseWidth = this.getHeaderImageDisplayWidth(scene, 'Header_SceneFrame');
+				const refScale = ((frameBaseWidth > 0 ? frameBaseWidth : scene.scale.width) / 1756) * HEADER_CONFIG.CONFETTI_SCALE;
+				const approxScale = Math.max(0.01, refScale);
+				w = 1756 * approxScale;
+				h = 516 * approxScale;
+				const viewCenter = scene.cameras?.main ? scene.cameras.main.centerX : scene.scale.width * 0.5;
+				x = viewCenter + HEADER_CONFIG.SCENE_FRAME_OFFSET_X - w * 0.5 + HEADER_CONFIG.CONFETTI_OFFSET_X;
+				y = HEADER_CONFIG.SCENE_FRAME_OFFSET_Y + HEADER_CONFIG.HEADER_SCENE_CONTAINER_OFFSET_Y + HEADER_CONFIG.CONFETTI_OFFSET_Y;
+			}
+			if (!Number.isFinite(x) || !Number.isFinite(y) || w <= 0 || h <= 0) {
+				this.debugConfettiBorder.clear();
+				this.debugConfettiBorder.setVisible(false);
+				return;
+			}
+			this.debugConfettiBorder.clear();
+			this.debugConfettiBorder.lineStyle(2, 0xff0000, 1);
+			this.debugConfettiBorder.fillStyle(0xff0000, 0.15);
+			this.debugConfettiBorder.fillRect(x, y, w, h);
+			this.debugConfettiBorder.strokeRect(x, y, w, h);
+			this.debugConfettiBorder.setVisible(visible);
+		} catch {
+			this.debugConfettiBorder.clear();
+			this.debugConfettiBorder.setVisible(false);
+		}
 	}
 
 	/**
@@ -996,5 +1189,9 @@ export class Header {
 			}
 			console.log('[Header] Winnings display hidden - bonus header shown');
 		});
+	}
+
+	public destroy(): void {
+		this.destroyWinBarGlows();
 	}
 }

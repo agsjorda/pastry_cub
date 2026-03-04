@@ -114,11 +114,13 @@ export class BuyFeatureController {
     try {
       let shouldKeepBuyFeatureFlag = false;
       const buyFeatureBet = this.buyFeature.getCurrentBetAmount();
+      const selectedBuyFeatureType = this.buyFeature.getSelectedBuyFeatureType();
+      const buyFeat = selectedBuyFeatureType === 2 ? 2 : 1;
       const calculatedPrice = buyFeatureBet * 100;
 
       this.callbacks.updateBetAmount(buyFeatureBet);
 
-      console.log(`[SlotController] Buy feature bet: $${buyFeatureBet.toFixed(2)}, calculated price: $${calculatedPrice.toFixed(2)}`);
+      console.log(`[SlotController] Buy feature bet: $${buyFeatureBet.toFixed(2)}, calculated price: $${calculatedPrice.toFixed(2)}, selected buy feature type: ${selectedBuyFeatureType}`);
 
       const currentBalance = this.callbacks.getBalanceAmount();
       if (currentBalance < calculatedPrice) {
@@ -140,7 +142,13 @@ export class BuyFeatureController {
 
       console.log('[SlotController] Calling doSpin for buy feature...');
       gameStateManager.isBuyFeatureSpin = true;
-      const spinData = await gameAPI.doSpin(buyFeatureBet, true, false);
+      const spinData = await gameAPI.doSpin(
+        buyFeatureBet,
+        true,
+        false,
+        false,
+        buyFeat,
+      );
       console.log('[BUY_FEATURE_SPIN_DATA]', spinData);
 
       console.log('[SlotController] Buy feature spin completed:', spinData);

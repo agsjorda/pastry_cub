@@ -356,6 +356,14 @@ export class AutoplayController {
     
     // WIN_STOP - continue autoplay
     gameEventManager.on(GameEventType.WIN_STOP, () => {
+      // If a scatter has triggered, let the scatter / bonus flow take over.
+      // Normal base-game autoplay should not advance to the next spin while
+      // the scatter animations and FreeSpin dialog are running.
+      if (gameStateManager.isScatter) {
+        log.debug('[AutoplayController] WIN_STOP: scatter active - skipping autoplay continue');
+        return;
+      }
+
       if (this.isManagingAutoplay && gameStateManager.isAutoPlaying && !gameStateManager.isShowingWinDialog) {
         this.continueAutoplayIfNeeded();
       }
@@ -363,6 +371,15 @@ export class AutoplayController {
     
     // WIN_DIALOG_CLOSED - continue autoplay after dialog
     gameEventManager.on(GameEventType.WIN_DIALOG_CLOSED, () => {
+      // When a scatter has been detected, dialog closure typically leads into
+      // scatter / bonus handling (including delayed scatter flows). In that case,
+      // do not resume base-game autoplay here; FreeSpinController will manage
+      // its own autoplay sequence once the scatter flow completes.
+      if (gameStateManager.isScatter) {
+        log.debug('[AutoplayController] WIN_DIALOG_CLOSED: scatter active - skipping autoplay continue');
+        return;
+      }
+
       if (this.isManagingAutoplay && gameStateManager.isAutoPlaying) {
         this.continueAutoplayIfNeeded();
       }

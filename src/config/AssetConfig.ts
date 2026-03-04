@@ -71,6 +71,10 @@ export class AssetConfig {
 					atlas: `${prefix}/conveyor/BG_ConveyorTop_PC.atlas`,
 					json: `${prefix}/conveyor/BG_ConveyorTop_PC.json`
 				},
+				'Confetti_VFX_PC': {
+					atlas: `assets/portrait/high/vfx/Confetti_VFX_PC.atlas`,
+					json: `assets/portrait/high/vfx/Confetti_VFX_PC.json`
+				},
 				'JimboyNormal_PC': {
 					atlas: `assets/portrait/high/characters/JimboyNormal_PC.atlas`,
 					json: `assets/portrait/high/characters/JimboyNormal_PC.json`
@@ -125,7 +129,7 @@ export class AssetConfig {
 
 		// Symbol Spine: 0-7 (scatter + regular)
 		for (const i of [0, 1, 2, 3, 4, 5, 6, 7]) {
-			const spineKey = `symbol_${i}_sugar_spine`;
+			const spineKey = `symbol_${i}_spine`;
 			symbolSpine[spineKey] = { atlas: `${pcPath}/Symbol${i}_${suffix}.atlas`, json: `${pcPath}/Symbol${i}_${suffix}.json` };
 		}
 
@@ -141,7 +145,6 @@ export class AssetConfig {
 			atlas: `assets/portrait/high/characters/JimboyBonus_PC.atlas`,
 			json: `assets/portrait/high/characters/JimboyBonus_PC.json`
 		};
-		console.log('[AssetConfig] Explosion VFX spine: Explosion_VFX');
 
 		// Multiplier overlays for bonus grid image tiers (1st mark->x1, 2nd->x2, ...).
 		// Files expected in: assets/portrait/high/symbols/pastry_cub_symbols/multiplier_symbols/x1.webp, x2.webp, ...
@@ -334,8 +337,15 @@ export class AssetConfig {
 	}
 
 	getForegroundAssets(): AssetGroup {
-		// Old TV overlay not used for pastry_cub
-		return { spine: {} };
+		// Foreground/VFX assets that are still needed at runtime.
+		return {
+			spine: {
+				'Glow_Effect_PC': {
+					atlas: `assets/portrait/high/vfx/Glow_Effect_PC.atlas`,
+					json: `assets/portrait/high/vfx/Glow_Effect_PC.json`
+				}
+			}
+		};
 	}
 
 	/**
@@ -386,6 +396,7 @@ export class AssetConfig {
 			images: {
 				'buy_feature_logo': `${prefix}/buy_feature/buy_feature_logo.webp`,
 				'buy_feature_bg': `${prefix}/buy_feature/buy_feature_bg.webp`,
+				'buy_feature_selected_icon': `${prefix}/buy_feature/selected_icon.png`,
 			}
 		};
 	}

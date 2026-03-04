@@ -13,7 +13,7 @@ Update in this order:
 4. `src/config/GameConfig.ts` for rules and tuning.
 5. `src/game/components/Spin.ts` for paytable math.
 6. `src/game/components/MenuTabs/HelpScreen.ts` for player-facing rules text.
-7. `public/fake_spin_data.json` and `src/backend/GameAPI.ts` for demo/local data consistency.
+7. `src/game/spinDataSample/fake_spin_data.json` and `src/backend/GameAPI.ts` for demo/local data consistency.
 
 ## 2. What To Change
 
@@ -64,6 +64,7 @@ File: `src/game/components/MenuTabs/HelpScreen.ts`
 | Main background and overlays | `public/assets/portrait/high/background/` and `public/assets/portrait/low/background/` | `src/config/AssetConfig.ts` -> `getBackgroundAssets()` |
 | Bonus background | `public/assets/portrait/high/bonus_background/` | `src/config/AssetConfig.ts` -> `getBonusBackgroundAssets()` |
 | Header art | `public/assets/portrait/high/header/` | `src/config/AssetConfig.ts` -> `getHeaderAssets()` |
+| Header confetti VFX | `public/assets/portrait/high/vfx/Confetti_VFX_PC.*` | `src/config/AssetConfig.ts` -> `getHeaderAssets()` and `src/config/GameConfig.ts` -> `HEADER_CONFIG.CONFETTI_*` |
 | Symbol Spine art (scatter + regular) | `public/assets/portrait/high/symbols/Symbol0_PC.*` through `Symbol7_PC.*` | `src/config/AssetConfig.ts` -> `getSymbolAssets()` |
 | Bonus grid character overlay (Jimboy) | `public/assets/portrait/high/characters/JimboyBonus_PC.*` | `src/config/AssetConfig.ts` -> `getSymbolAssets()` and `src/game/components/symbols/Symbols.ts` |
 | Static symbol icons (help/paytable) | `public/assets/portrait/high/symbols/statics/symbol0.png` through `symbol7.png` | `src/config/AssetConfig.ts` -> `getSymbolAssets()` |
@@ -93,13 +94,13 @@ Notes:
 | Animation timings | `src/config/GameConfig.ts` -> `TIMING_CONFIG`, `ANIMATION_CONFIG`, and related timing constants |
 | Debug toggles | `src/config/GameConfig.ts` -> `SHOW_*` flags (including `SHOW_HEADER_SCENE_CONTAINER_BORDER`, `SHOW_HEADER_BORDER`) |
 
-### Grid semantics (area → visual grid)
+### Grid semantics (area -> visual grid)
 
-Backend/demo data (`slot.area` and `public/fake_spin_data.json`) use a **column-major** layout:
+Backend/demo data (`slot.area` and `src/game/spinDataSample/fake_spin_data.json`) use a **column-major** layout:
 
 ```ts
 const area = [
-  [4, 7, 7, 3, 3, 6, 6], // column 0: bottom → top
+  [4, 7, 7, 3, 3, 6, 6], // column 0: top -> bottom
   [0, 7, 6, 7, 2, 7, 7], // column 1
   [7, 0, 3, 1, 5, 5, 6], // column 2
   [0, 6, 5, 5, 7, 4, 6], // column 3
@@ -108,7 +109,7 @@ const area = [
   [2, 6, 2, 3, 1, 5, 6]  // column 6
 ];
 
-// Helper to view the grid as rows (top → bottom)
+// Helper to view the grid as rows (top -> bottom)
 function convertColumnsToGrid(columns: number[][]): number[][] {
   if (!columns.length) return [];
 
@@ -116,7 +117,7 @@ function convertColumnsToGrid(columns: number[][]): number[][] {
   const width = columns.length;
   const grid: number[][] = [];
 
-  for (let row = height - 1; row >= 0; row--) {
+  for (let row = 0; row < height; row++) {
     const newRow: number[] = [];
     for (let col = 0; col < width; col++) {
       newRow.push(columns[col][row]);
@@ -131,20 +132,33 @@ function convertColumnsToGrid(columns: number[][]): number[][] {
 For the `area` above, the visual grid (top row first) is:
 
 ```text
- 6  7  6  6  3  5  6
- 6  7  5  4  4  6  5
- 3  2  5  7  6  4  1
- 3  7  1  5  5  7  3
- 7  6  3  5  5  5  2
- 7  7  0  6  1  5  6
  4  0  7  0  1  6  2
+ 7  7  0  6  1  5  6
+ 7  6  3  5  5  5  2
+ 3  7  1  5  5  7  3
+ 3  2  5  7  6  4  1
+ 6  7  5  4  4  6  5
+ 6  7  6  6  3  5  6
 ```
 
-- Columns are left → right.
-- Rows are bottom → top.
+**Important grid reference rule:** when documenting or discussing grid coordinates, **row 0 is the top**. That same grid should be read like this:
+
+```text
+    c0 c1 c2 c3 c4 c5 c6
+r0:  4  0  7  0  1  6  2
+r1:  7  7  0  6  1  5  6
+r2:  7  6  3  5  5  5  2
+r3:  3  7  1  5  5  7  3
+r4:  3  2  5  7  6  4  1
+r5:  6  7  5  4  4  6  5
+r6:  6  7  6  6  3  5  6
+```
+
+- Columns are left -> right.
+- Rows are top -> bottom (row 0 = top).
 - Scatter symbols (Symbol0) are the `0` entries in this grid.
 
-In code, use `columnsToRowMajor(area)` from `src/utils/scatterGrid.ts` to obtain this row-major view (`grid[row][col]` with row 0 = top) for any grid-based logic (e.g. scatter detection).
+In code, use `toRowMajor(area)` from `src/utils/GridTransform.ts` to obtain the row-major view (`grid[row][col]` with row 0 = top) for logic that expects top-based rows (e.g. scatter detection).
 
 ## 6. Scatter Trigger / Retrigger Flow
 
@@ -153,7 +167,7 @@ All scatter flows (normal trigger, scatter retrigger in bonus, and buy-feature t
 1. **Detect scatters from the final grid**
    - After reels and all tumbles finish, detect Symbol0 on the settled grid:
      - Use `symbolsToUse = slot.area` (base game) or `freeSpinItem.area` (bonus).
-     - Convert to row-major with `columnsToRowMajor(symbolsToUse)`.
+     - Convert to row-major with `toRowMajor(symbolsToUse)`.
      - Run `getScatterGrids(grid, SCATTER_SYMBOL_ID)` to get `(col,row)` positions.
    - For retrigger, store these positions (e.g. in `pendingScatterRetrigger.scatterGrids`) and reuse them; do **not** re-derive them from a different grid shape.
 
@@ -175,6 +189,23 @@ All scatter flows (normal trigger, scatter retrigger in bonus, and buy-feature t
 3. **Consistency rules**
    - Do not implement separate scatter flows for normal game, bonus, and buy-feature; they should all call into the same merge → win → hold → dialog → idle → unmerge pipeline.
    - Any future timing tweaks (e.g. making win linger longer) should be applied in the shared controller, not in per-flow hacks.
+
+### MaxWin Cap Flow (`isMaxWin` on free spin item)
+
+When the current free spin item has `isMaxWin: true`, enforce `slot.totalWin` as a hard cap for bonus tumble progression and header display.
+
+1. Determine cap from `spinData.slot.totalWin`.
+2. Before each tumble, if accumulated bonus win is already `>= slot.totalWin`, stop remaining tumbles.
+3. For each tumble, compute `remaining = slot.totalWin - accumulated`.
+4. If `tumbleWin > remaining`, clamp the displayed/accumulated tumble win to `remaining`.
+5. If `tumbleWin + accumulated == slot.totalWin`, finish this tumble and stop next tumbles.
+6. Header behavior:
+   - `YOU WON` shows only the clamped tumble amount needed to reach the cap.
+   - `TOTAL WIN` must display exactly `slot.totalWin` once capped/finalized.
+
+Implementation reference:
+- Tumble cap/stop logic: `src/game/components/symbols/Symbols.ts` (`applyTumbles`).
+- Header clamp/display logic: `src/game/components/BonusHeader.ts` (`TUMBLE_WIN_PROGRESS`, `WIN_STOP`).
 
 ## 6. Bonus Marker (Multiplier Spot) Rules
 
@@ -208,7 +239,9 @@ If mechanics change, sync these values in copy:
 
 ## 8. Demo and Backend Data Sync
 
-- Demo payloads: `public/fake_spin_data.json`
+- Demo payloads: `src/game/spinDataSample/fake_spin_data.json`
+- Max win test payload: `src/game/spinDataSample/max_win_data.json` (enable with `?useMaxWin=true`)
+- Sample data selector: `?sampleData=<file_base_name>` (aliases: `?useFakeData=true`, `?useMaxWin=true`)
 - Parsing/normalization: `src/backend/GameAPI.ts`
 - Demo state source and helpers: `src/backend/GameAPI.ts` -> `getDemoState()`, `getDemoBalance()`, `updateDemoBalance()`
 - Game identifier used in backend/demo spin payloads: `src/backend/GameAPI.ts` -> `GAME_ID` (placeholder value; update per target game integration)

@@ -128,6 +128,8 @@ export class SlotController {
 	
 	// When true, current autoplay session is a dedicated "freeround autoplay"
 	private isFreeRoundAutoplay: boolean = false;
+	// Cached base-game autoplay spins used when a scatter-triggered bonus pauses autoplay.
+	private pausedAutoplaySpinsRemaining: number | null = null;
 	// Flag to track if we need to re-enable spin button after first autoplay spin in normal mode
 	private shouldReenableSpinButtonAfterFirstAutoplay: boolean = false;
 	// Throttle API spin requests to prevent spam
@@ -1059,6 +1061,20 @@ export class SlotController {
 		if (this.featureButtonHitbox && inputEnabled === false) {
 			return;
 		}
+
+		let playedClick = false;
+		try {
+			this.scene?.sound?.play('click');
+			playedClick = true;
+		} catch {}
+
+		if (!playedClick) {
+			const audioManager = (this.scene as any)?.audioManager || (window as any)?.audioManager;
+			if (audioManager && typeof audioManager.playSoundEffect === 'function') {
+				audioManager.playSoundEffect(SoundEffectType.MENU_CLICK);
+			}
+		}
+
 		this.showBuyFeatureDrawer();
 	}
 
@@ -1595,7 +1611,7 @@ export class SlotController {
 
 			// Prevent opening bet options while spin/tumbles are in progress or autoplay is active
 			const gsm: any = gameStateManager as any;
-			if (gameStateManager.isReelSpinning || gameStateManager.isAutoPlaying || gsm?.isProcessingSpin) {
+			if (gameStateManager.isReelSpinning || gameStateManager.isAutoPlaying || gsm?.isProcessingSpin || gameStateManager.isShowingWinDialog) {
 				console.log(
 					'[SlotController] Bet options panel disabled while spinning, tumbling, or autoplaying'
 				);
@@ -1986,11 +2002,11 @@ export class SlotController {
 		// Treat this as an internal bet change so resetAmplifyBetOnBetChange is not triggered
 		this.isInternalBetChange = true;
 		try {
-			this.updateBetAmount(betAmount);
-
-			// Also update the underlying base bet so future openings of the
-			// autoplay popup (and API/base-bet consumers) use this value.
+			// Update base bet BEFORE updateBetAmount so that
+			// updateFeatureAmountFromCurrentBet (called inside) reads the new value.
 			this.baseBetAmount = betAmount;
+
+			this.updateBetAmount(betAmount);
 
 			// If enhance/amplify bet is currently ON, keep the displayed bet at +25%
 			// while the underlying base bet (used for API and Buy Feature price) is betAmount.
@@ -2482,8 +2498,10 @@ export class SlotController {
 			if (!this.isBuyFeatureControlsLocked()) {
 				this.enableAutoplayButton();
 				this.enableTurboButton();
-				this.enableBetButtons();
-				this.enableAmplifyButton();
+				if (!gameStateManager.isAutoPlaying) {
+					this.enableBetButtons();
+					this.enableAmplifyButton();
+				}
 			}
 			// Delayed re-apply so autoplay button is enabled after balance/lock state settles
 			this.scene?.time.delayedCall(250, () => {
@@ -2568,20 +2586,19 @@ export class SlotController {
 				return;
 			}
 			
-			// Re-enable spin button, bet buttons, feature button, and bet background
-			// Autoplay button stays disabled until TUMBLE_SEQUENCE_DONE (all tumbles finished)
+			// Re-enable all buttons now that autoplay has stopped
 			this.updateSpinButtonState();
-			// Deferred retry: pending balance or other async state may clear shortly after AUTO_STOP
 			this.scene?.time.delayedCall(150, () => this.updateSpinButtonState());
-			// Don't re-enable auxiliary buttons if buy feature spin lock is active
 			if (!this.isBuyFeatureControlsLocked()) {
+				this.enableAutoplayButton();
 				this.enableBetButtons();
 				this.enableAmplifyButton();
 				this.enableBetBackgroundInteraction('after autoplay stop');
 			}
 			this.updateTurboButtonStateWithLock();
 			this.enableFeatureButton();
-		// Show and resume spin icon after autoplay stops, hide stop icon
+
+			// Show and resume spin icon after autoplay stops, hide stop icon
 			if (this.spinIcon) {
 				this.spinIcon.setVisible(true);
 			}
@@ -2591,13 +2608,30 @@ export class SlotController {
 			if (this.autoplayStopIcon) {
 				this.autoplayStopIcon.setVisible(false);
 			}
-			// Keep spins text above all
 			if (this.autoplaySpinsRemainingText && this.primaryControllers) {
 				this.primaryControllers.bringToTop(this.autoplaySpinsRemainingText);
 			}
-			console.log('[SlotController] Spin, autoplay, bet, feature, and amplify buttons enabled');
-			
 			console.log('[SlotController] Autoplay UI reset completed');
+
+			// Safety fallback: force-verify all button states after a short delay
+			// to catch any edge-case where an event ordering issue left buttons disabled.
+			// Two-stage fallback: 200ms covers pending balance clearing, 600ms covers late events.
+			const runSafetyFallback = (label: string) => {
+				if (gameStateManager.isAutoPlaying || gameStateManager.isReelSpinning) return;
+				if (gameStateManager.isScatter || gameStateManager.isBonus) return;
+				if (this.isBuyFeatureControlsLocked()) return;
+				const gsmSafety: any = gameStateManager as any;
+				if (gsmSafety.isInFreeSpinRound === true) return;
+				// Clear any stale pending balance that might block spin button
+				this.balanceController?.applyPendingBalanceUpdateIfAny();
+				this.updateSpinButtonState();
+				this.updateAllAuxiliaryButtonStates();
+				this.updateFeatureButtonState();
+				this.enableBetBackgroundInteraction(label);
+				console.log(`[SlotController] AUTO_STOP ${label}: verified all button states`);
+			};
+			this.scene?.time.delayedCall(200, () => runSafetyFallback('safety-200ms'));
+			this.scene?.time.delayedCall(600, () => runSafetyFallback('safety-600ms'));
 		});
 
 
@@ -2646,19 +2680,30 @@ export class SlotController {
 			}
 			
 			// Handle autoplay spin completion
-			// Check if autoplay is active by checking both the counter and the game state
 			const spinsRemaining = this.getAutoplaySpinsRemaining();
 			const isAutoplayActive = spinsRemaining > 0 || gameStateManager.isAutoPlaying;
 
 			if (isAutoplayActive) {
 				console.log('[SlotController] Autoplay spin completed - handled by AutoplayController');
-				console.log(`[SlotController] Autoplay state: spinsRemaining=${spinsRemaining}, isAutoPlaying=${gameStateManager.isAutoPlaying}`);
 				return;
 			}
 
-			// Manual spin completed - emit AUTO_STOP for UI reset
-			console.log('[SlotController] Manual spin completed - emitting AUTO_STOP for UI reset');
-			gameEventManager.emit(GameEventType.AUTO_STOP);
+			// Re-enable buttons directly for manual spins instead of emitting
+			// AUTO_STOP (which AutoplayController already emits for natural completion).
+			console.log('[SlotController] Spin completed - re-enabling controls');
+			this.updateSpinButtonState();
+			if (!this.isBuyFeatureControlsLocked()) {
+				this.enableAutoplayButton();
+				this.enableBetButtons();
+				this.enableAmplifyButton();
+				this.enableBetBackgroundInteraction('after spin WIN_STOP');
+			}
+			this.updateTurboButtonStateWithLock();
+			this.enableFeatureButton();
+			this.hideAutoplaySpinsRemainingText();
+			if (this.spinIcon) { this.spinIcon.setVisible(true); }
+			if (this.spinIconTween) { this.spinIconTween.resume(); }
+			if (this.autoplayStopIcon) { this.autoplayStopIcon.setVisible(false); }
 		});
 
 		// Listen for win dialog close (for high winnings case)
@@ -2737,6 +2782,79 @@ export class SlotController {
 		// Keep spin button enabled during autoplay (allow stopping autoplay)
 		this.disableBetButtons();
 		this.disableFeatureButton();
+		this.disableAmplifyButton();
+	}
+
+	/**
+	 * Pause base-game autoplay, caching the remaining spins so it can be resumed
+	 * after a scatter-triggered bonus (e.g. once the bonus/Congrats flow fully completes).
+	 */
+	public pauseAutoplay(reason: string = 'pauseAutoplay'): void {
+		const gameData = this.getGameData();
+		const spinsRemaining = this.getAutoplaySpinsRemaining();
+		const isAutoplayActive =
+			spinsRemaining > 0 ||
+			!!gameStateManager.isAutoPlaying ||
+			!!gameData?.isAutoPlaying;
+
+		if (!isAutoplayActive) {
+			console.log('[SlotController] pauseAutoplay called but autoplay is not active - no-op');
+			return;
+		}
+
+		// Cache remaining spins (counter may already have been decremented for the current spin).
+		this.pausedAutoplaySpinsRemaining = spinsRemaining;
+		console.log('[SlotController] Pausing autoplay (cache stored):', {
+			pausedAutoplaySpinsRemaining: this.pausedAutoplaySpinsRemaining,
+			reason,
+		});
+
+		// Reuse existing stop logic to clear timers and reset UI/state.
+		this.stopAutoplay();
+	}
+
+	/**
+	 * Consume (read + clear) the paused autoplay cache.
+	 */
+	private consumePausedAutoplaySpinsRemaining(): number {
+		const spins = this.pausedAutoplaySpinsRemaining ?? 0;
+		this.pausedAutoplaySpinsRemaining = null;
+		return spins;
+	}
+
+	/**
+	 * Resume base-game autoplay using cached data from `pauseAutoplay()`.
+	 * Safe to call multiple times; it will no-op unless a paused cache exists.
+	 */
+	public resumeAutoplayFromPause(): void {
+		const spins = this.consumePausedAutoplaySpinsRemaining();
+		if (spins <= 0) {
+			return;
+		}
+
+		// Only resume in base mode after transitions finish.
+		if (gameStateManager.isBonus || gameStateManager.isScatter || gameStateManager.isShowingWinDialog) {
+			console.log('[SlotController] resumeAutoplayFromPause blocked (state not ready yet):', {
+				isBonus: gameStateManager.isBonus,
+				isScatter: gameStateManager.isScatter,
+				isShowingWinDialog: gameStateManager.isShowingWinDialog,
+				spins,
+			});
+			return;
+		}
+
+		// Do not resume while a spin is still finishing.
+		if (gameStateManager.isProcessingSpin || gameStateManager.isReelSpinning) {
+			console.log('[SlotController] resumeAutoplayFromPause waiting for spin boundary:', {
+				isProcessingSpin: gameStateManager.isProcessingSpin,
+				isReelSpinning: gameStateManager.isReelSpinning,
+				spins,
+			});
+			return;
+		}
+
+		console.log('[SlotController] Resuming autoplay from paused cache:', { spins });
+		this.startAutoplay(spins);
 	}
 
 	/**
@@ -3557,10 +3675,13 @@ export class SlotController {
 			return;
 		}
 		this.isSpinLocked = true;
+		gameStateManager.isProcessingSpin = true;
+		let shouldClearProcessingOnExit = true;
 		try {
 			if (!this.gameAPI) {
 				console.warn('[SlotController] GameAPI not available, falling back to EventBus');
 				EventBus.emit('spin');
+				gameStateManager.isProcessingSpin = false;
 				return;
 			}
 
@@ -3601,6 +3722,7 @@ export class SlotController {
 							this.enableAmplifyButton();
 						}
 						this.enableFeatureButton();
+						gameStateManager.isProcessingSpin = false;
 						return;
 					}
 				} catch {}
@@ -3641,6 +3763,7 @@ export class SlotController {
 				if (gameStateManager.isBonus) {
 					console.log('[SlotController] handleSpin ignored in bonus mode (FREE_SPIN_AUTOPLAY drives free spins)');
 					this.hideSpinner();
+					gameStateManager.isProcessingSpin = false;
 					return;
 				}
 				{
@@ -3753,13 +3876,18 @@ export class SlotController {
 				gameEventManager.emit(GameEventType.SPIN_DATA_RESPONSE, {
 					spinData: spinData
 				});
+				shouldClearProcessingOnExit = false;
 
 			} catch (error) {
 				console.error('[SlotController] ❌ Spin failed:', error);
 				// Don't emit the spin event if the API call failed
+				gameStateManager.isProcessingSpin = false;
 			}
 		} finally {
 			this.isSpinLocked = false;
+			if (shouldClearProcessingOnExit) {
+				gameStateManager.isProcessingSpin = false;
+			}
 		}
 	}
 
@@ -3886,11 +4014,12 @@ export class SlotController {
 			console.log(`[SlotController] scatterBonusActivated event received with data:`, data);
 			console.log(`[SlotController] Data validation: scatterIndex=${data.scatterIndex}, actualFreeSpins=${data.actualFreeSpins}`);
 			
-			// Stop normal autoplay when scatter is hit
+			// Pause normal base-game autoplay when scatter is hit so it can be resumed
+			// after the free spin bonus completes (mirrors shuten_doji behavior).
 			const spinsRemaining = this.getAutoplaySpinsRemaining();
 			if (spinsRemaining > 0) {
-				console.log(`[SlotController] Scatter hit during autoplay - stopping normal autoplay (${spinsRemaining} spins remaining)`);
-				this.stopAutoplay();
+				console.log(`[SlotController] Scatter hit during autoplay - pausing normal autoplay (${spinsRemaining} spins remaining)`);
+				this.pauseAutoplay('scatterBonusActivated');
 			}
 			
 		// Keep controls disabled/greyed out while scatter/bonus sequence proceeds

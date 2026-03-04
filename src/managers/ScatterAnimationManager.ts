@@ -76,10 +76,7 @@ export class ScatterAnimationManager {
     }
 
     await symbolsModule.mergeScatterSymbols(scatterGrids);
-    const winDurationMs: number = await symbolsModule.playScatterWinAnimation(
-      { playNomnomSfx: true },
-      scatterGrids
-    );
+    const winDurationMs: number = await symbolsModule.playScatterWinAnimation(scatterGrids);
 
     // Prefer waiting on the actual win animation loop completion, falling back to a timed delay if needed.
     let waitedOnAnimation = false;

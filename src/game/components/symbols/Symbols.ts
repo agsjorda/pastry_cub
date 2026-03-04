@@ -20,7 +20,7 @@
 import { Game } from '../../scenes/Game';
 import { setSpeed } from '../GameData';
 import { ScatterAnimationManager } from '../../../managers/ScatterAnimationManager';
-import { columnsToRowMajor, getScatterGrids } from '../../../utils/scatterGrid';
+import { getScatterGrids } from '../../../utils/scatterGrid';
 import { gameEventManager, GameEventType } from '../../../event/EventManager';
 import { gameStateManager } from '../../../managers/GameStateManager';
 import { TurboConfig } from '../../../config/TurboConfig';
@@ -42,12 +42,14 @@ import {
   SCATTER_GATHER_DURATION_MS,
   SCATTER_SHRINK_DURATION_MS,
   SCATTER_MOVE_DURATION_MS,
+  SCATTER_PAYOUT_MULTIPLIERS,
+  BONUS_TUMBLE_TOTAL_WIN_DELAY_MS,
   SHOW_WIN_BORDER_SYMBOLS,
   WIN_BORDER_LINE_WIDTH,
   BONUS_MULTIPLIER_LAYOUT,
 } from '../../../config/GameConfig';
 import { SoundEffectType } from '../../../managers/AudioManager';
-import { normalizeAreaToGameConfig } from '../../../utils/GridTransform';
+import { normalizeAreaToGameConfig, toRowMajor } from '../../../utils/GridTransform';
 import { startAnimationWithEntry } from '../../../utils/SpineAnimationHelper';
 import {
   findClusters,
@@ -55,6 +57,7 @@ import {
   getOutCount,
   getOutWin,
   getTumbleTotal,
+  getTotalWinFromPaylines,
   getTotalWinFromSlot,
   getTotalWinFromFreespinOnly,
   getTotalCountFromOuts,
@@ -95,7 +98,6 @@ interface ScatterTransitionConfig {
   gatherScale: number;
   gatherDurationMs: number;
   shouldScale: boolean;
-  playNomnomSfx: boolean;
 }
 
 /**
@@ -107,11 +109,7 @@ interface ScatterTransitionConfig {
 export class Symbols {
   // Scale for the single Symbol0 (merge symbol) Spine object. Adjust as needed.
   public static MERGE_SYMBOL0_SPINE_SCALE: number = 0.2; // Set to previous PNG scale or adjust manually
-  // Scale for the explosion VFX (independent from merge symbol scale).
-  public static EXPLOSION_VFX_SCALE: number = 0.05;
-  // Scale for the explosion VFX used with merge_symbol0.
-  public static MERGE_EXPLOSION_VFX_SCALE: number = 0.2;
- 
+
   // ============================================================================
   // STATIC PROPERTIES (Backward Compatibility)
   // ============================================================================
@@ -138,6 +136,7 @@ export class Symbols {
   public scene!: Game;
   public scatterAnimationManager: ScatterAnimationManager;
   public currentSpinData: any = null;
+  private activeFreeSpinSpinsLeft: number | null = null;
   public isBuyFeatureTransitionComplete: boolean = false;
 
   // Expose grid properties for backward compatibility
@@ -222,7 +221,6 @@ export class Symbols {
   // Column-major snapshots used to validate cluster checks at WIN_STOP.
   private clusterWinGridSnapshots: number[][][] = [];
   private readonly skipTweenTimeScale: number = 1;
-  private explosionVfxInProgress: number = 0;
   // Per-spin staged scatter reel-drop SFX counter (scatterdrop1 -> ... -> scatterdrop4 max).
   private scatterDropStageForSpin: number = 0;
   private spinDropSoundByColumn: Map<number, SoundEffectType> = new Map();
@@ -509,8 +507,8 @@ export class Symbols {
     this.scene.events.on('scatterBonusCompleted', () => this.handleScatterBonusCompleted());
 
     // WIN_STOP - handle Symbol0 and scatter retriggers
-    // Defer by 150ms so win dialogs, explosions, and BONUS_TOTAL_WIN_SHOWN run first.
-    // Flow during bonus: win → explosion → win dialogs → Symbol0/scatter win anims → free spin retrigger → continue
+    // Defer by 150ms so win dialogs and BONUS_TOTAL_WIN_SHOWN run first.
+    // Flow during bonus: win → win dialogs → Symbol0/scatter win anims → free spin retrigger → continue
     gameEventManager.on(GameEventType.WIN_STOP, () => {
       if (this.hasPendingScatterRetrigger()) {
         this.scene.time.delayedCall(150, () => void this.handleWinStopScatterRetrigger());
@@ -763,7 +761,7 @@ export class Symbols {
           let animState = (symbol as any).animationState;
           if (!animState?.setAnimation) {
             try {
-              const spineKey = `symbol_${SCATTER_SYMBOL_ID}_sugar_spine`;
+              const spineKey = `symbol_${SCATTER_SYMBOL_ID}_spine`;
               const spineAtlasKey = `${spineKey}-atlas`;
               if (typeof (this.scene.add as any).spine === 'function') {
                 const x = symbol.x;
@@ -1119,14 +1117,71 @@ export class Symbols {
     }
   }
 
-  public startScatterAnimationSequence(mockData: any): void {
+  public startScatterAnimationSequence(mockData: any, scatterGrids?: GridPosition[]): void {
     if (this.cachedTotalWin <= 0) {
       this.cachedTotalWin = this.calculateTotalWinFromSpinData();
     }
     this.hideWinningOverlay();
-    // Use mockData.symbols (settled grid from this spin); slot/area are for raw API shape / delayed scatter
-    const data = { symbols: mockData?.symbols ?? mockData?.slot?.area ?? mockData?.area ?? [] };
+    // Always prefer the latest live grid (post-tumble), then convert to API shape expected by ScatterAnimationManager.
+    const liveRowMajor =
+      this.currentSymbolData ??
+      toRowMajor(mockData?.symbols ?? mockData?.slot?.area ?? mockData?.area ?? []);
+    const columnMajorForScatter = this.rowMajorTopToColumnMajorBottom(liveRowMajor);
+    if (gameStateManager.isBuyFeatureSpin) {
+      this.logGridForDebug('BUY_FEATURE_SCATTER_SOURCE_GRID', liveRowMajor);
+      if (Array.isArray(scatterGrids) && scatterGrids.length > 0) {
+        console.log(
+          `[BUY_FEATURE_SCATTER_POSITIONS] ${scatterGrids
+            .map((p) => `(c${p.x},r${p.y})`)
+            .join(', ')}`
+        );
+      }
+    }
+    const data = { symbols: columnMajorForScatter };
     this.scatterAnimationManager?.playScatterAnimation(data);
+  }
+
+  private rowMajorTopToColumnMajorBottom(grid: number[][]): number[][] {
+    if (!Array.isArray(grid) || grid.length === 0) return [];
+    const rows = grid.length;
+    const cols = Math.max(
+      0,
+      ...grid.map((row) => (Array.isArray(row) ? row.length : 0))
+    );
+    const columns: number[][] = Array.from({ length: cols }, () => Array<number>(rows).fill(0));
+    for (let col = 0; col < cols; col++) {
+      for (let rowTop = 0; rowTop < rows; rowTop++) {
+        const apiRow = rows - 1 - rowTop;
+        const value = grid[rowTop]?.[col];
+        columns[col][apiRow] = Number.isFinite(value) ? Number(value) : 0;
+      }
+    }
+    return columns;
+  }
+
+  private logGridForDebug(tag: string, rowMajorGrid: number[][]): void {
+    if (!Array.isArray(rowMajorGrid) || rowMajorGrid.length === 0) {
+      console.log(`[${tag}] (empty grid)`);
+      return;
+    }
+    const rows = rowMajorGrid.length;
+    const cols = Math.max(
+      0,
+      ...rowMajorGrid.map((row) => (Array.isArray(row) ? row.length : 0))
+    );
+    const header = `    ${Array.from({ length: cols }, (_, c) => `c${c}`).join(' ')}`;
+    const lines: string[] = [header];
+    // Print rows in top->bottom order with row 0 at the top (render-space labels).
+    for (let rowTop = 0; rowTop < rows; rowTop++) {
+      const rowLabel = `r${rowTop}`;
+      const values: string[] = [];
+      for (let col = 0; col < cols; col++) {
+        const value = rowMajorGrid[rowTop]?.[col];
+        values.push(Number.isFinite(value) ? String(value) : '.');
+      }
+      lines.push(`${rowLabel}: ${values.join(' ')}`);
+    }
+    console.log(`[${tag}]\n${lines.join('\n')}`);
   }
 
   public hideAllSymbols(): void {
@@ -1526,10 +1581,61 @@ export class Symbols {
     await this.playScatterWinThenGatherTransition(scatterGrids, {
       ...this.getScatterTransitionTimingConfig(),
       ...this.getScatterTransitionAnimationConfig(),
-      shouldScale: false,
-      playNomnomSfx: true
+      shouldScale: false
     });
     console.log('[Symbols] Retrigger animation completed');
+  }
+
+  private getScatterTriggerMultiplier(scatterCount: number): number {
+    return SCATTER_PAYOUT_MULTIPLIERS[scatterCount] ?? 0;
+  }
+
+  private seedScatterTriggerWinForHeader(spinData: any, scatterCount: number): void {
+    try {
+      const scatterMultiplier = this.getScatterTriggerMultiplier(scatterCount);
+      const bet = Number(spinData?.bet ?? 0);
+      // Buy-feature trigger spins should use the spin payload wins (paylines/tumbles)
+      // and must not inject a synthetic scatter payout into the first-spin display.
+      const includeScatterPayout = !gameStateManager.isBuyFeatureSpin;
+      const scatterBaseWin =
+        includeScatterPayout && Number.isFinite(bet) && bet > 0 && scatterMultiplier > 0
+        ? bet * scatterMultiplier
+        : 0;
+
+      const slot: any = spinData?.slot || {};
+      const paylineWin = Array.isArray(slot?.paylines)
+        ? getTotalWinFromPaylines(slot.paylines)
+        : 0;
+      let tumbleWin = 0;
+      if (Array.isArray(slot?.tumbles)) {
+        for (const tumble of slot.tumbles) {
+          tumbleWin += getTumbleTotal(tumble);
+        }
+      }
+      const totalForHeader = scatterBaseWin + paylineWin + tumbleWin;
+
+      if (!(totalForHeader > 0)) {
+        return;
+      }
+
+      const gameScene: any = this.scene as any;
+      const header = gameScene?.header;
+      if (header && typeof header.showWinningsDisplay === 'function') {
+        header.showWinningsDisplay(totalForHeader);
+      }
+
+      const bonusHeader = gameScene?.bonusHeader;
+      if (bonusHeader && typeof bonusHeader.seedCumulativeWin === 'function') {
+        bonusHeader.seedCumulativeWin(totalForHeader);
+      }
+
+      console.log(
+        `[Symbols] Seeded scatter trigger total for header/bonus: $${totalForHeader.toFixed(2)} ` +
+        `(scatterCount=${scatterCount}, scatter=${scatterBaseWin.toFixed(2)}, paylines=${paylineWin.toFixed(2)}, tumbles=${tumbleWin.toFixed(2)}, includeScatterPayout=${includeScatterPayout})`
+      );
+    } catch (e) {
+      console.warn('[Symbols] Failed to seed scatter trigger total for header/bonus', e);
+    }
   }
 
   /**
@@ -1555,6 +1661,12 @@ export class Symbols {
     if (this.hasPendingScatterRetrigger() || this.scatterRetriggerAnimationInProgress) {
       console.log('[Symbols] Retrigger pending/in progress - skipping total win dialog');
       try { gameStateManager.isBonusFinished = false; } catch { }
+      return;
+    }
+
+    if (gameStateManager.suppressTotalWinDialog) {
+      console.log('[Symbols] MaxWin shown - skipping TotalWin/Congrats dialog');
+      gameStateManager.suppressTotalWinDialog = false;
       return;
     }
 
@@ -1586,12 +1698,17 @@ export class Symbols {
 
     let totalWin = 0;
     try {
-      const bonusHeader = gameScene?.bonusHeader;
-      if (bonusHeader?.getCumulativeBonusWin) {
-        totalWin = Number(bonusHeader.getCumulativeBonusWin()) || 0;
-      }
-      if (totalWin === 0 && this.currentSpinData?.slot) {
-        totalWin = getTotalWinFromFreespinOnly(this.currentSpinData.slot);
+      const slotTotalWin = Number((this.currentSpinData?.slot as any)?.totalWin);
+      if (Number.isFinite(slotTotalWin)) {
+        totalWin = slotTotalWin;
+      } else {
+        const bonusHeader = gameScene?.bonusHeader;
+        if (bonusHeader?.getCumulativeBonusWin) {
+          totalWin = Number(bonusHeader.getCumulativeBonusWin()) || 0;
+        }
+        if (totalWin === 0 && this.currentSpinData?.slot) {
+          totalWin = getTotalWinFromFreespinOnly(this.currentSpinData.slot);
+        }
       }
     } catch { /* ignore */ }
 
@@ -1673,6 +1790,12 @@ export class Symbols {
 
   private async processSpinDataSymbols(symbols: number[][], spinData: any): Promise<void> {
     const freeSpinItem = gameStateManager.isBonus ? this.getCurrentFreeSpinItem(spinData) : null;
+    this.activeFreeSpinSpinsLeft = (
+      gameStateManager.isBonus &&
+      Number.isFinite(Number(freeSpinItem?.spinsLeft))
+    )
+      ? Number(freeSpinItem.spinsLeft)
+      : null;
     const symbolsToUse = (gameStateManager.isBonus && Array.isArray(freeSpinItem?.area))
       ? freeSpinItem.area
       : symbols;
@@ -1750,18 +1873,28 @@ export class Symbols {
 
     gameStateManager.isReelSpinning = false;
 
-    // Apply tumbles if provided by backend
-    try {
-      if (Array.isArray(pendingTumbles) && pendingTumbles.length > 0) {
-        await this.applyTumbles(pendingTumbles);
+      if (gameStateManager.isBuyFeatureSpin) {
+        this.logGridForDebug('BUY_FEATURE_PRE_TUMBLE_GRID', toRowMajor(symbolsToUse));
       }
-    } catch (e) {
-      console.warn('[Symbols] Failed processing tumbles:', e);
-    }
 
-    // Check for scatter symbols AFTER all tumbles, using the final settled grid.
-    const gridForScatter = this.currentSymbolData ?? columnsToRowMajor(symbolsToUse);
-    const scatterGrids = getScatterGrids(gridForScatter, SCATTER_SYMBOL_ID);
+      // Apply tumbles if provided by backend
+      try {
+        if (Array.isArray(pendingTumbles) && pendingTumbles.length > 0) {
+          await this.applyTumbles(pendingTumbles, {
+            isMaxWinItem: !!(freeSpinItem as any)?.isMaxWin,
+            maxWinCapTotal: Number(spinData?.slot?.totalWin ?? 0)
+          });
+        }
+      } catch (e) {
+        console.warn('[Symbols] Failed processing tumbles:', e);
+      }
+
+      // Check for scatter symbols AFTER all tumbles, using the final settled grid.
+      const gridForScatter = this.currentSymbolData ?? toRowMajor(symbolsToUse);
+      if (gameStateManager.isBuyFeatureSpin) {
+        this.logGridForDebug('BUY_FEATURE_POST_TUMBLE_GRID', gridForScatter);
+      }
+      const scatterGrids = getScatterGrids(gridForScatter, SCATTER_SYMBOL_ID);
 
     const scatterCount = scatterGrids.length;
     const isRetrigger = gameStateManager.isBonus && scatterCount >= MIN_SCATTER_FOR_RETRIGGER;
@@ -1769,12 +1902,13 @@ export class Symbols {
     if (isRetrigger || isTrigger) {
       gameStateManager.isScatter = true;
 
-      if (isRetrigger) {
-        this.setPendingScatterRetrigger(scatterGrids);
-      } else {
-        this.startScatterAnimationSequence(mockData);
+        if (isRetrigger) {
+          this.setPendingScatterRetrigger(scatterGrids);
+        } else {
+          this.seedScatterTriggerWinForHeader(spinData, scatterCount);
+          this.startScatterAnimationSequence(mockData, scatterGrids);
+        }
       }
-    }
 
     // Check for Symbol0 retrigger (3+ Symbol0s) using spin data as source of truth.
     // Use the current free spin item's area from spin data to decide; use live grid for positions to animate.
@@ -1817,8 +1951,7 @@ export class Symbols {
     await this.playScatterWinThenGatherTransition(scatterGrids, {
       ...this.getScatterTransitionTimingConfig(),
       ...this.getScatterTransitionAnimationConfig(),
-      shouldScale: false,
-      playNomnomSfx: true
+      shouldScale: false
     });
   }
 
@@ -1852,16 +1985,15 @@ export class Symbols {
     config?: Partial<ScatterTransitionConfig>
   ): Promise<void> {
     if (!scatterGrids.length) return;
-    const fullConfig: ScatterTransitionConfig = {
-      ...this.getScatterTransitionTimingConfig(),
-      ...this.getScatterTransitionAnimationConfig(),
-      shouldScale: false,
-      playNomnomSfx: true,
-      ...config
-    };
+      const fullConfig: ScatterTransitionConfig = {
+        ...this.getScatterTransitionTimingConfig(),
+        ...this.getScatterTransitionAnimationConfig(),
+        shouldScale: false,
+        ...config
+      };
 
     const scatterSymbols: SymbolObject[] = [];
-    const spineKey = `symbol_${SCATTER_SYMBOL_ID}_sugar_spine`;
+    const spineKey = `symbol_${SCATTER_SYMBOL_ID}_spine`;
     const spineAtlasKey = `${spineKey}-atlas`;
 
     const prepPromises = scatterGrids.map((grid) => {
@@ -1973,12 +2105,9 @@ export class Symbols {
    * Part of the flow: mergeScatterSymbols -> playScatterWinAnimation -> showFreeSpinDialog -> playScatterIdleAnimation -> (on dialog close) unmergeScatterSymbols.
    * If scatterGrids is provided, targets those positions (same as merge); otherwise finds scatters via grid iteration.
    */
-  public async playScatterWinAnimation(
-    options?: { playNomnomSfx?: boolean },
-    scatterGrids?: GridPosition[]
-  ): Promise<number> {
+  public async playScatterWinAnimation(scatterGrids?: GridPosition[]): Promise<number> {
     const config = this.getScatterTransitionAnimationConfig();
-    let scatterWinNomnomPlayed = false;
+    let scatterWinSfxPlayed = false;
     const promises: Promise<void>[] = [];
     let maxWinDurationSec = 0;
 
@@ -2003,20 +2132,13 @@ export class Symbols {
             }
           } catch { }
 
-          if (!scatterWinNomnomPlayed) {
-            scatterWinNomnomPlayed = true;
+          if (!scatterWinSfxPlayed) {
+            scatterWinSfxPlayed = true;
             try {
               const audio = (window as any)?.audioManager;
               if (audio?.playSoundEffect) {
                 if (audio.hasSoundEffect?.(SoundEffectType.SCATTER)) {
                   audio.playSoundEffect(SoundEffectType.SCATTER);
-                }
-                if (options?.playNomnomSfx && audio.hasSoundEffect?.(SoundEffectType.SCATTER_NOMNOM)) {
-                  const globalScale = (typeof (gameStateManager as any)?.timeScale === 'number'
-                    ? (gameStateManager as any).timeScale || 1
-                    : 1);
-                  const clampedScale = Math.max(0.5, Math.min(1.25, globalScale));
-                  audio.playSoundEffect(SoundEffectType.SCATTER_NOMNOM, clampedScale);
                 }
               }
             } catch { }
@@ -2188,7 +2310,7 @@ export class Symbols {
     if (config.preWinDelayMs > 0) {
       await this.delay(config.preWinDelayMs);
     }
-    await this.playScatterWinAnimation({ playNomnomSfx: config.playNomnomSfx });
+    await this.playScatterWinAnimation();
   }
 
   private async playBuyFeatureScatterMerge(
@@ -2257,15 +2379,8 @@ export class Symbols {
     }
 
     const winDurationMs = 2000;
-    const explosionLeadMs = 500;
-    const endBeforeExplosionMs = 500;
-    const idleDelayMs = Math.max(0, winDurationMs - explosionLeadMs - endBeforeExplosionMs);
-    const explosionDurationMs = 1400;
-    const hideAfterExplosionMs = 500;
-    const explosionStartMs = winDurationMs - explosionLeadMs;
-    let explosionDone: Promise<void> | null = null;
-    let hideAfterExplosion = false;
-    let hideAfterExplosionDelay: Promise<void> | null = null;
+    const idleDelayMs = Math.max(0, winDurationMs - 1000);
+    let hideAfterWinDelay: Promise<void> | null = null;
 
     if (mergedSymbol && mergedSymbol !== this.mergeLeadSymbol) {
       await new Promise<void>((resolve) => {
@@ -2290,9 +2405,11 @@ export class Symbols {
                   animState.timeScale = 0.5;
                 }
                 animState.setAnimation(0, 'Symbol0_PC_win', false);
-                // Double the delay since animation is half speed
-                const doubledIdleDelayMs = idleDelayMs * 2;
-                this.scene.time.delayedCall(doubledIdleDelayMs, () => {
+                const timeScale = (animState.timeScale !== undefined && animState.timeScale > 0)
+                  ? animState.timeScale
+                  : 1;
+                const adjustedIdleDelayMs = idleDelayMs / timeScale;
+                this.scene.time.delayedCall(adjustedIdleDelayMs, () => {
                   try { 
                     // Restore normal speed for idle
                     if (animState.timeScale !== undefined) {
@@ -2301,14 +2418,7 @@ export class Symbols {
                     animState.setAnimation(0, 'Symbol0_PC_idle', true); 
                   } catch { }
                 });
-                // Double explosion timing since animation is half speed
-                const doubledExplosionStartMs = explosionStartMs * 2;
-                this.scene.time.delayedCall(doubledExplosionStartMs, () => {
-                  this.playExplosionVfx(this.slotX, this.slotY, true);
-                });
-                explosionDone = this.delay(doubledExplosionStartMs + explosionDurationMs);
-                hideAfterExplosionDelay = this.delay(doubledExplosionStartMs + hideAfterExplosionMs);
-                hideAfterExplosion = true;
+                hideAfterWinDelay = this.delay(adjustedIdleDelayMs + 500);
               }
             } catch { }
             resolve();
@@ -2317,20 +2427,15 @@ export class Symbols {
       });
     } else if (mergedSymbol && mergedSymbol === this.mergeLeadSymbol) {
       // Win animation already played when mergeLeadSymbol was first created
-      // Just set up explosion timing
+      // Just set up hide timing
       try {
-        this.scene.time.delayedCall(explosionStartMs, () => {
-          this.playExplosionVfx(this.slotX, this.slotY, true);
-        });
-        explosionDone = this.delay(explosionStartMs + explosionDurationMs);
-        hideAfterExplosionDelay = this.delay(explosionStartMs + hideAfterExplosionMs);
-        hideAfterExplosion = true;
+        hideAfterWinDelay = this.delay(idleDelayMs + 500);
       } catch { }
     }
 
-    if (hideAfterExplosionDelay) {
-      await hideAfterExplosionDelay;
-      if (hideAfterExplosion && mergedSymbol) {
+    if (hideAfterWinDelay) {
+      await hideAfterWinDelay;
+      if (mergedSymbol) {
         try { mergedSymbol.setVisible?.(false); } catch { }
         try {
           if (typeof (mergedSymbol as any).setAlpha === 'function') {
@@ -2378,7 +2483,7 @@ export class Symbols {
       gameScene?.bonusHeader?.hideWinningsDisplay?.();
     } catch {}
     await this.playBuyFeatureScatterMerge(scatterSymbols, winAnimName, idleAnimName);
-    // Run radial light after merge+explosion for Sugar Rush-style reveal.
+    // Run radial light after merge for Sugar Rush-style reveal.
     if (!this.radialLightPromise) {
       this.radialLightPromise = (async () => {
         try {
@@ -2602,7 +2707,6 @@ export class Symbols {
         try {
           if (this.tumbleInProgress) return;
           if (gameStateManager.isShowingWinDialog) return;
-          if (gameStateManager.isTurbo) return;
           if (gameStateManager.isReelSpinning && this.reelDropInProgress) {
             this.requestSkipReelDrops();
           }
@@ -2613,7 +2717,7 @@ export class Symbols {
 
       const enable = () => {
         try { this.updateSkipHitboxGeometry(); } catch {}
-        if (gameStateManager.isTurbo || gameStateManager.isShowingWinDialog) {
+        if (gameStateManager.isShowingWinDialog) {
           try { this.skipHitbox?.disableInteractive(); } catch {}
         } else {
           try { this.skipHitbox?.setInteractive({ useHandCursor: false }); } catch {}
@@ -2625,7 +2729,13 @@ export class Symbols {
 
       gameEventManager.on(GameEventType.REELS_START, enable);
       gameEventManager.on(GameEventType.REELS_STOP, disable);
-      const onTurboOn = () => { try { this.skipHitbox?.disableInteractive(); } catch {} };
+      const onTurboOn = () => {
+        try {
+          if (gameStateManager.isReelSpinning && !gameStateManager.isShowingWinDialog) {
+            this.skipHitbox?.setInteractive({ useHandCursor: false });
+          }
+        } catch {}
+      };
       const onTurboOff = () => { try { if (gameStateManager.isReelSpinning) enable(); } catch {} };
       gameEventManager.on(GameEventType.TURBO_ON, onTurboOn);
       gameEventManager.on(GameEventType.TURBO_OFF, onTurboOff);
@@ -2700,9 +2810,9 @@ export class Symbols {
     let symbols = data.symbols;
     console.log('[Symbols] Creating new symbols (column-major):', symbols);
 
-    // Update current symbol data for reset purposes using canonical row-major view
+    // Update current symbol data for reset purposes using canonical row-major view (row 0 = top).
     try {
-      this.currentSymbolData = columnsToRowMajor(symbols);
+      this.currentSymbolData = toRowMajor(symbols);
     } catch {
       this.currentSymbolData = symbols;
     }
@@ -2718,8 +2828,8 @@ export class Symbols {
         const x = startX + col * symbolTotalWidth + symbolTotalWidth * 0.5;
         const y = startY + row * symbolTotalHeight + symbolTotalHeight * 0.5;
 
-        // Invert vertical order for display
-        const value = symbols[col][symbols[col].length - 1 - row];
+        // Data is [col][row] with row 0 at top for rendering.
+        const value = symbols[col][row];
 
         const created = this.factory.createSugarOrPngSymbol(value, x, y, 1);
         rows.push(created);
@@ -2830,7 +2940,7 @@ export class Symbols {
 
       let completedAnimations = 0;
       const totalAnimations = this.symbols.length;
-      const STAGGER_MS = 100; // Same as new symbols
+      const STAGGER_MS = 100; // Same as new symbols (baseline)
       const symbolHop = this.scene.gameData.winUpHeight * 0.5;
       const isTurbo = typeof turboOverride === 'boolean'
         ? turboOverride
@@ -2838,7 +2948,11 @@ export class Symbols {
       const winUpDuration = Number(timingOverride?.winUpDuration ?? this.scene.gameData.winUpDuration);
       const dropDuration = Number(timingOverride?.dropDuration ?? this.scene.gameData.dropDuration);
       const isSkip = this.skipReelDropsActive || this.skipReelDropsPending;
-      const speed = isSkip ? 0.5 : 1;
+      // For normal spins, skip should feel like turbo's per-column behavior but faster.
+      // Keep turbo timing unchanged; only compress when explicitly skipping.
+      const speed = isSkip
+        ? (isTurbo ? 0.7 : 0.4)
+        : 1;
 
       // During scatter transitions, immediately dispose symbols without animation
       // to avoid conflicts with special transition sequences
@@ -2919,9 +3033,11 @@ export class Symbols {
 
         const tweens: any[] = [
           {
-            // Match felice behavior: in turbo, outgoing symbols clear simultaneously;
-            // incoming symbols keep sequential column landing.
-            delay: (isTurbo || isSkip) ? 0 : STAGGER_MS * col,
+            // Turbo: clear all columns in this row together (delay 0).
+            // Skip in normal mode: keep per-column stagger but much tighter.
+            delay: isTurbo
+              ? 0
+              : (isSkip ? STAGGER_MS * 0.35 * col : STAGGER_MS * col),
             y: `-= ${symbolHop}`,
             duration: Math.max(1, winUpDuration * speed),
             ease: Phaser.Math.Easing.Circular.Out,
@@ -2966,9 +3082,10 @@ export class Symbols {
       }
 
       // Safety timeout in case some animations don't complete
-      // If timeout triggers, forcefully clean up any remaining symbols
-      // Reduced timeout for faster cleanup (was dropDuration * 2, now * 1.5)
-      const timeoutDuration = dropDuration * 1.5;
+      // Must account for column stagger delay + full animation duration + buffer
+      const maxStaggerDelay = (isTurbo || isSkip) ? 0 : STAGGER_MS * (totalAnimations - 1);
+      const maxAnimDuration = (winUpDuration * speed) + (dropDuration * 0.9 * speed);
+      const timeoutDuration = maxStaggerDelay + maxAnimDuration + (dropDuration * 0.5);
       this.scene.time.delayedCall(timeoutDuration, () => {
         if (completedAnimations < totalAnimations) {
           const remaining = totalAnimations - completedAnimations;
@@ -3034,7 +3151,11 @@ export class Symbols {
       const winUpDuration = Number(timingOverride?.winUpDuration ?? this.scene.gameData.winUpDuration);
       const dropDuration = Number(timingOverride?.dropDuration ?? this.scene.gameData.dropDuration);
       const isSkip = this.skipReelDropsActive || this.skipReelDropsPending;
-      const speed = isSkip ? 0.2 : 1;
+      // In normal spins, when skipping we want a faster but still per-column drop.
+      // Preserve turbo timing; only shorten when skip is active in non-turbo.
+      const speed = isSkip
+        ? (isTurbo ? 0.7 : 0.35)
+        : 1;
 
       console.log(`[Symbols] dropNewSymbols row ${index}: ${totalAnimations} columns, isTurbo=${isTurbo}, STAGGER_MS=${STAGGER_MS}`);
 
@@ -3049,7 +3170,9 @@ export class Symbols {
         const overlayObj: any = (baseObj as any)?.__overlayImage;
         const tweenTargets: any = overlayObj ? [baseObj, overlayObj] : baseObj;
 
-        const delayMs = isSkip ? 0 : STAGGER_MS * col;
+        const delayMs = isSkip
+          ? STAGGER_MS * 0.3 * col
+          : STAGGER_MS * col;
         console.log(`[Symbols] Column ${col}: delay=${delayMs}ms, targetY=${targetY}`);
 
         const tweens: any[] = [
@@ -3254,33 +3377,99 @@ export class Symbols {
   }
 
   // Tumble processing methods
-  private async applyTumbles(tumbles: any[]): Promise<void> {
+  private async applyTumbles(
+    tumbles: any[],
+    options?: { isMaxWinItem?: boolean; maxWinCapTotal?: number }
+  ): Promise<void> {
     let cumulativeWin = 0;
     let tumbleIndex = 0;
+    const isMaxWinItem = !!options?.isMaxWinItem;
+    const maxWinCapTotalRaw = Number(options?.maxWinCapTotal);
+    const hasMaxWinCap =
+      isMaxWinItem &&
+      Number.isFinite(maxWinCapTotalRaw) &&
+      maxWinCapTotalRaw >= 0;
+    const maxWinCapTotal = hasMaxWinCap ? maxWinCapTotalRaw : 0;
+    const CAP_EPSILON = 0.000001;
     this.tumbleInProgress = true;
     this.clearSkipTumbles();
 
     try {
       for (const tumble of tumbles) {
-        tumbleIndex++;
+        if (hasMaxWinCap && cumulativeWin >= maxWinCapTotal - CAP_EPSILON) {
+          cumulativeWin = maxWinCapTotal;
+          console.log('[Symbols] MaxWin cap reached before next tumble, stopping tumble sequence', {
+            tumbleIndex,
+            cumulativeWin,
+            maxWinCapTotal
+          });
+          break;
+        }
+
+        const rawTumbleWin = Number(getTumbleTotal(tumble) || 0);
+        const maxAllowedTumbleWin = hasMaxWinCap
+          ? Math.max(0, maxWinCapTotal - cumulativeWin)
+          : rawTumbleWin;
+        const effectiveTumbleWin = hasMaxWinCap
+          ? Math.max(0, Math.min(rawTumbleWin, maxAllowedTumbleWin))
+          : rawTumbleWin;
+
+        if (hasMaxWinCap && rawTumbleWin > effectiveTumbleWin + CAP_EPSILON) {
+          console.log('[Symbols] MaxWin tumble win clamped to cap remainder', {
+            tumbleIndex,
+            rawTumbleWin,
+            effectiveTumbleWin,
+            cumulativeWin,
+            maxWinCapTotal
+          });
+        }
+
+        // Keep tumbleIndex aligned with SpinData.tumbles array indexing (0-based).
         const currentTumbleIndex = tumbleIndex;
+        const shouldWaitForTotalWinDisplay =
+          gameStateManager.isBonus &&
+          BONUS_TUMBLE_TOTAL_WIN_DELAY_MS > 0 &&
+          getTumbleTotal(tumble) > 0;
         await this.applySingleTumble(tumble, currentTumbleIndex, (tumbleWin: number) => {
-        // Track cumulative wins
-        try {
-          cumulativeWin += tumbleWin;
-          if (cumulativeWin > 0) {
-            gameEventManager.emit(GameEventType.TUMBLE_WIN_PROGRESS, { cumulativeWin } as any);
-          }
-        } catch { }
+          // Track cumulative wins
+          try {
+            let progressWin = tumbleWin;
+            if (hasMaxWinCap) {
+              progressWin = effectiveTumbleWin;
+            }
+
+            cumulativeWin += progressWin;
+            if (hasMaxWinCap && cumulativeWin > maxWinCapTotal) {
+              cumulativeWin = maxWinCapTotal;
+            }
+
+            if (progressWin > 0 || cumulativeWin > 0) {
+              gameEventManager.emit(GameEventType.TUMBLE_WIN_PROGRESS, { tumbleWin: progressWin, cumulativeWin } as any);
+            }
+          } catch { }
 
         // Play tumble sound effect
         try {
           const am = (window as any)?.audioManager;
           if (am && typeof am.playSymbolWinByTumble === 'function') {
-            am.playSymbolWinByTumble(currentTumbleIndex);
+            // Audio mapping is 1-based (1->twin1, 2->twin2, ...).
+            am.playSymbolWinByTumble(currentTumbleIndex + 1);
           }
         } catch { }
         });
+        if (shouldWaitForTotalWinDisplay) {
+          await this.delay(BONUS_TUMBLE_TOTAL_WIN_DELAY_MS);
+        }
+        if (hasMaxWinCap && cumulativeWin >= maxWinCapTotal - CAP_EPSILON) {
+          cumulativeWin = maxWinCapTotal;
+          console.log('[Symbols] MaxWin cap reached after tumble, stopping remaining tumbles', {
+            tumbleIndex: currentTumbleIndex,
+            cumulativeWin,
+            maxWinCapTotal
+          });
+          break;
+        }
+        tumbleIndex++;
       }
 
       try {
@@ -3296,6 +3485,10 @@ export class Symbols {
     const self = this;
     const disableScaling = gameStateManager.isBonus || gameStateManager.isBuyFeatureSpin;
     const skipTumble = this.skipTumblesActive;
+    const tumbleLogContext = {
+      tumbleIndex,
+      spinsLeft: this.activeFreeSpinSpinsLeft
+    };
     // Keep currentSymbolData in sync with live grid to avoid removal mismatches
     this.syncCurrentSymbolDataFromSymbols();
     this.captureClusterWinGridSnapshot(`beforeTumble#${tumbleIndex}`);
@@ -3341,14 +3534,17 @@ export class Symbols {
 
     // Validate removals against the live grid: only symbols that belong to an
     // actual qualifying cluster (5+ connected) can be removed for this tumble.
+    // Note: render/grid space is row 0 = top, but findClusters currently expects
+    // column-major data in row 0 = bottom, so we convert before evaluating.
     const validClusterCellsBySymbol: { [key: number]: Set<string> } = {};
     try {
       const colMajorGrid: number[][] = Array.from({ length: numCols }, () => Array<number>(numRows).fill(-1));
       for (let col = 0; col < numCols; col++) {
-        for (let row = 0; row < numRows; row++) {
-          const value = self.currentSymbolData?.[row]?.[col];
+        for (let rowTop = 0; rowTop < numRows; rowTop++) {
+          const value = self.currentSymbolData?.[rowTop]?.[col];
           if (typeof value === 'number' && !isNaN(value)) {
-            colMajorGrid[col][row] = value;
+            const rowBottom = numRows - 1 - rowTop;
+            colMajorGrid[col][rowBottom] = value;
           }
         }
       }
@@ -3360,7 +3556,8 @@ export class Symbols {
         }
         const bucket = validClusterCellsBySymbol[cluster.symbol];
         for (const pos of cluster.positions) {
-          bucket.add(clusterCellKey(pos.col, pos.row));
+          const rowTop = numRows - 1 - pos.row;
+          bucket.add(clusterCellKey(pos.col, rowTop));
         }
       }
     } catch (e) {
@@ -3394,20 +3591,8 @@ export class Symbols {
       if (raw.length === 0) return [];
       const inBounds = raw.filter(p => p.col >= 0 && p.col < numCols && p.row >= 0 && p.row < numRows);
       if (inBounds.length === 0) return [];
-      const symbol = Number(out?.symbol);
-      if (self.currentSymbolData && Number.isFinite(symbol)) {
-        let matchRaw = 0;
-        let matchConverted = 0;
-        for (const p of inBounds) {
-          const rawRow = p.row;
-          const convRow = numRows - 1 - p.row;
-          if (self.currentSymbolData[rawRow]?.[p.col] === symbol) matchRaw++;
-          if (self.currentSymbolData[convRow]?.[p.col] === symbol) matchConverted++;
-        }
-        const useRaw = matchRaw > matchConverted;
-        return inBounds.map(p => ({ col: p.col, row: useRaw ? p.row : (numRows - 1 - p.row) }));
-      }
-      // Default: incoming positions are bottom-based (row 0 = bottom)
+      // Tumble out.positions are treated as row 0 = bottom; convert to
+      // render/grid space where row 0 = top.
       return inBounds.map(p => ({ col: p.col, row: numRows - 1 - p.row }));
     };
     outs.forEach((out, idx) => {
@@ -3417,6 +3602,7 @@ export class Symbols {
       if (!Number.isFinite(requestedCount) || requestedCount < QUALIFYING_CLUSTER_COUNT) {
         if (requestedCount > 0) {
           console.warn('[Symbols] Ignoring out.positions below qualifying cluster count', {
+            ...tumbleLogContext,
             targetSymbol,
             requestedCount
           });
@@ -3427,7 +3613,11 @@ export class Symbols {
       if (!positions.length) return;
       const validSet = validClusterCellsBySymbol[targetSymbol];
       if (!validSet || validSet.size === 0) {
-        console.warn('[Symbols] Ignoring out.positions for non-cluster symbol during tumble', { targetSymbol, count: positions.length });
+        console.warn('[Symbols] Ignoring out.positions for non-cluster symbol during tumble', {
+          ...tumbleLogContext,
+          targetSymbol,
+          count: positions.length
+        });
         return;
       }
       let markedForOut = 0;
@@ -3498,7 +3688,11 @@ export class Symbols {
       if (gameStateManager.isBonus && targetSymbol === SCATTER_SYMBOL_ID) continue;
       const validSet = validClusterCellsBySymbol[targetSymbol];
       if (!validSet || validSet.size === 0) {
-        console.warn('[Symbols] Ignoring non-cluster out during tumble', { targetSymbol, requestedCount: remaining });
+        console.warn('[Symbols] Ignoring non-cluster out during tumble', {
+          ...tumbleLogContext,
+          targetSymbol,
+          requestedCount: remaining
+        });
         continue;
       }
       // Try to allocate removals in columns that expect incoming symbols first
@@ -3764,7 +3958,7 @@ export class Symbols {
         console.log(`[Symbols] notifyFirstWinIfNeeded called for tumble index: ${tumbleIndex} (first win animation started)`);
         try {
           if (typeof onFirstWinComplete === 'function') {
-            onFirstWinComplete(effectiveTumbleTotal);
+            onFirstWinComplete(baseTumbleTotal);
           }
         } catch { }
       }
@@ -4360,6 +4554,7 @@ export class Symbols {
       const totalOutRequested = getTotalCountFromOuts(outs);
       if (totalOutRequested !== totalSpawned) {
         console.warn('[Symbols] Tumble total mismatch: out.count sum != spawned', {
+          ...tumbleLogContext,
           totalOutRequested,
           totalSpawned
         });
@@ -4372,139 +4567,42 @@ export class Symbols {
     this.syncCurrentSymbolDataFromSymbols();
     this.captureClusterWinGridSnapshot(`afterTumble#${tumbleIndex}`);
 
-    // Check for scatter hits from the updated grid after this tumble (both normal and bonus mode)
-    try {
-      // Scan the live symbols grid to find actual scatter objects and positions
-      const grids: Array<{ x: number; y: number }> = [];
-      if (self.symbols && self.symbols.length > 0) {
-        for (let col = 0; col < self.symbols.length; col++) {
-          const column = self.symbols[col];
-          if (!Array.isArray(column)) continue;
-          for (let row = 0; row < column.length; row++) {
-            const obj: any = column[row];
-            if (!obj) continue;
-            const isScatter = (obj as any)?.symbolValue === 0 || (obj?.texture?.key === 'symbol_0');
-            if (isScatter) grids.push({ x: col, y: row });
+    // Check for scatter hits from the updated grid after this tumble.
+    // Only needed during bonus (retrigger). Normal-mode scatter is evaluated AFTER all tumbles.
+    if (gameStateManager.isBonus) {
+      try {
+        // Scan the live symbols grid to find actual scatter objects and positions
+        const grids: Array<{ x: number; y: number }> = [];
+        if (self.symbols && self.symbols.length > 0) {
+          for (let col = 0; col < self.symbols.length; col++) {
+            const column = self.symbols[col];
+            if (!Array.isArray(column)) continue;
+            for (let row = 0; row < column.length; row++) {
+              const obj: any = column[row];
+              if (!obj) continue;
+              const isScatter =
+                (obj as any)?.symbolValue === 0 || obj?.texture?.key === "symbol_0";
+              if (isScatter) grids.push({ x: col, y: row });
+            }
           }
         }
-      }
-      const count = grids.length;
+        const count = grids.length;
 
-      if (gameStateManager.isBonus) {
         // Bonus mode: check for retrigger (3+ scatters)
         if (count >= MIN_SCATTER_FOR_RETRIGGER) {
           if (!(self as any).pendingScatterRetrigger) {
             self.setPendingScatterRetrigger(grids);
           }
         }
-      } else {
-        // Normal mode: check for scatter trigger (4+ scatters)
-        if (count >= MIN_SCATTER_FOR_BONUS && !gameStateManager.isScatter) {
-          gameStateManager.isScatter = true;
-        }
+      } catch (e) {
+        console.warn("[Symbols] Failed to evaluate scatter during tumble:", e);
       }
-    } catch (e) {
-      console.warn('[Symbols] Failed to evaluate scatter during tumble:', e);
     }
 
     if (tumbleActiveColumns.length > 0) {
       gameEventManager.emit(GameEventType.TUMBLE_COLUMNS_DONE, { columns: tumbleActiveColumns } as any);
     }
     this.tumbleDropInProgress = false;
-  }
-
-  private playExplosionVfx(x: number, y: number, useMergeScale: boolean = false, minDurationMs?: number): void {
-    const spineKey = 'Explosion_VFX';
-    const atlasKey = `${spineKey}-atlas`;
-
-    if (!this.scene || typeof (this.scene.add as any).spine !== 'function') {
-      return;
-    }
-
-    try {
-      const cacheJson: any = this.scene.cache.json;
-      if (cacheJson && typeof cacheJson.has === 'function' && !cacheJson.has(spineKey)) {
-        return;
-      }
-    } catch { }
-
-    let vfx: any;
-    try {
-      vfx = (this.scene.add as any).spine(x, y, spineKey, atlasKey);
-    } catch {
-      return;
-    }
-    if (!vfx) return;
-    this.explosionVfxInProgress += 1;
-    let explosionTracked = true;
-
-    try { vfx.setOrigin?.(0.5, 0.5); } catch { }
-    try { this.animationsModule.fitSpineToSymbolBox(vfx); } catch { }
-    try {
-      // Scale explosion size here
-      const baseScale = useMergeScale
-        ? Symbols.MERGE_EXPLOSION_VFX_SCALE
-        : Symbols.EXPLOSION_VFX_SCALE;
-      const scale = baseScale * 0.95;
-      vfx.setScale(scale, scale);
-    } catch { }
-    try {
-      // Ensure explosion is in front of Symbol0
-      vfx.setDepth?.(DEPTH_WINNING_SYMBOL + 1000);
-    } catch { }
-
-    const destroyVfx = () => {
-      try {
-        if (vfx && !vfx.destroyed) vfx.destroy();
-      } catch { }
-      if (explosionTracked) {
-        explosionTracked = false;
-        this.explosionVfxInProgress = Math.max(0, this.explosionVfxInProgress - 1);
-      }
-    };
-
-    try {
-      const holdMs = typeof minDurationMs === 'number' && isFinite(minDurationMs)
-        ? Math.max(0, minDurationMs)
-        : 1200;
-      const startTime = (this.scene.time as any)?.now ?? Date.now();
-      const animState = vfx.animationState;
-      if (animState && typeof animState.setAnimation === 'function') {
-        if (animState.clearTracks) animState.clearTracks();
-        if (animState.addListener) {
-          const listener = {
-            complete: (entry: any) => {
-              try {
-                if (entry?.animation?.name !== 'Explosion') return;
-              } catch { }
-              try { animState.removeListener?.(listener); } catch { }
-              const elapsed = ((this.scene.time as any)?.now ?? Date.now()) - startTime;
-              const remaining = Math.max(0, holdMs - elapsed);
-              if (remaining === 0) {
-                destroyVfx();
-              } else {
-                this.scene.time.delayedCall(remaining, destroyVfx);
-              }
-            }
-          };
-          animState.addListener(listener);
-        }
-        animState.setAnimation(0, 'Explosion', false);
-        if (useMergeScale) {
-          try {
-            const am = (window as any)?.audioManager;
-            if (am && typeof am.playSoundEffect === 'function') {
-              am.playSoundEffect(SoundEffectType.TUMBLE_BOMB);
-            }
-          } catch { }
-        }
-      }
-    } catch { }
-
-    const fallbackMs = typeof minDurationMs === 'number' && isFinite(minDurationMs)
-      ? Math.max(0, minDurationMs)
-      : 1200;
-    this.scene.time.delayedCall(fallbackMs, destroyVfx);
   }
 
   /**
@@ -4525,43 +4623,6 @@ export class Symbols {
     } catch { /* ignore */ }
   }
 
-  private playPreExplosionPulse(target: any, onComplete: () => void): void {
-    try {
-      if (!this.scene || !target) {
-        onComplete();
-        return;
-      }
-      const baseX = (target as any)?.scaleX;
-      const baseY = (target as any)?.scaleY;
-      const safeBaseX = (typeof baseX === 'number' && isFinite(baseX)) ? baseX : 1;
-      const safeBaseY = (typeof baseY === 'number' && isFinite(baseY)) ? baseY : 1;
-      const shrinkFactor = 0.85;
-      const shrinkDuration = 90;
-      const restoreDuration = 110;
-
-      try { this.scene.tweens.killTweensOf(target); } catch { }
-      this.scene.tweens.add({
-        targets: target,
-        scaleX: safeBaseX * shrinkFactor,
-        scaleY: safeBaseY * shrinkFactor,
-        duration: shrinkDuration,
-        ease: Phaser.Math.Easing.Cubic.Out,
-        onComplete: () => {
-          this.scene.tweens.add({
-            targets: target,
-            scaleX: safeBaseX,
-            scaleY: safeBaseY,
-            duration: restoreDuration,
-            ease: Phaser.Math.Easing.Cubic.Out,
-            onComplete: () => onComplete(),
-          });
-        }
-      });
-    } catch {
-      try { onComplete(); } catch { }
-    }
-  }
-
   /**
    * Get tween targets for a symbol (includes overlay if present)
    */
@@ -4573,37 +4634,13 @@ export class Symbols {
     return baseObj;
   }
 
-  private getSymbolWorldPosition(baseObj: any): { x: number; y: number } | null {
-    if (!baseObj) return null;
-    let x: number | null = null;
-    let y: number | null = null;
-    try {
-      const matrix = baseObj.getWorldTransformMatrix?.();
-      if (matrix && typeof matrix.tx === 'number' && typeof matrix.ty === 'number') {
-        x = matrix.tx;
-        y = matrix.ty;
-      }
-    } catch { }
-    if (x === null || y === null) {
-      const localX = (baseObj as any)?.x;
-      const localY = (baseObj as any)?.y;
-      if (typeof localX === 'number' && typeof localY === 'number') {
-        x = localX;
-        y = localY;
-      }
-    }
-    if (typeof x !== 'number' || typeof y !== 'number') return null;
-    return { x, y };
-  }
-
   private async waitForAnimationsAndTumblesToFinish(maxWaitMs: number = 6000): Promise<void> {
     if (!this.scene) return;
     const isBusy = () =>
       this.scatterRetriggerAnimationInProgress ||
       this.tumbleInProgress ||
       this.reelDropInProgress ||
-      this.tumbleDropInProgress ||
-      this.explosionVfxInProgress > 0;
+      this.tumbleDropInProgress;
 
     if (!isBusy()) return;
 

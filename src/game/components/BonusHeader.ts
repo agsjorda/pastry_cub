@@ -5,10 +5,11 @@ import { gameEventManager, GameEventType } from '../../event/EventManager';
 import { gameStateManager } from '../../managers/GameStateManager';
 import { CurrencyManager } from './CurrencyManager';
 import { Animals } from './Animals';
-import { HEADER_CONFIG, SHOW_HEADER_BORDER, SHOW_HEADER_SCENEFRAME_BORDER } from '../../config/GameConfig';
+import { BONUS_TUMBLE_TOTAL_WIN_DELAY_MS, HEADER_CONFIG, SHOW_HEADER_BORDER, SHOW_HEADER_SCENEFRAME_BORDER } from '../../config/GameConfig';
 import { ensureSpineFactory } from '../../utils/SpineGuard';
 import { startAnimation, stopAnimation } from '../../utils/SpineAnimationHelper';
 import { getTotalWinFromPaylines, getTumbleTotal } from './Spin';
+import { GlowEffect } from './vfx/GlowEffect';
 
 export class BonusHeader {
 	private bonusHeaderContainer!: Phaser.GameObjects.Container;
@@ -29,16 +30,22 @@ export class BonusHeader {
 	// Track if we've already accumulated this spin's total (prevents double add with WIN_STOP)
 	private accumulatedThisSpin: boolean = false;
 	private showingTotalWin: boolean = false;
+	private tumbleTotalDisplayTimer: Phaser.Time.TimerEvent | null = null;
+	private lastTumbleCumulative: number = 0;
 	private scene: Scene | null = null;
 	private headerSceneImage?: Phaser.GameObjects.Image;
 	private headerSceneFrameImage?: Phaser.GameObjects.Image;
 	private headerWinBarImage?: Phaser.GameObjects.Image;
+	private winBarGlowLeft: GlowEffect | null = null;
+	private winBarGlowRight: GlowEffect | null = null;
+	private confettiVfxSpine: any = null;
 	// Track if we just seeded the win to prevent immediate text overrides
 	private justSeededWin: boolean = false;
 	// Suppress win bar text while TotalWin dialog is showing
 	private suppressWinbarDisplay: boolean = false;
 	private debugHeaderFrameBorder?: Phaser.GameObjects.Graphics;
 	private debugHeaderBorder?: Phaser.GameObjects.Graphics;
+	// Shared win-bar glow tuning lives in GlowEffect.WIN_BAR_*.
 
 	constructor(networkManager: NetworkManager, screenModeManager: ScreenModeManager) {
 		this.networkManager = networkManager;
@@ -157,6 +164,8 @@ export class BonusHeader {
 			this.headerWinBarImage.setScale((scene.scale.width / this.headerWinBarImage.width) * HEADER_CONFIG.WIN_BAR_SCALE);
 			this.headerWinBarImage.setDepth(9500); // Below frame
 			this.bonusHeaderContainer.add(this.headerWinBarImage);
+			this.createWinBarGlows(scene);
+			this.updateWinBarGlowTransform();
 		}
 
 		// Add frame last so it draws on top of win bar and animals (same as normal Header)
@@ -165,6 +174,65 @@ export class BonusHeader {
 			this.bonusHeaderContainer.add(this.headerSceneFrameImage);
 			this.bonusHeaderContainer.bringToTop(this.headerSceneFrameImage);
 		}
+
+		// Confetti VFX: above the frame (use same offsets/scale as main header)
+		this.createConfettiVfxSpine(scene, anchorX, anchorY, containerWidth);
+	}
+
+	private createConfettiVfxSpine(scene: Scene, anchorX: number, anchorY: number, containerWidth: number): void {
+		if (!ensureSpineFactory(scene, '[BonusHeader] createConfettiVfxSpine') || !scene.cache.json.has('Confetti_VFX_PC')) {
+			scene.time.delayedCall(300, () => this.createConfettiVfxSpine(scene, anchorX, anchorY, containerWidth));
+			return;
+		}
+		try {
+			this.confettiVfxSpine?.destroy?.();
+		} catch {}
+
+		try {
+			this.confettiVfxSpine = scene.add.spine(anchorX, anchorY, 'Confetti_VFX_PC', 'Confetti_VFX_PC-atlas');
+			this.confettiVfxSpine.setOrigin(0.5, 0);
+			this.confettiVfxSpine.setDepth(9602);
+			this.confettiVfxSpine.setVisible(false);
+			this.bonusHeaderContainer.add(this.confettiVfxSpine);
+			this.bonusHeaderContainer.bringToTop(this.confettiVfxSpine);
+			this.updateConfettiTransform(anchorX, anchorY, containerWidth);
+			if (gameStateManager.isProcessingSpin || gameStateManager.isReelSpinning) {
+				this.playConfettiVfx();
+			}
+		} catch (e) {
+			console.warn('[BonusHeader] Failed to create confetti VFX spine:', e);
+		}
+	}
+
+	private updateConfettiTransform(anchorX: number, anchorY: number, containerWidth: number): void {
+		if (!this.confettiVfxSpine) return;
+		const confettiRefWidth = 1756;
+		const scale = ((containerWidth > 0 ? containerWidth : 1) / confettiRefWidth) * HEADER_CONFIG.CONFETTI_SCALE;
+		try { this.confettiVfxSpine.setScale(scale); } catch {}
+		try {
+			this.confettiVfxSpine.setPosition(
+				anchorX + HEADER_CONFIG.CONFETTI_OFFSET_X,
+				anchorY + HEADER_CONFIG.CONFETTI_OFFSET_Y
+			);
+		} catch {}
+	}
+
+	private playConfettiVfx(): void {
+		if (!this.confettiVfxSpine) return;
+		try { this.confettiVfxSpine.setVisible(true); } catch {}
+		startAnimation(this.confettiVfxSpine, {
+			animationName: 'Confetti_Pop',
+			loop: true,
+			trackIndex: 0,
+			logWhenMissing: true,
+			fallbackToFirstAvailable: true
+		});
+	}
+
+	private stopConfettiVfx(): void {
+		if (!this.confettiVfxSpine) return;
+		stopAnimation(this.confettiVfxSpine, { fadeOut: 0.2, trackIndex: 0 });
+		try { this.confettiVfxSpine.setVisible(false); } catch {}
 	}
 
 	private createScaledHeaderImage(scene: Scene, key: string, x: number, y: number): Phaser.GameObjects.Image {
@@ -172,6 +240,45 @@ export class BonusHeader {
 		const scale = scene.scale.width / img.width;
 		img.setScale(scale);
 		return img;
+	}
+
+	private createWinBarGlows(scene: Scene): void {
+		this.destroyWinBarGlows();
+		this.winBarGlowLeft = new GlowEffect(scene, {
+			scale: GlowEffect.WIN_BAR_SCALE,
+			depth: GlowEffect.WIN_BAR_DEPTH,
+			visible: true
+		});
+		this.winBarGlowRight = new GlowEffect(scene, {
+			scale: GlowEffect.WIN_BAR_SCALE,
+			depth: GlowEffect.WIN_BAR_DEPTH,
+			visible: true
+		});
+		this.winBarGlowLeft.create(undefined, 'bonus');
+		this.winBarGlowRight.create(undefined, 'bonus');
+	}
+
+	private updateWinBarGlowTransform(): void {
+		if (!this.headerWinBarImage) return;
+		const centerX = this.headerWinBarImage.x;
+		const topY = this.headerWinBarImage.y;
+		const halfW = this.headerWinBarImage.displayWidth * 0.5;
+		const leftX = centerX - halfW + GlowEffect.WIN_BAR_SIDE_INSET_X + GlowEffect.WIN_BAR_OFFSET_X;
+		const rightX = centerX + halfW - GlowEffect.WIN_BAR_SIDE_INSET_X + GlowEffect.WIN_BAR_OFFSET_X;
+		const y = topY + GlowEffect.WIN_BAR_OFFSET_Y;
+		this.winBarGlowLeft?.setPosition(leftX, y);
+		this.winBarGlowRight?.setPosition(rightX, y);
+		this.winBarGlowLeft?.setScale(GlowEffect.WIN_BAR_SCALE);
+		this.winBarGlowRight?.setScale(GlowEffect.WIN_BAR_SCALE);
+		this.winBarGlowLeft?.setDepth(GlowEffect.WIN_BAR_DEPTH);
+		this.winBarGlowRight?.setDepth(GlowEffect.WIN_BAR_DEPTH);
+	}
+
+	private destroyWinBarGlows(): void {
+		try { this.winBarGlowLeft?.destroy(); } catch {}
+		try { this.winBarGlowRight?.destroy(); } catch {}
+		this.winBarGlowLeft = null;
+		this.winBarGlowRight = null;
 	}
 
 	private getHeaderSceneFrameBaseSize(scene: Scene): { width: number; height: number } {
@@ -233,10 +340,12 @@ export class BonusHeader {
 
 	private startAnimalsMoveAnimation(): void {
 		this.animals?.start();
+		this.playConfettiVfx();
 	}
 
 	private stopAnimalsMoveAnimation(): void {
 		this.animals?.stop();
+		this.stopConfettiVfx();
 	}
 
 	private playConveyorTopAnimation(): void {
@@ -271,7 +380,8 @@ export class BonusHeader {
 	}
 
 	// Depth above RadialLightTransition overlay (20000) so Total win stays visible during candy/radial light
-	private static readonly WIN_BAR_DEPTH = 20001;
+	// Keep win bar text below dialog overlay layers (Dialogs uses ~13000+).
+	private static readonly WIN_BAR_DEPTH = 9502;
 	private static readonly WIN_BAR_SCALE_EPSILON = 0.01;
 
 	private createWinBarText(scene: Scene, x: number, y: number): void {
@@ -282,7 +392,7 @@ export class BonusHeader {
 			fontFamily: 'Poppins-Bold',
 			stroke: '#004D00',
 			strokeThickness: 3
-		}).setOrigin(0.5, 0.5).setDepth(BonusHeader.WIN_BAR_DEPTH).setScale(HEADER_CONFIG.WIN_BAR_TEXT_SCALE); // Above radial light overlay (20000)
+		}).setOrigin(0.5, 0.5).setDepth(BonusHeader.WIN_BAR_DEPTH).setScale(HEADER_CONFIG.WIN_BAR_TEXT_SCALE); // Above header frame/win bar, below dialogs
 		// Don't add to container - add directly to scene so depth works correctly
 
 		// Line 2: amount value
@@ -295,7 +405,7 @@ export class BonusHeader {
 			fontFamily: 'Poppins-Bold',
 			stroke: '#004D00',
 			strokeThickness: 3
-		}).setOrigin(0.5, 0.5).setDepth(BonusHeader.WIN_BAR_DEPTH).setScale(HEADER_CONFIG.WIN_BAR_TEXT_VALUE_SCALE); // Above radial light overlay (20000)
+		}).setOrigin(0.5, 0.5).setDepth(BonusHeader.WIN_BAR_DEPTH).setScale(HEADER_CONFIG.WIN_BAR_TEXT_VALUE_SCALE); // Above header frame/win bar, below dialogs
 		// Don't add to container - add directly to scene so depth works correctly
 		
 		// Hide by default - only show when bonus is triggered
@@ -924,19 +1034,122 @@ export class BonusHeader {
 		gameEventManager.on(GameEventType.TUMBLE_WIN_PROGRESS, (data: any) => {
 			try {
 				if (!gameStateManager.isBonus) return;
-				const amount = Number((data as any)?.cumulativeWin ?? 0);
-				if (amount > 0) {
+				const symbolsComponent = (this.bonusHeaderContainer.scene as any).symbols;
+				const spinData = symbolsComponent?.currentSpinData;
+				const currentItem = this.getCurrentFreeSpinItem(spinData);
+				const slotTotalWinRaw = Number(spinData?.slot?.totalWin ?? 0);
+				const hasMaxWinCap =
+					!!(currentItem as any)?.isMaxWin &&
+					Number.isFinite(slotTotalWinRaw) &&
+					slotTotalWinRaw > 0;
+				const maxWinCapTotal = hasMaxWinCap ? slotTotalWinRaw : 0;
+
+				// Initialize bonus tracking if needed
+				if (!this.hasStartedBonusTracking) {
+					this.cumulativeBonusWin = this.scatterBaseWin || 0;
+					this.hasStartedBonusTracking = true;
+				}
+
+				const tumbleWinRaw = Number((data as any)?.tumbleWin ?? 0);
+				const cumulativeFromEvent = Number((data as any)?.cumulativeWin ?? 0);
+				let effectiveTumbleWin = (Number.isFinite(tumbleWinRaw) && tumbleWinRaw > 0) ? tumbleWinRaw : 0;
+
+				if (hasMaxWinCap) {
+					const remainingToCap = Math.max(0, maxWinCapTotal - this.cumulativeBonusWin);
+					if (remainingToCap <= 0) {
+						if (this.youWonText) {
+							this.youWonText.setText('TOTAL WIN');
+						}
+						this.showWinningsDisplay(maxWinCapTotal);
+						try { symbolsComponent?.requestSkipTumbles?.(); } catch {}
+						console.log('[BonusHeader] MaxWin cap already reached - skipping further tumble win updates', {
+							cumulativeBonusWin: this.cumulativeBonusWin,
+							maxWinCapTotal
+						});
+						return;
+					}
+					if (effectiveTumbleWin > remainingToCap) {
+						console.log('[BonusHeader] Clamping tumble win to MaxWin cap remainder', {
+							rawTumbleWin: effectiveTumbleWin,
+							clampedTumbleWin: remainingToCap,
+							cumulativeBonusWin: this.cumulativeBonusWin,
+							maxWinCapTotal
+						});
+						effectiveTumbleWin = remainingToCap;
+					}
+				}
+
+				const displayWin = (effectiveTumbleWin > 0)
+					? effectiveTumbleWin
+					: (Number.isFinite(cumulativeFromEvent) ? cumulativeFromEvent : 0);
+				if (displayWin > 0 || (hasMaxWinCap && this.cumulativeBonusWin >= maxWinCapTotal)) {
 					// As soon as tumble wins start, we are in the "YOU WON" phase for this spin.
 					// Never show "TOTAL WIN" on tumble updates; that label is reserved for the
 					// end-of-spin cumulative summary (handled on WIN_STOP).
-					if (this.youWonText) {
+					if (this.youWonText && displayWin > 0) {
 						this.youWonText.setText('YOU WON');
 					}
 					// Clear any scatter seeding guard once real tumble wins begin
 					if (this.justSeededWin) {
 						this.justSeededWin = false;
 					}
-					this.showWinningsDisplay(amount);
+					if (displayWin > 0) {
+						this.showWinningsDisplay(displayWin);
+					}
+
+					// Accumulate per-tumble win into cumulative total
+					if (effectiveTumbleWin > 0) {
+						if (this.skipNextSpinAccumulation) {
+							this.accumulatedThisSpin = true;
+							this.skipNextSpinAccumulation = false;
+							console.log('[BonusHeader] TUMBLE_WIN_PROGRESS: skipping accumulation (first spin already seeded)');
+						} else {
+							this.cumulativeBonusWin += effectiveTumbleWin;
+							this.accumulatedThisSpin = true;
+						}
+					} else if (cumulativeFromEvent > 0) {
+						const delta = cumulativeFromEvent - this.lastTumbleCumulative;
+						if (delta > 0) {
+							let effectiveDelta = delta;
+							if (hasMaxWinCap) {
+								const remainingToCap = Math.max(0, maxWinCapTotal - this.cumulativeBonusWin);
+								effectiveDelta = Math.min(effectiveDelta, remainingToCap);
+							}
+							if (this.skipNextSpinAccumulation) {
+								this.accumulatedThisSpin = true;
+								this.skipNextSpinAccumulation = false;
+							} else {
+								this.cumulativeBonusWin += effectiveDelta;
+								this.accumulatedThisSpin = true;
+							}
+						}
+						this.lastTumbleCumulative = cumulativeFromEvent;
+					}
+					if (hasMaxWinCap && this.cumulativeBonusWin > maxWinCapTotal) {
+						this.cumulativeBonusWin = maxWinCapTotal;
+					}
+
+					// After showing YOU WON, update TOTAL WIN with the accumulated total.
+					if (this.scene) {
+						try {
+							this.tumbleTotalDisplayTimer?.destroy();
+						} catch { }
+						const delayMs = Math.max(0, BONUS_TUMBLE_TOTAL_WIN_DELAY_MS || 0);
+						this.tumbleTotalDisplayTimer = this.scene.time.delayedCall(delayMs, () => {
+							if (!gameStateManager.isBonus) return;
+							if (this.youWonText) {
+								this.youWonText.setText('TOTAL WIN');
+							}
+							const totalToShow = hasMaxWinCap
+								? Math.min(this.cumulativeBonusWin, maxWinCapTotal)
+								: this.cumulativeBonusWin;
+							this.showWinningsDisplay(totalToShow);
+						});
+					}
+
+					if (hasMaxWinCap && this.cumulativeBonusWin >= maxWinCapTotal) {
+						try { symbolsComponent?.requestSkipTumbles?.(); } catch {}
+					}
 				}
 			} catch {}
 		});
@@ -992,6 +1205,10 @@ export class BonusHeader {
 				// appears after *all* win mechanics for the spin (tumbles + multipliers)
 				// have finished, avoiding any label flicker during tumble updates.
 				if (spinWin > 0) {
+					if (this.accumulatedThisSpin) {
+						console.log('[BonusHeader] TUMBLE_SEQUENCE_DONE: skipping accumulation (already added per tumble)');
+						return;
+					}
 					if (this.skipNextSpinAccumulation) {
 						this.accumulatedThisSpin = true;
 						this.skipNextSpinAccumulation = false;
@@ -1051,6 +1268,11 @@ export class BonusHeader {
 				// Reset per-spin accumulation flag
 				this.accumulatedThisSpin = false;
 				this.showingTotalWin = false;
+				this.lastTumbleCumulative = 0;
+				try {
+					this.tumbleTotalDisplayTimer?.destroy();
+				} catch { }
+				this.tumbleTotalDisplayTimer = null;
 				// Initialize tracking on first spin in bonus mode
 				if (!this.hasStartedBonusTracking) {
 					this.cumulativeBonusWin = this.scatterBaseWin || 0;
@@ -1259,8 +1481,14 @@ export class BonusHeader {
 				}
 
 				if (isFinalSpin) {
+					const currentItem = this.getCurrentFreeSpinItem(spinData);
+					const isMaxWinItem = !!(currentItem as any)?.isMaxWin;
 					const backendTotal = this.calculateBackendTotalWin(spinData);
-					if (backendTotal > this.cumulativeBonusWin + 0.01) {
+					if (isMaxWinItem && backendTotal > 0) {
+						this.cumulativeBonusWin = backendTotal;
+						this.hasStartedBonusTracking = true;
+						console.log(`[BonusHeader] WIN_STOP (bonus): MaxWin item - forcing cumulative total to slot.totalWin=$${backendTotal}`);
+					} else if (backendTotal > this.cumulativeBonusWin + 0.01) {
 						this.cumulativeBonusWin = backendTotal;
 						this.hasStartedBonusTracking = true;
 						console.log(`[BonusHeader] WIN_STOP (bonus): aligned cumulative total to backend totalWin=$${backendTotal}`);
@@ -1417,11 +1645,15 @@ export class BonusHeader {
 			this.conveyorTopSpine.setScale(scale);
 			this.conveyorTopSpine.setPosition(anchorX, anchorY + HEADER_CONFIG.CONVEYOR_TOP_OFFSET_Y);
 		}
+		if (this.confettiVfxSpine) {
+			this.updateConfettiTransform(anchorX, anchorY, containerWidth);
+		}
 		this.animals?.resize(centerXView);
 		if (this.headerWinBarImage && scene.textures.exists('Header_SceneFrame')) {
 			const winBarY = anchorY + containerHeight + HEADER_CONFIG.WIN_BAR_OFFSET_Y;
 			this.headerWinBarImage.setPosition(centerX, winBarY);
 			this.headerWinBarImage.setScale((scene.scale.width / this.headerWinBarImage.width) * HEADER_CONFIG.WIN_BAR_SCALE);
+			this.updateWinBarGlowTransform();
 		}
 		this.updateHeaderSceneContainerDebugBorder(scene);
 		this.updateHeaderDebugBorder();
@@ -1434,8 +1666,13 @@ export class BonusHeader {
 	/** Set visibility of the whole bonus header (container + scene frame when not in container). */
 	setVisible(visible: boolean): void {
 		this.bonusHeaderContainer.setVisible(visible);
+		this.winBarGlowLeft?.setVisible(visible);
+		this.winBarGlowRight?.setVisible(visible);
 		if (this.headerSceneFrameImage) {
 			this.headerSceneFrameImage.setVisible(visible);
+		}
+		if (!visible) {
+			this.stopConfettiVfx();
 		}
 		if (this.scene) {
 			this.updateHeaderSceneContainerDebugBorder(this.scene);
@@ -1458,6 +1695,11 @@ export class BonusHeader {
 			this.headerSceneFrameImage.destroy();
 			this.headerSceneFrameImage = undefined;
 		}
+		if (this.confettiVfxSpine) {
+			try { this.confettiVfxSpine.destroy(); } catch {}
+			this.confettiVfxSpine = null;
+		}
+		this.destroyWinBarGlows();
 		if (this.bonusHeaderContainer) {
 			this.bonusHeaderContainer.destroy();
 		}

@@ -71,6 +71,12 @@ export const HEADER_CONFIG = {
   CONVEYOR_TOP_SCALE: 0.6,
   /** Conveyor top (inside frame): Y offset (px) from frame top. Positive = down, negative = up. */
   CONVEYOR_TOP_OFFSET_Y: 95,
+  /** Confetti VFX: X offset (px) from header frame center. Positive = right, negative = left. */
+  CONFETTI_OFFSET_X: 50,
+  /** Confetti VFX: Y offset (px) from header frame top. Positive = down, negative = up. */
+  CONFETTI_OFFSET_Y: 70,
+  /** Confetti VFX: scale multiplier relative to header frame width-fit. */
+  CONFETTI_SCALE: 0.8,
   /** Number of animal spines to create in the pool (reused when one exits right). */
   ANIMALS_POOL_SIZE: 10,
   /** Minimum number of animals visible on the conveyor (if lane fits fewer, uses 1). */
@@ -215,6 +221,9 @@ export const DELAY_BETWEEN_SPINS: number = 2000;
 /** Ratio for time between column starts relative to DELAY_BETWEEN_SPINS */
 export const DROP_REEL_START_INTERVAL_RATIO: number = 0.08;
 
+/** Bonus: delay between showing "YOU WON" and "TOTAL WIN" per tumble (ms). */
+export const BONUS_TUMBLE_TOTAL_WIN_DELAY_MS: number =1000;
+
 export const TIMING_CONFIG = {
   /** Extended duration for scatter anticipation (ms) */
   EXTEND_DURATION_MS: 3000,
@@ -286,6 +295,8 @@ export const WIN_THRESHOLDS = {
   EPIC_WIN: 45,
   /** Threshold for "Super Win" dialog */
   SUPER_WIN: 60,
+  /** Threshold for "Max Win" dialog */
+  MAX_WIN: 2100,
 } as const;
 
 // =============================================================================
@@ -357,6 +368,8 @@ export const SHOW_BUTTON_HITBOXES: boolean = false;
 export const SHOW_HEADER_SCENEFRAME_BORDER: boolean = false;
 /** When true, draw a red debug border around the full header area (scene, frame, win bar, win text). */
 export const SHOW_HEADER_BORDER: boolean = false;
+/** When true, draw a red debug border around the header confetti VFX bounds. */
+export const SHOW_HEADER_CONFETTI_BORDER: boolean = false;
 /** When true, draw red debug borders for scatter payout section in HelpScreen (scatter image + header/grid/text). */
 export const HELPSCREEN_PAYOUT_SCATTER_DEBUG_LINE: boolean = false;
 

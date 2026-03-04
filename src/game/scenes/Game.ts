@@ -401,13 +401,15 @@ export class Game extends Scene {
 				gsm?.isProcessingSpin ||
 				gsm?.isReelSpinning ||
 				gsm?.isAutoPlaying ||
-				!!this.gameData?.isAutoPlaying
+				!!this.gameData?.isAutoPlaying ||
+				gameStateManager.isShowingWinDialog
 			) {
 				console.log('[Game] show-bet-options blocked by game state', {
 					isProcessingSpin: gsm?.isProcessingSpin,
 					isReelSpinning: gsm?.isReelSpinning,
 					isAutoPlaying: gsm?.isAutoPlaying,
 					gameDataIsAutoPlaying: !!this.gameData?.isAutoPlaying,
+					isShowingWinDialog: gameStateManager.isShowingWinDialog,
 				});
 				return;
 			}
@@ -458,10 +460,6 @@ export class Game extends Scene {
 				currentBalance,
 				isEnhancedBet,
 				onClose: () => console.log('[Game] Autoplay options closed'),
-				onBetChange: (betAmount: number) => {
-					// Sync SlotController/base bet + controller label live as user adjusts bet in autoplay
-					this.slotController.updateBetAmountFromAutoplay(betAmount);
-				},
 				onConfirm: (autoplayCount: number) => {
 					const selectedBet = this.autoplayOptions.getCurrentBet();
 					if (Math.abs(selectedBet - baseBet) > 0.0001) {
@@ -551,6 +549,23 @@ export class Game extends Scene {
 			}
 		}
 
+		// If current freespin item is marked as max win, show MaxWin dialog with slot.totalWin.
+		if (freeSpinItem?.isMaxWin === true) {
+			const slotTotal = Number((spinData.slot as any)?.totalWin);
+			const winAmount = Number.isFinite(slotTotal) ? slotTotal : 0;
+			try {
+				if (this.dialogs?.showMaxWin) {
+					gameStateManager.isShowingWinDialog = true;
+					gameStateManager.suppressTotalWinDialog = true;
+					this.dialogs.showMaxWin(this, { winAmount });
+					console.log(`[Game] WIN_STOP: MaxWin item detected - showing MaxWin dialog with slot.totalWin=$${winAmount}`);
+					return;
+				}
+			} catch (e) {
+				console.warn('[Game] WIN_STOP: Failed to show MaxWin dialog', e);
+			}
+		}
+
 		const slotTotalWin = Number((spinData.slot as any)?.totalWin);
 		if (totalWin === 0 && Number.isFinite(slotTotalWin) && slotTotalWin > 0) totalWin = slotTotalWin;
 
@@ -626,7 +641,7 @@ export class Game extends Scene {
 		this.dialogs.checkAndShowWinDialog(this, payout, bet, {
 			pushToQueue: (p, b) => this.winQueue.push({ payout: p, bet: b }),
 			scheduleProcessQueue: () => {
-				this.scene.time.delayedCall(0, () => this.processWinQueue());
+				this.time.delayedCall(0, () => this.processWinQueue());
 			},
 			isSuppressed: () => this.suppressWinDialogsUntilNextSpin,
 			symbols: this.symbols,
@@ -738,6 +753,7 @@ export class Game extends Scene {
 				// Ensure bonus-finished flag is cleared and bonus mode is turned off when leaving bonus
 				this.gameStateManager.isBonus = false;
 				this.gameStateManager.isBonusFinished = false;
+				this.gameStateManager.suppressTotalWinDialog = false;
 				// Clear autoplay-related flags like on fresh spin
 				this.gameStateManager.isAutoPlaying = false;
 				this.gameStateManager.isAutoPlaySpinRequested = false;
@@ -775,6 +791,15 @@ export class Game extends Scene {
 					this.audioManager.playBackgroundMusic(MusicType.MAIN);
 					console.log('[Game] Switched to main background music');
 				}
+
+				// If normal base-game autoplay was paused due to the scatter-triggered bonus,
+				// resume it now that we're returning to base mode (after bonus/Congrats flow).
+				try {
+					const slotControllerAny: any = this.slotController as any;
+					if (slotControllerAny && typeof slotControllerAny.resumeAutoplayFromPause === 'function') {
+						slotControllerAny.resumeAutoplayFromPause();
+					}
+				} catch { }
 			}
 
 			// TODO: Update backend data isBonus flag if needed
