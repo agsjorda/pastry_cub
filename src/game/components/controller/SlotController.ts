@@ -1031,6 +1031,11 @@ export class SlotController {
 		const featureButton = this.buttons.get('feature');
 
 		if (featureButton) {
+			// Keep Buy Feature disabled until the full spin/tumble/win flow is complete.
+			if (gameStateManager.isReelSpinning || this.pendingWinLock || gameStateManager.isShowingWinDialog) {
+				console.log('[SlotController] Skipping feature enable (spin/tumble/win flow still active)');
+				return;
+			}
 			// Guard: do not re-enable during bonus or before explicit allow
 			if (gameStateManager.isBonus || !this.canEnableFeatureButton) {
 				console.log('[SlotController] Skipping feature enable (bonus active or not allowed yet)');
