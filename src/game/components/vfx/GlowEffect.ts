@@ -22,7 +22,7 @@ export class GlowEffect {
 	public static readonly DEFAULT_BONUS_ANIMATION = 'Glow_R';
 	// Shared win-bar glow tuning used by Header and BonusHeader.
 	public static readonly WIN_BAR_SCALE = 0.06;
-	public static readonly WIN_BAR_DEPTH = 9605;
+	public static readonly WIN_BAR_DEPTH = 9500;
 	public static readonly WIN_BAR_SIDE_INSET_X = 18;
 	public static readonly WIN_BAR_OFFSET_X = 1;
 	public static readonly WIN_BAR_OFFSET_Y = 105;
