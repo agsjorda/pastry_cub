@@ -139,6 +139,8 @@ export class SlotController {
 	private isSpinLocked: boolean = false;
 	// Prevent re-enabling spin while win animations are pending
 	private pendingWinLock: boolean = false;
+	// Guard to ensure balance API is called only once per spin (REELS_STOP can fire multiple times: Symbols + WinLineDrawer)
+	private balanceApiCalledThisSpin: boolean = false;
 	// Guard so bonus total is credited once when TotalWin appears
 	private hasFinalizedBonusBalanceForCurrentRound: boolean = false;
 	// Set when TotalWin is shown; consumed when that dialog fully closes.
@@ -2241,6 +2243,7 @@ export class SlotController {
 		// Listen for reels start to disable amplify button
 		gameEventManager.on(GameEventType.REELS_START, () => {
 			console.log('[SlotController] Reels started - disabling spin button and amplify button');
+			this.balanceApiCalledThisSpin = false; // Reset guard for new spin
 			this.disableSpinButton();
 			this.disableAmplifyButton();
 			const isFake = !!this.gameAPI?.isFakeDataEnabled?.();
@@ -2296,14 +2299,17 @@ export class SlotController {
 		gameEventManager.on(GameEventType.REELS_STOP, () => {
 			console.log('[SlotController] Reels stopped event received - updating spin button state');
 			
-			// Update balance from server every time reels stop (skip during scatter/bonus)
+			// Update balance from server once per spin (REELS_STOP can fire multiple times: Symbols + WinLineDrawer)
 			if (!gameStateManager.isScatter && !gameStateManager.isBonus) {
 				if (this.shouldDeferBalanceSyncToTotalWinDialog()) {
 					console.log('[SlotController] Skipping REELS_STOP balance sync (buy feature/TotalWin flow active)');
 				} else if (this.balanceController?.hasPendingBalanceUpdate()) {
 					console.log('[SlotController] Deferring REELS_STOP balance update (pending winnings will apply on WIN_STOP)');
-				} else {
+				} else if (!this.balanceApiCalledThisSpin) {
+					this.balanceApiCalledThisSpin = true;
 					this.updateBalanceFromServer();
+				} else {
+					console.log('[SlotController] Skipping duplicate balance API call (already called this spin)');
 				}
 			} else {
 				console.log('[SlotController] Skipping server balance update on REELS_STOP (scatter/bonus active)');
@@ -2646,11 +2652,12 @@ export class SlotController {
 					console.log('[SlotController] Skipping WIN_STOP base balance finalization (buy feature/TotalWin flow active)');
 				} else if (this.balanceController?.hasPendingBalanceUpdate()) {
 					this.balanceController.applyPendingBalanceUpdateIfAny();
-				} else {
+				} else if (!this.balanceApiCalledThisSpin) {
 					try {
 						const spinData = this.gameAPI?.getCurrentSpinData() || (this.scene as any)?.symbols?.currentSpinData;
 						const baseWin = spinData ? this.getBaseSpinWinForBalance(spinData as SpinData) : 0;
 						if (baseWin > 0) {
+							this.balanceApiCalledThisSpin = true;
 							this.updateBalanceFromServer();
 						}
 					} catch (e) {
