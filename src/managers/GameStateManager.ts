@@ -23,6 +23,8 @@ export class GameStateManager {
   private _isBonusFinished: boolean = false;
   private _isBuyFeatureSpin: boolean = false;
   private _suppressTotalWinDialog: boolean = false;
+  /** When 2, bonus game should start with two x2 sticky markers (buy feature 2). Cleared when applied or when bonus ends. */
+  private _buyFeatureStartMultiplier: number = 0;
 
   private constructor() {
     this.initializeEventListeners();
@@ -90,6 +92,7 @@ export class GameStateManager {
   public get isBonusFinished(): boolean { return this._isBonusFinished; }
   public get isBuyFeatureSpin(): boolean { return this._isBuyFeatureSpin; }
   public get suppressTotalWinDialog(): boolean { return this._suppressTotalWinDialog; }
+  public get buyFeatureStartMultiplier(): number { return this._buyFeatureStartMultiplier; }
 
   // Setters for state properties (with event emission where appropriate)
   public set timeScale(value: number) {
@@ -162,6 +165,10 @@ export class GameStateManager {
     this._suppressTotalWinDialog = value;
   }
 
+  public set buyFeatureStartMultiplier(value: number) {
+    this._buyFeatureStartMultiplier = value;
+  }
+
   /**
    * Start a spin
    */
@@ -209,6 +216,7 @@ export class GameStateManager {
     this._isBonusFinished = false;
     this._isBuyFeatureSpin = false;
     this._suppressTotalWinDialog = false;
+    this._buyFeatureStartMultiplier = 0;
   }
 
   /**
@@ -228,7 +236,8 @@ export class GameStateManager {
       scatterIndex: this._scatterIndex,
       isBonusFinished: this._isBonusFinished,
       isBuyFeatureSpin: this._isBuyFeatureSpin,
-      suppressTotalWinDialog: this._suppressTotalWinDialog
+      suppressTotalWinDialog: this._suppressTotalWinDialog,
+      buyFeatureStartMultiplier: this._buyFeatureStartMultiplier
     };
   }
 }

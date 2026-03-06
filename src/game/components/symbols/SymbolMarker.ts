@@ -87,6 +87,21 @@ export class SymbolMarker {
   }
 
   /**
+   * Set a cell to a specific multiplier value (e.g. for buy feature 2 starting x2 sticky markers).
+   * Value must be between 1 and MAX_MULTIPLIER; use 2 for active x2 sticky.
+   */
+  public setCellValue(col: number, row: number, value: number): void {
+    if (col < 0 || row < 0) return;
+    this.ensureState();
+    const cols = this.values.length;
+    const rows = this.values[0]?.length ?? 0;
+    if (col >= cols || row >= rows) return;
+    const clamped = Math.max(1, Math.min(SymbolMarker.MAX_MULTIPLIER, Math.floor(value)));
+    this.values[col][row] = clamped;
+    this.updateOverlay(col, row, clamped);
+  }
+
+  /**
    * Get current multiplier value at the given grid cell.
    * Returns 0 when the cell has no multiplier yet.
    */

@@ -105,12 +105,13 @@ export class SymbolAnimations {
       // Apply additional per-symbol adjustments after fitting
       try {
         const symbolValue = (spineObj as any)?.symbolValue;
-        if (symbolValue === 0 && !gameStateManager.isBonus && !gameStateManager.isBuyFeatureSpin) {
-          // Extra 20% for scatter
+        if (symbolValue === 0) {
+          // Symbol0 scale multiplier from config (SPINE_SYMBOL_SCALES[0]); applies in all modes
+          const mult = SPINE_SYMBOL_SCALES[0] ?? DEFAULT_SPINE_SCALE;
           const sx = (spineObj as any)?.scaleX ?? 1;
           const sy = (spineObj as any)?.scaleY ?? 1;
           if (typeof spineObj.setScale === 'function') {
-            spineObj.setScale(sx * 1.2, sy * 1.2);
+            spineObj.setScale(sx * mult, sy * mult);
           }
         }
       } catch { /* ignore */ }
