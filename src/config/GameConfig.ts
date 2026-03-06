@@ -60,7 +60,7 @@ export const HEADER_CONFIG = {
   /** Y offset (px) added to Header_WinBar position (below Header_SceneFrame). Positive = down, negative = up. */
   WIN_BAR_OFFSET_Y: -30,
   /** Y offset (px) for win bar text (YOU WON / amount). Positive = lower, negative = higher. Applied on top of base position. */
-  WIN_BAR_TEXT_OFFSET_Y: 0,
+  WIN_BAR_TEXT_OFFSET_Y: -2,
   /** Scale multiplier for win bar label text (YOU WON / TOTAL WIN). 1 = default size, < 1 = smaller, > 1 = larger. */
   WIN_BAR_TEXT_SCALE: .9,
   /** Scale multiplier for win bar value text (amount e.g. $0.00). 1 = default size, < 1 = smaller, > 1 = larger. */

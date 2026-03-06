@@ -3226,6 +3226,10 @@ export class Symbols {
             try { if (prevOnComplete) prevOnComplete(); } catch { }
             completedAnimations++;
             if (completedAnimations === totalAnimations) {
+              // In skip mode (non-turbo), play a single reel-drop sound after the last symbol lands.
+              if (isSkip && !isTurbo && (window as any).audioManager) {
+                try { this.playSpinReelDropSoundForColumn(col); } catch { }
+              }
               resolve();
             }
           };
