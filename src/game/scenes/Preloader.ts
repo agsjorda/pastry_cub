@@ -13,6 +13,7 @@ import { ClockDisplay } from '../components/ClockDisplay';
 import { CLOCK_DISPLAY_NAME, GAME_DISPLAY_NAME, CLOCK_DISPLAY_CONFIG, PRELOADER_CONFIG } from '../../config/GameConfig';
 import { CurrencyManager } from '../components/CurrencyManager';
 import { playRadialDimmerTransition } from '../utils/playRadialDimmerTransition';
+import { unresolvedSpinManager } from '../../managers/UnresolvedSpinManager';
 
 export class Preloader extends Scene
 {
@@ -192,9 +193,11 @@ export class Preloader extends Scene
 				console.log('[Preloader] Calling backend slot initialization...');
 				const slotInitData = await this.gameAPI.initializeSlotSession();
 				console.log('[Preloader] Slot initialization data:', slotInitData);
+				unresolvedSpinManager.setFromInitializationData(slotInitData);
 				CurrencyManager.initializeFromInitData(slotInitData);
 			} else {
 				console.log('[Preloader] Demo mode active - skipping backend slot initialization');
+				unresolvedSpinManager.setFromInitializationData(null);
 			}
 
             console.log('[Preloader] GameAPI and slot session initialized successfully!');

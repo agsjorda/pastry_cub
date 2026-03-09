@@ -395,6 +395,7 @@ export class AssetConfig {
 		return {
 			images: {
 				'buy_feature_logo': `${prefix}/buy_feature/buy_feature_logo.webp`,
+				'buy_feature_logo2': `${prefix}/buy_feature/buy_feature_logo2.webp`,
 				'buy_feature_bg': `${prefix}/buy_feature/buy_feature_bg.webp`,
 				'buy_feature_selected_icon': `${prefix}/buy_feature/selected_icon.png`,
 			}

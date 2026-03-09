@@ -13,6 +13,7 @@ import { startAnimation, stopAnimation } from "../../utils/SpineAnimationHelper"
 
 export class Background {
 	private bgContainer!: Phaser.GameObjects.Container;
+	private sceneRef: Scene | null = null;
 	private networkManager: NetworkManager;
 	private screenModeManager: ScreenModeManager;
 	private normalBgCover: Phaser.GameObjects.Image | null = null;
@@ -75,6 +76,7 @@ export class Background {
 
 	create(scene: Scene): void {
 		console.log("[Background] Creating background elements");
+		this.sceneRef = scene;
 
 		// Create main container for all background elements
 		this.bgContainer = scene.add.container(0, 0);
@@ -463,6 +465,53 @@ export class Background {
 
 	getContainer(): Phaser.GameObjects.Container {
 		return this.bgContainer;
+	}
+
+	/**
+	 * Force base background UI visibility.
+	 * Used by unresolved-spin resume to immediately hide/show normal background UI.
+	 */
+	public setBaseUiVisible(visible: boolean): void {
+		if (this.bgDefault) {
+			this.bgDefault.setVisible(visible);
+		}
+		if (this.normalBgCover) {
+			this.normalBgCover.setVisible(visible);
+		}
+		if (this.normalGameSpine) {
+			try {
+				this.normalGameSpine.setVisible(visible && this.preferSpineBackground);
+			} catch {}
+		}
+	}
+
+	/**
+	 * Align BG-Default to the bottom of the screen, optionally animated.
+	 */
+	public tweenDefaultBgAlignBottom(opts: { duration?: number } = {}): void {
+		if (!this.sceneRef || !this.bgDefault) return;
+
+		const duration =
+			typeof opts.duration === "number" && Number.isFinite(opts.duration)
+				? Math.max(0, opts.duration)
+				: 200;
+		const targetY = this.sceneRef.scale.height - this.bgDefault.displayHeight * 0.5;
+
+		try {
+			this.sceneRef.tweens.killTweensOf(this.bgDefault);
+		} catch {}
+
+		if (duration === 0) {
+			this.bgDefault.setY(targetY);
+			return;
+		}
+
+		this.sceneRef.tweens.add({
+			targets: this.bgDefault,
+			y: targetY,
+			duration,
+			ease: "Sine.easeOut",
+		});
 	}
 
 	/**

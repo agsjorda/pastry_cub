@@ -446,6 +446,13 @@ export class AudioManager {
 	}
 
 	/**
+	 * Check whether a music instance is ready for the requested type.
+	 */
+	public hasMusicInstance(musicType: MusicType): boolean {
+		return !!this.musicInstances.get(musicType);
+	}
+
+	/**
 	 * Stop current background music
 	 */
 	stopCurrentMusic(): void {

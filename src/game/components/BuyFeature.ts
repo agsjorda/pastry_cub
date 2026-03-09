@@ -1,9 +1,10 @@
-﻿import { Scene } from 'phaser';
+import { Scene } from 'phaser';
 import { SlotController } from './controller/SlotController';
 import { ensureSpineFactory } from '../../utils/SpineGuard';
 import { CurrencyManager } from './CurrencyManager';
 import { formatCurrencyNumber } from '../../utils/NumberPrecisionFormatter';
 import { SoundEffectType } from '../../managers/AudioManager';
+import { SPINE_SYMBOL_SCALES } from '../../config/GameConfig';
 
 export interface BuyFeatureConfig {
 	position?: { x: number; y: number };
@@ -103,14 +104,17 @@ export class BuyFeature {
   private static readonly BORDER_ANIM_PULSE_SPEED = 4;
 
   /** Card configuration */
-  private static readonly CARD_ICON_SIZE = 110;
-  private static readonly CARD_ICON_INSET = -4;
+  private static readonly CARD_ICON_SIZE = 90;
+  private static readonly CARD_ICON_INSET = 4;
   private static readonly CARD_SELECTED_ICON_SIZE = 18;
   private static readonly CARD_SELECTED_ICON_INSET = 12;
   /** Gap between icon and text (px). Decrease to move text left. */
-  private static readonly CARD_TEXT_OFFSET_FROM_ICON = -4;
+  private static readonly CARD_TEXT_OFFSET_FROM_ICON = 4;
   /** Idle scatter size as fraction of icon size (0â€“1). */
-  private static readonly CARD_SCATTER_SIZE_RATIO = 0.55;
+  private static readonly CARD_SCATTER_SIZE_RATIO = 0.7;
+  /** Additional per-axis scale for popup card scatter (applied after SPINE_SYMBOL_SCALES[0]). */
+  private static readonly CARD_SCATTER_SCALE_OFFSET_X = .7;
+  private static readonly CARD_SCATTER_SCALE_OFFSET_Y = 1;
   private static readonly SCATTER_SPINE_KEY = "symbol_0_spine";
   private static readonly SCATTER_SPINE_ATLAS_KEY = "symbol_0_spine-atlas";
   private static readonly SCATTER_IDLE_ANIM = "Symbol0_PC_idle";
@@ -119,8 +123,8 @@ export class BuyFeature {
   private static readonly CARD_MULT_DIGIT_SPACING = 0.5;
   private static readonly CURRENCY_LABEL = CurrencyManager.getInlinePrefix();
   private static readonly CARD_ITEMS: BuyFeatureCardItem[] = [
-    { title: "Complete Overhaul v.1", scatterCount: 3, startMultiplier: 8 },
-    { title: "Double The Danger v.2", scatterCount: 4, startMultiplier: 32 },
+    { title: "Chef's Big Meaty Surprise v.1", scatterCount: 3, startMultiplier: 1},
+    { title: "Chef's Big Meaty Surprise v.2", scatterCount: 3, startMultiplier: 2 },
   ];
 
   private buyFeatureSelectedCardIndex: number = 0;
@@ -145,6 +149,14 @@ export class BuyFeature {
    */
   private getCurrentBet(): number {
     return this.currentBet;
+  }
+
+  /**
+   * Bet amount to show in the popup: 5x when buy feature 2 (v.2) is selected, else 1x.
+   */
+  private getDisplayBetAmount(): number {
+    const item = BuyFeature.CARD_ITEMS[this.buyFeatureSelectedCardIndex];
+    return item?.startMultiplier === 2 ? this.currentBet * 5 : this.currentBet;
   }
 
   /**
@@ -363,6 +375,7 @@ export class BuyFeature {
     this.buyFeatureSelectedCardIndex = index;
     this.selectedBuyFeatureType = index === 1 ? 2 : 1;
     this.refreshBuyFeatureCardOutlines();
+    this.updateBetDisplay();
   }
 
   private refreshBuyFeatureCardOutlines(): void {
@@ -634,7 +647,7 @@ export class BuyFeature {
 
   /**
    * Creates a container with digit sprites for multiplier value (e.g. 16) using number_0..9 textures.
-   * If no value is passed, displays 000. Returns null if any required texture is missing.
+   * If no value is passed, displays "". Returns null if any required texture is missing.
    * Digits are left-aligned: leftX is the x position of the left edge of the first digit.
    */
   private createMultiplierDigitDisplay(
@@ -643,7 +656,7 @@ export class BuyFeature {
     centerY: number,
     value?: number,
   ): Phaser.GameObjects.Container | null {
-    const str = value != null && value !== undefined ? `${value}` : "000";
+    const str = value != null && value !== undefined ? `${value}` : "";
     const scale = BuyFeature.CARD_MULT_DIGIT_SCALE;
     const spacing = BuyFeature.CARD_MULT_DIGIT_SPACING;
     const keys: string[] = [];
@@ -689,15 +702,28 @@ export class BuyFeature {
     const iconCenterX = leftX + iconSize / 2;
     const iconCenterY = iconY + iconSize / 2;
 
-    // Left panel: buy_feature_logo image
+    // Left panel: buy_feature_logo (card 1) or buy_feature_logo2 (card 2)
+    const iconKey =
+      item.startMultiplier === 2 && scene.textures.exists("buy_feature_logo2")
+        ? "buy_feature_logo2"
+        : "buy_feature_logo";
     const iconBg = scene.add
-      .image(iconCenterX, iconCenterY, "buy_feature_logo")
+      .image(iconCenterX, iconCenterY, iconKey)
       .setOrigin(0.5, 0.5);
     iconBg.setDisplaySize(iconSize, iconSize);
     cardContainer.add(iconBg);
 
     // Idle scatter symbol in the middle of the icon (Spine or PNG fallback), looping
     const scatterDisplaySize = iconSize * BuyFeature.CARD_SCATTER_SIZE_RATIO;
+    const scatterScaleFromConfig = SPINE_SYMBOL_SCALES[0] ?? 1;
+    const scatterDisplayW =
+      scatterDisplaySize *
+      scatterScaleFromConfig *
+      BuyFeature.CARD_SCATTER_SCALE_OFFSET_X;
+    const scatterDisplayH =
+      scatterDisplaySize *
+      scatterScaleFromConfig *
+      BuyFeature.CARD_SCATTER_SCALE_OFFSET_Y;
     let scatterObj: Phaser.GameObjects.GameObject | null = null;
     if (ensureSpineFactory(scene, "[BuyFeature] card scatter")) {
       const addAny = scene.add as any;
@@ -711,10 +737,14 @@ export class BuyFeature {
         spine.setOrigin(0.5, 0.5);
         try {
           if (spine.setDisplaySize) {
-            spine.setDisplaySize(scatterDisplaySize, scatterDisplaySize);
+            spine.setDisplaySize(scatterDisplayW, scatterDisplayH);
           } else {
             // Scale to fit (Spine skeleton height ~1000â€“2000px; target scatterDisplaySize px)
-            spine.setScale(scatterDisplaySize / 1500);
+            const base = scatterDisplaySize / 1500;
+            spine.setScale(
+              base * scatterScaleFromConfig * BuyFeature.CARD_SCATTER_SCALE_OFFSET_X,
+              base * scatterScaleFromConfig * BuyFeature.CARD_SCATTER_SCALE_OFFSET_Y,
+            );
           }
         } catch {}
         try {
@@ -731,30 +761,32 @@ export class BuyFeature {
       const fallback = scene.add
         .image(iconCenterX, iconCenterY, "symbol_0")
         .setOrigin(0.5, 0.5);
-      fallback.setDisplaySize(scatterDisplaySize, scatterDisplaySize);
+      fallback.setDisplaySize(scatterDisplayW, scatterDisplayH);
       cardContainer.add(fallback);
       scatterObj = fallback;
     }
 
-    // Left panel: multiplier as number display (digit sprites), left-aligned from icon left edge
-    const multDisplayLeftX = leftX + 25;
-    const multDisplay = this.createMultiplierDigitDisplay(
-      scene,
-      multDisplayLeftX,
-      iconCenterY + 5,
-      item.startMultiplier,
-    );
-    if (multDisplay) {
-      cardContainer.add(multDisplay);
-    } else {
-      const multText = scene.add
-        .text(iconCenterX - 20, iconCenterY, `${item.startMultiplier}x`, {
-          fontSize: "20px",
-          fontFamily: "Poppins-Bold",
-          color: "#ffffff",
-        })
-        .setOrigin(0.5, 0.5);
-      cardContainer.add(multText);
+    // Left panel: multiplier as number display (digit sprites), left-aligned from icon left edge (empty when startMultiplier === 1)
+    if (item.startMultiplier !== 1) {
+      const multDisplayLeftX = leftX + 25;
+      const multDisplay = this.createMultiplierDigitDisplay(
+        scene,
+        multDisplayLeftX,
+        iconCenterY + 5,
+        item.startMultiplier,
+      );
+      if (multDisplay) {
+        cardContainer.add(multDisplay);
+      } else {
+        const multText = scene.add
+          .text(iconCenterX - 20, iconCenterY, `${item.startMultiplier}x`, {
+            fontSize: "20px",
+            fontFamily: "Poppins-Bold",
+            color: "#ffffff",
+          })
+          .setOrigin(0.5, 0.5);
+        cardContainer.add(multText);
+      }
     }
 
     // Selected checkmark icon at top-right corner of card (if asset exists)
@@ -788,7 +820,11 @@ export class BuyFeature {
     titleText.setWordWrapWidth(cardWidth - (textLeft - -cardWidth / 2) - 12);
     cardContainer.add(titleText);
 
-    // Price: currency (white) + amount (green)
+    // Price: currency (white) + amount (green). Card 2 (v.2) uses 5x bet for price.
+    const priceForCard =
+      item.startMultiplier === 2
+        ? this.getCurrentBetValue() * 5
+        : this.getCurrentBetValue();
     const priceText = scene.add
       .text(textLeft, textTop + 32, BuyFeature.CURRENCY_LABEL + " ", {
         fontSize: "16px",
@@ -801,7 +837,7 @@ export class BuyFeature {
       .text(
         textLeft + 40,
         textTop + 32,
-        this.formatNumberWithCommas(this.getCurrentBetValue()),
+        this.formatNumberWithCommas(priceForCard),
         {
           fontSize: "16px",
           fontFamily: "Poppins-Bold",
@@ -832,9 +868,13 @@ export class BuyFeature {
     if (!this.buyFeatureTypeCardsWrapper) return;
     const list = this.buyFeatureTypeCardsWrapper
       .list as Phaser.GameObjects.Container[];
-    const price = this.getCurrentBetValue();
     for (let i = 0; i < list.length; i++) {
       const card = list[i];
+      const item = BuyFeature.CARD_ITEMS[i];
+      const price =
+        item?.startMultiplier === 2
+          ? this.getCurrentBetValue() * 5
+          : this.getCurrentBetValue();
       const priceText = card.getData("priceText") as
         | Phaser.GameObjects.Text
         | undefined;
@@ -1191,12 +1231,12 @@ export class BuyFeature {
 
     this.container.add(this.minusButton);
 
-    // Bet display - show current bet value
+    // Bet display - show current bet value (5x when buy feature 2 selected)
     const currencyPrefix = CurrencyManager.getInlinePrefix();
     this.betDisplay = scene.add.text(
       x,
       y,
-      `${currencyPrefix}${formatCurrencyNumber(this.getCurrentBet())}`,
+      `${currencyPrefix}${formatCurrencyNumber(this.getDisplayBetAmount())}`,
       {
         fontSize: "24px",
         color: "#ffffff",
@@ -1370,7 +1410,7 @@ export class BuyFeature {
     if (this.betDisplay) {
       const currencyPrefix = CurrencyManager.getInlinePrefix();
       this.betDisplay.setText(
-        `${currencyPrefix}${formatCurrencyNumber(this.getCurrentBet())}`,
+        `${currencyPrefix}${formatCurrencyNumber(this.getDisplayBetAmount())}`,
       );
     }
   }

@@ -47,6 +47,7 @@ import {
   SHOW_WIN_BORDER_SYMBOLS,
   WIN_BORDER_LINE_WIDTH,
   BONUS_MULTIPLIER_LAYOUT,
+  SYMBOL0_MERGE_SCALE,
 } from '../../../config/GameConfig';
 import { SoundEffectType } from '../../../managers/AudioManager';
 import { normalizeAreaToGameConfig, toRowMajor } from '../../../utils/GridTransform';
@@ -107,9 +108,6 @@ interface ScatterTransitionConfig {
  * while using the new modular architecture internally.
  */
 export class Symbols {
-  // Scale for the single Symbol0 (merge symbol) Spine object. Adjust as needed.
-  public static MERGE_SYMBOL0_SPINE_SCALE: number = 0.2; // Set to previous PNG scale or adjust manually
-
   // ============================================================================
   // STATIC PROPERTIES (Backward Compatibility)
   // ============================================================================
@@ -363,11 +361,20 @@ export class Symbols {
       if (isBonus) {
         if (!this.bonusGridInitializedForSession) {
           this.symbolMarker.reset();
+          if (gameStateManager.buyFeatureStartMultiplier === 2) {
+            for (let c = 0; c < SLOT_COLUMNS; c++) {
+              for (let r = 0; r < SLOT_ROWS; r++) {
+                this.symbolMarker.setCellValue(c, r, 2);
+              }
+            }
+            gameStateManager.buyFeatureStartMultiplier = 0;
+          }
           this.bonusGridInitializedForSession = true;
         }
       } else {
         this.symbolMarker.reset();
         this.bonusGridInitializedForSession = false;
+        gameStateManager.buyFeatureStartMultiplier = 0;
       }
       this.setBonusGridJimboyMode(isBonus);
     });
@@ -976,6 +983,14 @@ export class Symbols {
 
   public setFreeSpinAutoplaySpinsRemaining(spinsRemaining: number): void {
     this.freeSpinController.setSpinsRemaining(spinsRemaining);
+  }
+
+  /**
+   * Reset free-spin autoplay state so resume flows can restart cleanly.
+   */
+  public resetFreeSpinAutoplayState(): void {
+    this.freeSpinController.reset();
+    this.dialogListenerSetup = false;
   }
 
   public get freeSpinAutoplaySpinsRemaining(): number {
@@ -2362,10 +2377,10 @@ export class Symbols {
       if (mergedSymbol !== this.mergeLeadSymbol) {
         try {
           if (typeof (mergedSymbol as any).setScale === 'function') {
-            (mergedSymbol as any).setScale(Symbols.MERGE_SYMBOL0_SPINE_SCALE);
+            (mergedSymbol as any).setScale(SYMBOL0_MERGE_SCALE);
           } else {
-            (mergedSymbol as any).scaleX = Symbols.MERGE_SYMBOL0_SPINE_SCALE;
-            (mergedSymbol as any).scaleY = Symbols.MERGE_SYMBOL0_SPINE_SCALE;
+            (mergedSymbol as any).scaleX = SYMBOL0_MERGE_SCALE;
+            (mergedSymbol as any).scaleY = SYMBOL0_MERGE_SCALE;
           }
         } catch {}
         try {
@@ -2391,8 +2406,8 @@ export class Symbols {
         this.scene.tweens.add({
           targets: mergedSymbol,
           alpha: 1,
-          scaleX: Symbols.MERGE_SYMBOL0_SPINE_SCALE,
-          scaleY: Symbols.MERGE_SYMBOL0_SPINE_SCALE,
+          scaleX: SYMBOL0_MERGE_SCALE,
+          scaleY: SYMBOL0_MERGE_SCALE,
           duration: 260,
           ease: 'Back.Out',
           onComplete: () => {
@@ -3219,6 +3234,10 @@ export class Symbols {
             try { if (prevOnComplete) prevOnComplete(); } catch { }
             completedAnimations++;
             if (completedAnimations === totalAnimations) {
+              // In skip mode (non-turbo), play a single reel-drop sound after the last symbol lands.
+              if (isSkip && !isTurbo && (window as any).audioManager) {
+                try { this.playSpinReelDropSoundForColumn(col); } catch { }
+              }
               resolve();
             }
           };

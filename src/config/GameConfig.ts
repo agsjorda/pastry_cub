@@ -60,7 +60,7 @@ export const HEADER_CONFIG = {
   /** Y offset (px) added to Header_WinBar position (below Header_SceneFrame). Positive = down, negative = up. */
   WIN_BAR_OFFSET_Y: -30,
   /** Y offset (px) for win bar text (YOU WON / amount). Positive = lower, negative = higher. Applied on top of base position. */
-  WIN_BAR_TEXT_OFFSET_Y: 0,
+  WIN_BAR_TEXT_OFFSET_Y: -2,
   /** Scale multiplier for win bar label text (YOU WON / TOTAL WIN). 1 = default size, < 1 = smaller, > 1 = larger. */
   WIN_BAR_TEXT_SCALE: .9,
   /** Scale multiplier for win bar value text (amount e.g. $0.00). 1 = default size, < 1 = smaller, > 1 = larger. */
@@ -341,17 +341,18 @@ export const OVERLAY_FADE_IN_DURATION_MS = 300;
 export const OVERLAY_FADE_OUT_DURATION_MS = 200;
 
 // =============================================================================
-// SYMBOL SCALES (Spine/visual tuning)
+// SYMBOL SCALES (Spine/visual tuning) – centralized; use here only. Offsets applied at call sites if needed.
 // =============================================================================
 export const SPINE_SYMBOL_SCALES: Record<number, number> = {
-  0: 0.135, 1: 0.035, 2: 0.035, 3: 0.035, 4: 0.135, 5: 0.135, 6: 0.135, 7: 0.135,
+  0: 1.7, 1: 0.035, 2: 0.035, 3: 0.035, 4: 0.135, 5: 0.135, 6: 0.135, 7: 0.135,
   8: 0.135, 9: 0.135, 10: 0.135, 11: 0.135, 12: 0.137, 13: 0.137, 14: 0.137, 15: 0.137, 16: 0.137, 17: 0.137, 18: 0.137, 19: 0.137, 20: 0.137, 21: 0.137, 22: 0.137,
 };
 export const DEFAULT_SPINE_SCALE = 0.6;
 export const SPINE_SCALE_ADJUSTMENT = 0.93;
+/** Scale for the single merged Symbol0 (scatter) during scatter flow; used in Symbols.ts. */
+export const SYMBOL0_MERGE_SCALE = 1;
 export const SCATTER_ANIMATION_SCALE = 1.8;
 export const SCATTER_GATHER_SCALE = 2.5;
-export const SCATTER_RETRIGGER_SCALE = 1.5;
 
 // =============================================================================
 // DEBUG / VISUAL (dev toggles – easy to find)

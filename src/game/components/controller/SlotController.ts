@@ -70,7 +70,7 @@ export class SlotController {
 	
 	// UI override for free spin remaining display
 	private freeSpinDisplayOverride: number | null = null;
-	private pendingFreeSpinsData: { scatterIndex: number; actualFreeSpins: number; isRetrigger?: boolean } | null = null;
+	private pendingFreeSpinsData: { scatterIndex: number; actualFreeSpins: number; isRetrigger?: boolean; fromUnresolvedSpin?: boolean } | null = null;
 	private pendingFakeDataRetriggerNextSpinsLeft: number | null = null;
 	private pendingFakeDataRetriggerAdded: number | null = null;
 	private freeSpinAutoplaySimInFlight: boolean = false;
@@ -330,7 +330,7 @@ export class SlotController {
 	 * Disable interaction on the bet background that opens the bet options panel.
 	 * This is used in multiple states (free rounds, buy feature, etc.).
 	 */
-	private disableBetBackgroundInteraction(reason: string = ''): void {
+	public disableBetBackgroundInteraction(reason: string = ''): void {
 		if (!this.controllerContainer) {
 			return;
 		}
@@ -1033,6 +1033,11 @@ export class SlotController {
 		const featureButton = this.buttons.get('feature');
 
 		if (featureButton) {
+			// Keep Buy Feature disabled until the full spin/tumble/win flow is complete.
+			if (gameStateManager.isReelSpinning || this.pendingWinLock || gameStateManager.isShowingWinDialog) {
+				console.log('[SlotController] Skipping feature enable (spin/tumble/win flow still active)');
+				return;
+			}
 			// Guard: do not re-enable during bonus or before explicit allow
 			if (gameStateManager.isBonus || !this.canEnableFeatureButton) {
 				console.log('[SlotController] Skipping feature enable (bonus active or not allowed yet)');
@@ -4017,7 +4022,7 @@ export class SlotController {
 		});
 
 		// Listen for scatter bonus events with scatter index and actual free spins
-		this.scene.events.on('scatterBonusActivated', (data: { scatterIndex: number; actualFreeSpins: number; isRetrigger?: boolean }) => {
+		this.scene.events.on('scatterBonusActivated', (data: { scatterIndex: number; actualFreeSpins: number; isRetrigger?: boolean; fromUnresolvedSpin?: boolean }) => {
 			console.log(`[SlotController] scatterBonusActivated event received with data:`, data);
 			console.log(`[SlotController] Data validation: scatterIndex=${data.scatterIndex}, actualFreeSpins=${data.actualFreeSpins}`);
 			
@@ -4332,8 +4337,13 @@ export class SlotController {
 		});
 
 		// Listen for scatter bonus activation to reset free spin index (but NOT on retriggers)
-		this.scene.events.on('scatterBonusActivated', (data: { scatterIndex: number; actualFreeSpins: number; isRetrigger?: boolean }) => {
+		this.scene.events.on('scatterBonusActivated', (data: { scatterIndex: number; actualFreeSpins: number; isRetrigger?: boolean; fromUnresolvedSpin?: boolean }) => {
 			const isRetrigger = !!(data && (data as any).isRetrigger);
+			const fromUnresolvedSpin = !!(data && (data as any).fromUnresolvedSpin);
+			if (fromUnresolvedSpin) {
+				console.log('[SlotController] Scatter bonus from unresolved spin - preserving free spin index');
+				return;
+			}
 			if (isRetrigger) {
 				console.log('[SlotController] Scatter bonus retrigger detected - NOT resetting free spin index');
 				return;

@@ -170,6 +170,8 @@ export type RemovalMask = boolean[][];
 export interface PendingFreeSpinsData {
   scatterIndex: number;
   actualFreeSpins: number;
+  isRetrigger?: boolean;
+  fromUnresolvedSpin?: boolean;
 }
 
 /**

@@ -12,6 +12,12 @@ export interface SpinData {
   
   /** Slot game data containing the grid and win information */
   slot: SlotData;
+
+  /**
+   * Optional unresolved-spin identifier for scatter-triggered bonus rounds.
+   * Backend may send either a UUID string or an object with `uuid`.
+   */
+  unresolvedSpin?: string | { uuid?: string; [key: string]: any };
 }
 
 /**

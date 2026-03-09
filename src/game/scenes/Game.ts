@@ -51,6 +51,7 @@ import {
 	calculateTotalWinFromTumbles as spinCalculateTotalWinFromTumbles,
 } from '../components/Spin';
 import { IdleManager } from '../components/IdleManager';
+import { unresolvedSpinManager } from '../../managers/UnresolvedSpinManager';
 
 export class Game extends Scene {
 	private networkManager!: NetworkManager;
@@ -78,6 +79,9 @@ export class Game extends Scene {
 	// Queue for wins that occur while a dialog is already showing
 	private winQueue: Array<{ payout: number; bet: number }> = [];
 	private suppressWinDialogsUntilNextSpin: boolean = false;
+	// Track if unresolved PATCH already happened during this bonus round
+	// so we can skip redundant final PATCH on bonus exit.
+	private unresolvedPatchSentDuringCurrentBonus: boolean = false;
 
 	public gameData: GameData;
 	private symbols: Symbols;
@@ -186,6 +190,7 @@ export class Game extends Scene {
 		gameEventManager.emit(GameEventType.START);
 		this.header.initializeWinnings();
 		this.setupBonusModeEventListeners();
+		this.initializeUnresolvedSpinFlow();
 		EventBus.emit('current-scene-ready', this);
 
 		this.runFadeIn(fadeOverlay);
@@ -475,6 +480,9 @@ export class Game extends Scene {
 	/** GameEventManager: WIN_STOP, REELS_*, dialogAnimationsComplete, SPIN, AUTO_START */
 	private setupGameEventListeners(): void {
 		gameEventManager.on(GameEventType.WIN_STOP, (data: any) => this.onWinStop(data));
+		gameEventManager.on(GameEventType.SPIN_DATA_RESPONSE, (data: any) => {
+			this.cacheUnresolvedSpinUuidFromSpinData((data as any)?.spinData);
+		});
 		gameEventManager.on(GameEventType.REELS_STOP, () => {
 			console.log('[Game] REELS_STOP event received');
 		});
@@ -514,6 +522,158 @@ export class Game extends Scene {
 			}
 			try { this.winTracker?.hideWithFade(250); } catch { }
 		});
+	}
+
+	private initializeUnresolvedSpinFlow(): void {
+		try {
+			const initData = this.gameAPI?.getInitializationData?.() ?? null;
+			unresolvedSpinManager.setFromInitializationData(initData);
+		} catch (e) {
+			console.warn('[Game] Failed to sync unresolved spin from init payload:', e);
+		}
+
+		try {
+			unresolvedSpinManager.showPopupIfUnresolved(this, () => {
+				this.resumeFromUnresolvedSpin();
+			});
+		} catch (e) {
+			console.warn('[Game] Failed to show unresolved-spin popup:', e);
+		}
+
+		try {
+			unresolvedSpinManager.applyBonusModeVisuals(this);
+			if (unresolvedSpinManager.hasUnresolvedSpin && this.slotController) {
+				const unresolved = unresolvedSpinManager.unresolvedSpin;
+				if (unresolved) {
+					const remainingSpins = this.getRemainingSpinsFromUnresolved(unresolved);
+					const spinsToShow = remainingSpins > 0 ? remainingSpins : 1;
+					(this.slotController as any).clearFreeSpinDisplaySuppression?.();
+					this.slotController.showFreeSpinDisplayWithActualValue(spinsToShow);
+				}
+			}
+		} catch (e) {
+			console.warn('[Game] Failed to force unresolved bonus visuals:', e);
+		}
+	}
+
+	private resumeFromUnresolvedSpin(): void {
+		const unresolved = unresolvedSpinManager.unresolvedSpin;
+		if (!unresolved) return;
+
+		try {
+			this.gameStateManager.isBonus = true;
+			this.gameStateManager.isScatter = false;
+
+			this.gameAPI.setFreeSpinData(unresolved.response);
+			this.gameAPI.setCurrentFreeSpinIndex(unresolved.index);
+			if (typeof unresolved.uuid === 'string' && unresolved.uuid.length > 0 && unresolved.uuid !== 'unknown') {
+				this.gameAPI.setUnresolvedSpinUuid(unresolved.uuid);
+			} else {
+				console.warn('[Game] Unresolved spin payload missing valid uuid; backend unresolved PATCH may fail');
+			}
+
+			(this.symbols as any).currentSpinData = unresolved.response;
+
+			this.events.emit('setBonusMode', true);
+			this.events.emit('showBonusBackground');
+			this.events.emit('showBonusHeader');
+
+			const remainingSpins = this.getRemainingSpinsFromUnresolved(unresolved);
+			const scatterPayload = {
+				scatterIndex: 0,
+				actualFreeSpins: remainingSpins > 0 ? remainingSpins : 1,
+				isRetrigger: false,
+				fromUnresolvedSpin: true,
+			};
+
+			this.events.emit('scatterBonusActivated', scatterPayload);
+
+			try {
+				(this.slotController as any).clearFreeSpinDisplaySuppression?.();
+				this.slotController.showFreeSpinDisplayWithActualValue(
+					remainingSpins > 0 ? remainingSpins : 1,
+				);
+				(this.slotController as any).disableBetBackgroundInteraction?.(
+					'unresolved_bonus_mode',
+				);
+			} catch (e) {
+				console.warn('[Game] Failed to force unresolved free-spin UI state:', e);
+			}
+
+			this.time.delayedCall(500, () => {
+				const startUnresolvedAutoplay = () => {
+					try {
+						(this.symbols as any).resetFreeSpinAutoplayState?.();
+					} catch (e) {
+						console.warn('[Game] Failed to reset free-spin autoplay state:', e);
+					}
+					this.events.emit('scatterBonusCompleted');
+				};
+
+				try {
+					// Ensure scatter symbols are immediately restored to their grid/base size
+					// before starting unresolved free-spin autoplay.
+					this.symbols
+						.unmergeScatterSymbols(true)
+						.catch((e) => {
+							console.warn('[Game] Failed immediate scatter unmerge for unresolved resume:', e);
+						})
+						.finally(() => {
+							startUnresolvedAutoplay();
+						});
+				} catch (e) {
+					console.warn('[Game] Failed to trigger immediate scatter unmerge for unresolved resume:', e);
+					startUnresolvedAutoplay();
+				}
+			});
+
+			unresolvedSpinManager.clear();
+			this.gameAPI.markInitializationUnresolvedSpinConsumed();
+		} catch (e) {
+			console.warn('[Game] Failed to resume unresolved spin flow:', e);
+		}
+	}
+
+	private getRemainingSpinsFromUnresolved(unresolved: { index: number; response: any }): number {
+		const slot: any = unresolved?.response?.slot ?? {};
+		const fs: any = slot?.freespin ?? slot?.freeSpin;
+		const items: any[] = Array.isArray(fs?.items) ? fs.items : [];
+		const idx =
+			typeof unresolved.index === 'number' && unresolved.index >= 0
+				? unresolved.index
+				: 0;
+
+		const itemAtIndex = items[idx];
+		if (itemAtIndex && typeof itemAtIndex.spinsLeft === 'number') {
+			return Math.max(0, itemAtIndex.spinsLeft);
+		}
+
+		const fsCount = typeof fs?.count === 'number' ? fs.count : 0;
+		const firstItemSpinsLeft =
+			Array.isArray(items) && items.length > 0 && typeof items[0]?.spinsLeft === 'number'
+				? items[0].spinsLeft
+				: 0;
+		return Math.max(0, fsCount, firstItemSpinsLeft, items.length);
+	}
+
+	private cacheUnresolvedSpinUuidFromSpinData(spinData: any): void {
+		try {
+			const raw = spinData?.unresolvedSpin;
+			let uuid: string | null = null;
+			if (typeof raw === 'string' && raw.length > 0) {
+				uuid = raw;
+			} else if (raw && typeof raw === 'object') {
+				const candidate = (raw as any).uuid;
+				if (typeof candidate === 'string' && candidate.length > 0) {
+					uuid = candidate;
+				}
+			}
+			if (uuid) {
+				this.gameAPI.setUnresolvedSpinUuid(uuid);
+			}
+		} catch (e) {
+			console.warn('[Game] Failed to cache unresolved-spin UUID from spin data:', e);
+		}
 	}
 
 	/** WIN_STOP: resolve totalWin, character animation, win dialog, demo balance, balance update */
@@ -559,6 +719,7 @@ export class Game extends Scene {
 					gameStateManager.suppressTotalWinDialog = true;
 					this.dialogs.showMaxWin(this, { winAmount });
 					console.log(`[Game] WIN_STOP: MaxWin item detected - showing MaxWin dialog with slot.totalWin=$${winAmount}`);
+					this.handlePostWinStopSideEffects();
 					return;
 				}
 			} catch (e) {
@@ -583,6 +744,26 @@ export class Game extends Scene {
 			this.checkAndShowWinDialog(totalWin, betAmount);
 		} else {
 			console.log('[Game] WIN_STOP: No qualifying cluster wins (>=8) detected');
+		}
+
+		this.handlePostWinStopSideEffects();
+	}
+
+	private handlePostWinStopSideEffects(): void {
+		// During bonus mode, notify unresolved-spin endpoint so backend can track index.
+		try {
+			if (gameStateManager.isBonus && this.gameAPI.getUnresolvedSpinUuid()) {
+				const currentWin =
+					typeof this.bonusHeader?.getCumulativeBonusWin === 'function'
+						? this.bonusHeader.getCumulativeBonusWin()
+						: undefined;
+				this.unresolvedPatchSentDuringCurrentBonus = true;
+				this.gameAPI.patchUnresolvedSpin(currentWin).catch((err) => {
+					console.warn('[Game] Unresolved-spin PATCH failed:', err);
+				});
+			}
+		} catch (e) {
+			console.warn('[Game] Failed unresolved-spin PATCH trigger:', e);
 		}
 
 		// If the menu History tab is open, refresh the history list once per spin.
@@ -709,14 +890,15 @@ export class Game extends Scene {
 			console.log(`[Game] Current gameStateManager.isBonus: ${this.gameStateManager.isBonus}`);
 
 			// Ensure winnings display stays visible and transfers to bonus header on bonus start
-			if (isBonus) {
-				// Only transfer winnings if we're NOT already in bonus mode (i.e., this is the initial bonus activation)
-				// During retriggers, we're already in bonus mode, so we should preserve the accumulated total
-				const wasAlreadyInBonus = this.gameStateManager.isBonus;
+				if (isBonus) {
+					// Only transfer winnings if we're NOT already in bonus mode (i.e., this is the initial bonus activation)
+					// During retriggers, we're already in bonus mode, so we should preserve the accumulated total
+					const wasAlreadyInBonus = this.gameStateManager.isBonus;
 
-				if (!wasAlreadyInBonus) {
-					console.log('[Game] Bonus mode started - transferring winnings display to bonus header');
-					try {
+					if (!wasAlreadyInBonus) {
+						this.unresolvedPatchSentDuringCurrentBonus = false;
+						console.log('[Game] Bonus mode started - transferring winnings display to bonus header');
+						try {
 						const currentHeaderWin = this.header && typeof this.header.getCurrentWinnings === 'function'
 							? Number(this.header.getCurrentWinnings()) || 0
 							: 0;
@@ -792,6 +974,48 @@ export class Game extends Scene {
 					console.log('[Game] Switched to main background music');
 				}
 
+				// Bonus round has ended. Send one final unresolved PATCH only as fallback
+				// when no in-round PATCH was sent (guards transition ordering edge cases).
+				try {
+					const unresolvedUuid = this.gameAPI.getUnresolvedSpinUuid();
+					if (unresolvedUuid) {
+						if (!this.unresolvedPatchSentDuringCurrentBonus) {
+							const currentWin =
+								typeof this.bonusHeader?.getCumulativeBonusWin === 'function'
+									? this.bonusHeader.getCumulativeBonusWin()
+									: undefined;
+							this.gameAPI
+								.patchUnresolvedSpin(currentWin)
+								.catch((err) => {
+									console.warn('[Game] Final unresolved-spin PATCH on bonus exit failed:', err);
+								})
+								.finally(() => {
+									this.gameAPI.setUnresolvedSpinUuid(null);
+								});
+						} else {
+							this.gameAPI.setUnresolvedSpinUuid(null);
+						}
+					} else {
+						this.gameAPI.setUnresolvedSpinUuid(null);
+					}
+				} catch (e) {
+					console.warn('[Game] Failed final unresolved-spin cleanup on bonus exit:', e);
+					try {
+						this.gameAPI.setUnresolvedSpinUuid(null);
+					} catch {}
+				}
+				this.unresolvedPatchSentDuringCurrentBonus = false;
+
+				// One-shot history refresh after bonus fully ends (e.g. buy feature flow).
+				// Delayed slightly to allow backend history write to settle.
+				try {
+					this.time.delayedCall(1000, () => {
+						try {
+							(this.menu as any)?.refreshHistoryAfterSpin?.(this);
+						} catch {}
+					});
+				} catch {}
+
 				// If normal base-game autoplay was paused due to the scatter-triggered bonus,
 				// resume it now that we're returning to base mode (after bonus/Congrats flow).
 				try {
@@ -827,8 +1051,22 @@ export class Game extends Scene {
 
 			// Switch to bonus background music when background changes to bonus
 			if (this.audioManager) {
-				this.audioManager.playBackgroundMusic(MusicType.BONUS);
-				console.log('[Game] Switched to bonus background music (bonusbg)');
+				const canPlayBonus = this.audioManager.hasMusicInstance(MusicType.BONUS);
+				if (canPlayBonus) {
+					this.audioManager.playBackgroundMusic(MusicType.BONUS);
+					console.log('[Game] Switched to bonus background music (bonusbg)');
+				} else {
+					console.log('[Game] Bonus music instance not ready yet; scheduling retry');
+					this.time.delayedCall(250, () => {
+						try {
+							const retryCanPlay = this.audioManager.hasMusicInstance(MusicType.BONUS);
+							if (this.gameStateManager.isBonus && retryCanPlay) {
+								this.audioManager.playBackgroundMusic(MusicType.BONUS);
+								console.log('[Game] Switched to bonus background music (bonusbg) after retry');
+							}
+						} catch {}
+					});
+				}
 			}
 
 			console.log('[Game] ===== BONUS BACKGROUND EVENT HANDLED =====');

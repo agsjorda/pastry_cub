@@ -63,6 +63,12 @@ export class Menu {
     private historyPaginationContainer?: GameObjects.Container;
     /** Signature of the current top row; used so we only tween when a new spin reaches history. */
     private lastHistoryTopRowSignature: string | null = null;
+    /** Cache recent history responses by page+limit to avoid redundant API requests on tab reopen. */
+    private historyCache: Map<string, { data: any; fetchedAt: number }> = new Map();
+    /** Cache TTL for history data (ms). */
+    private historyCacheTtlMs: number = 10000;
+    /** Marks history as stale after spins/bonus completion so next refresh fetches from API. */
+    private historyDirty: boolean = true;
 
   protected titleStyle = {
     fontSize: "24px",
@@ -482,16 +488,40 @@ export class Menu {
   }
 
   // =========================================================================
-  // HISTORY REFRESH HELPERS (live updates while History tab is visible)
+  // HISTORY REFRESH HELPERS
   // =========================================================================
 
   /**
-   * Public helper for Game scene to request a history refresh after each spin.
-   * This will only trigger a request when the menu + History tab are visible.
+   * Public helper for Game scene to notify that game history may have changed.
+   * Marks cache dirty and refreshes immediately only if menu + History tab are visible.
    */
   public refreshHistoryAfterSpin(scene: GameScene): void {
+    this.historyDirty = true;
     // Use "live-timer" reason so refresh is silent (no loader)
     this.requestHistoryRefresh(scene, "live-timer");
+  }
+
+  private getHistoryCacheKey(page: number, limit: number): string {
+    return `${page}:${limit}`;
+  }
+
+  private getCachedHistory(page: number, limit: number): any | null {
+    const key = this.getHistoryCacheKey(page, limit);
+    const entry = this.historyCache.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.fetchedAt > this.historyCacheTtlMs) {
+      this.historyCache.delete(key);
+      return null;
+    }
+    return entry.data;
+  }
+
+  private setCachedHistory(page: number, limit: number, data: any): void {
+    const key = this.getHistoryCacheKey(page, limit);
+    this.historyCache.set(key, {
+      data,
+      fetchedAt: Date.now(),
+    });
   }
 
   private requestHistoryRefresh(
@@ -621,47 +651,56 @@ export class Menu {
       return;
     }
 
-    // Prevent stacking requests
-    if (this.historyIsLoading) {
-      this.historyRefreshQueued = true;
-      return;
-    }
-    this.historyIsLoading = true;
+    // Serve from cache when data isn't marked dirty.
+    let result: any = null;
+    const cachedResult = !this.historyDirty ? this.getCachedHistory(page, limit) : null;
+    const usingCache = cachedResult != null;
+    if (usingCache) {
+      result = cachedResult;
+    } else {
+      // Prevent stacking requests
+      if (this.historyIsLoading) {
+        this.historyRefreshQueued = true;
+        return;
+      }
+      this.historyIsLoading = true;
 
-    // Show loading icon while fetching history (centered on screen) unless silent refresh
-    let loader: ButtonImage | null = null;
-    let spinTween: Phaser.Tweens.Tween | null = null;
-    if (!silent) {
-      const loaderX = scene.scale.width * 0.45;
-      const loaderY = scene.scale.height * 0.3;
-      loader = scene.add.image(loaderX, loaderY, "loading_icon") as ButtonImage;
-      loader.setOrigin(0.5, 0.5);
-      loader.setScale(0.25);
-      contentArea.add(loader);
-      spinTween = scene.tweens.add({
-        targets: loader,
-        angle: 360,
-        duration: 800,
-        repeat: -1,
-        ease: "Linear",
-      });
-    }
+      // Show loading icon while fetching history (centered on screen) unless silent refresh
+      let loader: ButtonImage | null = null;
+      let spinTween: Phaser.Tweens.Tween | null = null;
+      if (!silent) {
+        const loaderX = scene.scale.width * 0.45;
+        const loaderY = scene.scale.height * 0.3;
+        loader = scene.add.image(loaderX, loaderY, "loading_icon") as ButtonImage;
+        loader.setOrigin(0.5, 0.5);
+        loader.setScale(0.25);
+        contentArea.add(loader);
+        spinTween = scene.tweens.add({
+          targets: loader,
+          angle: 360,
+          duration: 800,
+          repeat: -1,
+          ease: "Linear",
+        });
+      }
 
-    let result: any;
-    try {
-      result = await scene.gameAPI.getHistory(page, limit);
-    } finally {
-      if (spinTween) spinTween.stop();
-      if (loader) loader.destroy();
-      this.historyIsLoading = false;
-      if (this.historyRefreshQueued) {
-        this.historyRefreshQueued = false;
-        if (this.isVisible && this.historyContent?.visible) {
-          const nextPage = this.historyCurrentPage || page || 1;
-          const nextLimit = this.historyPageLimit || limit || 11;
-          void this.showHistoryContent(scene, nextPage, nextLimit, {
-            silent: true,
-          });
+      try {
+        result = await scene.gameAPI.getHistory(page, limit);
+        this.setCachedHistory(page, limit, result);
+        this.historyDirty = false;
+      } finally {
+        if (spinTween) spinTween.stop();
+        if (loader) loader.destroy();
+        this.historyIsLoading = false;
+        if (this.historyRefreshQueued) {
+          this.historyRefreshQueued = false;
+          if (this.isVisible && this.historyContent?.visible) {
+            const nextPage = this.historyCurrentPage || page || 1;
+            const nextLimit = this.historyPageLimit || limit || 11;
+            void this.showHistoryContent(scene, nextPage, nextLimit, {
+              silent: true,
+            });
+          }
         }
       }
     }

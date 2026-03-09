@@ -366,7 +366,7 @@ export class BonusHeader {
 
 
 		// Create winnings text at a stable position (was inside win bar)
-		const winBarTextY = scene.scale.height * 0.14 + HEADER_CONFIG.WIN_BAR_TEXT_OFFSET_Y;
+		const winBarTextY = scene.scale.height * 0.15 + HEADER_CONFIG.WIN_BAR_TEXT_OFFSET_Y;
 		this.createWinBarText(scene, scene.scale.width * 0.5, winBarTextY);
 	}
 
@@ -375,7 +375,7 @@ export class BonusHeader {
 
 
 		// Create winnings text at a stable position
-		const winBarTextY = scene.scale.height * 0.21 + HEADER_CONFIG.WIN_BAR_TEXT_OFFSET_Y;
+		const winBarTextY = scene.scale.height * 0.15 + HEADER_CONFIG.WIN_BAR_TEXT_OFFSET_Y;
 		this.createWinBarText(scene, scene.scale.width * 0.5, winBarTextY);
 	}
 
@@ -1003,6 +1003,14 @@ export class BonusHeader {
 	}
 
 	/**
+	 * Explicitly set the winnings label text (e.g. "TOTAL WIN" on unresolved resume).
+	 */
+	public setWinningsLabel(label: string): void {
+		if (!this.youWonText) return;
+		this.youWonText.setText(label);
+	}
+
+	/**
 	 * Reset winnings display to zero
 	 */
 	public resetWinnings(): void {
@@ -1483,19 +1491,50 @@ export class BonusHeader {
 				if (isFinalSpin) {
 					const currentItem = this.getCurrentFreeSpinItem(spinData);
 					const isMaxWinItem = !!(currentItem as any)?.isMaxWin;
+					const isLastSpinItem =
+						typeof (currentItem as any)?.spinsLeft === 'number' &&
+						(currentItem as any).spinsLeft <= 1;
+					// Retrigger guard: a spinsLeft=1 item may still continue when future items exist.
+					let hasFutureRetriggerItems = false;
+					try {
+						const fs = spinData?.slot?.freespin || spinData?.slot?.freeSpin;
+						const items = Array.isArray(fs?.items) ? fs.items : [];
+						if (items.length > 1 && currentItem) {
+							const currentAreaJson =
+								Array.isArray((currentItem as any)?.area) ? JSON.stringify((currentItem as any).area) : null;
+							const currentIdx =
+								currentAreaJson == null
+									? -1
+									: items.findIndex((item: any) =>
+										Array.isArray(item?.area) && JSON.stringify(item.area) === currentAreaJson
+									);
+							if (currentIdx >= 0) {
+								hasFutureRetriggerItems = items
+									.slice(currentIdx + 1)
+									.some((item: any) => Number(item?.spinsLeft ?? 0) > 0);
+							} else {
+								const currentSpinsLeft = Number((currentItem as any)?.spinsLeft ?? 0);
+								if (Number.isFinite(currentSpinsLeft)) {
+									hasFutureRetriggerItems = items
+										.some((item: any) => Number(item?.spinsLeft ?? 0) > currentSpinsLeft);
+								}
+							}
+						}
+					} catch { }
 					const backendTotal = this.calculateBackendTotalWin(spinData);
-					if (isMaxWinItem && backendTotal > 0) {
+					const shouldSnapToBackendTotal =
+						isMaxWinItem || (isLastSpinItem && !hasFutureRetriggerItems);
+					if (shouldSnapToBackendTotal && backendTotal > 0) {
 						this.cumulativeBonusWin = backendTotal;
 						this.hasStartedBonusTracking = true;
-						console.log(`[BonusHeader] WIN_STOP (bonus): MaxWin item - forcing cumulative total to slot.totalWin=$${backendTotal}`);
-					} else if (backendTotal > this.cumulativeBonusWin + 0.01) {
-						this.cumulativeBonusWin = backendTotal;
-						this.hasStartedBonusTracking = true;
-						console.log(`[BonusHeader] WIN_STOP (bonus): aligned cumulative total to backend totalWin=$${backendTotal}`);
+						console.log(
+							`[BonusHeader] WIN_STOP (bonus): forcing cumulative total to slot.totalWin=$${backendTotal}` +
+							` (isMaxWinItem=${isMaxWinItem}, isLastSpinItem=${isLastSpinItem}, hasFutureRetriggerItems=${hasFutureRetriggerItems})`
+						);
 					} else if (backendTotal > 0) {
 						console.log(
-							`[BonusHeader] WIN_STOP (bonus): keeping frontend cumulative total=$${this.cumulativeBonusWin} ` +
-							`(backend totalWin=$${backendTotal})`
+							`[BonusHeader] WIN_STOP (bonus): non-MaxWin final spin - keeping frontend cumulative total=$${this.cumulativeBonusWin} ` +
+							`(backend totalWin=$${backendTotal}, isLastSpinItem=${isLastSpinItem}, hasFutureRetriggerItems=${hasFutureRetriggerItems})`
 						);
 					}
 				}

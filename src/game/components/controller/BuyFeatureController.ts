@@ -116,11 +116,13 @@ export class BuyFeatureController {
       const buyFeatureBet = this.buyFeature.getCurrentBetAmount();
       const selectedBuyFeatureType = this.buyFeature.getSelectedBuyFeatureType();
       const buyFeat = selectedBuyFeatureType === 2 ? 2 : 1;
-      const calculatedPrice = buyFeatureBet * 100;
+      const effectiveBet = buyFeat === 2 ? buyFeatureBet * 5 : buyFeatureBet;
+      // Price is 100x the effective total bet (v.2 uses 5x bet).
+      const calculatedPrice = effectiveBet * 100;
 
-      this.callbacks.updateBetAmount(buyFeatureBet);
+      this.callbacks.updateBetAmount(effectiveBet);
 
-      console.log(`[SlotController] Buy feature bet: $${buyFeatureBet.toFixed(2)}, calculated price: $${calculatedPrice.toFixed(2)}, selected buy feature type: ${selectedBuyFeatureType}`);
+      console.log(`[SlotController] Buy feature bet: $${effectiveBet.toFixed(2)} (base: $${buyFeatureBet.toFixed(2)}), calculated price: $${calculatedPrice.toFixed(2)}, selected buy feature type: ${selectedBuyFeatureType}`);
 
       const currentBalance = this.callbacks.getBalanceAmount();
       if (currentBalance < calculatedPrice) {
@@ -142,7 +144,9 @@ export class BuyFeatureController {
 
       console.log('[SlotController] Calling doSpin for buy feature...');
       gameStateManager.isBuyFeatureSpin = true;
+      gameStateManager.buyFeatureStartMultiplier = buyFeat === 2 ? 2 : 0;
       const spinData = await gameAPI.doSpin(
+        // Backend applies buyFeat multiplier; send base bet to avoid double-multiplying.
         buyFeatureBet,
         true,
         false,
