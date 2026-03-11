@@ -3892,9 +3892,20 @@ export class Symbols {
                     })
                     : originalOutsArr;
                   if (typeof wt.showPagedForTumble === 'function') {
-                    wt.showPagedForTumble(outsArr, self.currentSpinData || null, 2, 1200, 200);
+                    wt.showPagedForTumble(
+                      outsArr,
+                      self.currentSpinData || null,
+                      2,
+                      1200,
+                      200,
+                      tumbleWin > 0 ? tumbleWin : undefined
+                    );
                   } else {
-                    wt.showForTumble(outsArr, self.currentSpinData || null);
+                    wt.showForTumble(
+                      outsArr,
+                      self.currentSpinData || null,
+                      tumbleWin > 0 ? tumbleWin : undefined
+                    );
                   }
                 } catch {
                   wt.updateFromSpinData(self.currentSpinData || null);

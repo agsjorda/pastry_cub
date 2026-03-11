@@ -93,10 +93,14 @@ export class WinTracker {
   /**
    * Show tracker for ONLY the current tumble using its outs array
    */
-  public showForTumble(outs: Array<{ symbol?: number; count?: number; win?: number }> | null, spinData: SpinData | null): void {
+  public showForTumble(
+    outs: Array<{ symbol?: number; count?: number; win?: number }> | null,
+    spinData: SpinData | null,
+    tumbleWinOverride?: number
+  ): void {
     if (!this.container) return;
     this.stopPaging();
-    const summary = this.buildSummaryFromTumbleOuts(outs, spinData);
+    const summary = this.buildSummaryFromTumbleOuts(outs, spinData, tumbleWinOverride);
     this.renderFromSummary(summary);
   }
 
@@ -105,11 +109,12 @@ export class WinTracker {
     spinData: SpinData | null,
     pageSize: number = 2,
     pageDurationMs: number = 1200,
-    pageFadeMs: number = 200
+    pageFadeMs: number = 200,
+    tumbleWinOverride?: number
   ): void {
     if (!this.container) return;
     this.stopPaging();
-    const summary = this.buildSummaryFromTumbleOuts(outs, spinData);
+    const summary = this.buildSummaryFromTumbleOuts(outs, spinData, tumbleWinOverride);
     if (!summary || summary.size <= pageSize) {
       this.renderFromSummary(summary);
       return;
@@ -397,7 +402,8 @@ export class WinTracker {
 
   private buildSummaryFromTumbleOuts(
     outs: Array<{ symbol?: number; count?: number; win?: number }> | null,
-    spinData: SpinData | null
+    spinData: SpinData | null,
+    tumbleWinOverride?: number
   ): Map<number, SymbolSummary> | null {
     if (!outs || outs.length === 0) return null;
     const summary = new Map<number, SymbolSummary>();
@@ -418,10 +424,34 @@ export class WinTracker {
     }
     if (summary.size === 0) return null;
 
+    // First compute baseValue per symbol from the unscaled totals.
     for (const [symbolId, data] of Array.from(summary.entries())) {
       data.baseValue = data.totalWin > 0 && data.lines > 0 ? (data.totalWin / data.lines) : 0;
       summary.set(symbolId, data);
     }
+
+    // If we have an explicit tumble win from SpinData (e.g., freeSpin.items[currentIndex].tumbles[tumbleIndex].win),
+    // normalize per-symbol totals so that their sum matches this authoritative value.
+    const targetTotal =
+      typeof tumbleWinOverride === 'number' && Number.isFinite(tumbleWinOverride) && tumbleWinOverride > 0
+        ? tumbleWinOverride
+        : null;
+
+    if (targetTotal !== null) {
+      let currentTotal = 0;
+      for (const [, data] of summary.entries()) {
+        currentTotal += data.totalWin;
+      }
+      if (currentTotal > 0 && Math.abs(currentTotal - targetTotal) > 0.0001) {
+        const scale = targetTotal / currentTotal;
+        for (const [symbolId, data] of Array.from(summary.entries())) {
+          const scaledTotal = Number((data.totalWin * scale).toFixed(2));
+          data.totalWin = scaledTotal;
+          summary.set(symbolId, data);
+        }
+      }
+    }
+
     return summary;
   }
 
