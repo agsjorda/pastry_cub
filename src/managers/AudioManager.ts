@@ -36,7 +36,9 @@ export enum SoundEffectType {
 	DIALOG_CONGRATS = 'dialog_congrats',
 	DIALOG_RETRIGGER = 'dialog_retrigger',
 	// Non-scatter box close SFX (played once when all regular symbol wins finish)
-	BOX_CLOSE = 'box_close'
+	BOX_CLOSE = 'box_close',
+	/** Jimboy (header / bonus grid) each time an animation plays */
+	JIMBOY_SPY = 'jimboy_spy',
 }
 
 export class AudioManager {
@@ -206,6 +208,14 @@ export class AudioManager {
 				const twin4 = this.scene.sound.add('twin4', { volume: this.sfxVolume, loop: false });
 				this.sfxInstances.set(SoundEffectType.SYMBOL_WIN_4, twin4);
 			} catch (e) { console.warn('[AudioManager] Failed to create twin4 SFX instance:', e); }
+			if (this.scene.cache.audio.exists('man_spy_pc')) {
+				try {
+					const manSpy = this.scene.sound.add('man_spy_pc', { volume: this.sfxVolume, loop: false });
+					this.sfxInstances.set(SoundEffectType.JIMBOY_SPY, manSpy);
+				} catch (e) {
+					console.warn('[AudioManager] Failed to create man_spy_pc SFX instance:', e);
+				}
+			}
 			console.log('[AudioManager] Tumble symbol-win SFX instances created');
 
 			// Box close SFX (single global instance, played once when all regular symbol wins finish).

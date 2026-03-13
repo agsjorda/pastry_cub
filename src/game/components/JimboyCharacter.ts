@@ -3,6 +3,7 @@ import { HEADER_CONFIG } from "../../config/GameConfig";
 import { ensureSpineFactory } from "../../utils/SpineGuard";
 import { getAvailableAnimations, startAnimation } from "../../utils/SpineAnimationHelper";
 import { ICharacterLike } from "./ICharacterLike";
+import { SoundEffectType } from "../../managers/AudioManager";
 
 export interface JimboyCharacterConfig {
 	assetKey: string;
@@ -51,6 +52,7 @@ export class JimboyCharacter implements ICharacterLike {
 	private currentAnimationName: string | null = null;
 	private randomPlayTimer: Phaser.Time.TimerEvent | null = null;
 	private randomHideTimer: Phaser.Time.TimerEvent | null = null;
+	private spySoundPostUpdateHandler: ((time: number, delta: number) => void) | null = null;
 
 	constructor(scene: Scene, config: JimboyCharacterConfig) {
 		this.scene = scene;
@@ -108,6 +110,9 @@ export class JimboyCharacter implements ICharacterLike {
 			fallbackToFirstAvailable: true
 		});
 		this.applyTransform();
+		if (resolved) {
+			this.scheduleSpySoundAfterVisible();
+		}
 		return !!resolved;
 	}
 
@@ -139,9 +144,45 @@ export class JimboyCharacter implements ICharacterLike {
 		try { this.randomHideTimer?.destroy?.(); } catch {}
 		this.randomPlayTimer = null;
 		this.randomHideTimer = null;
+		this.cancelSpySoundSchedule();
+	}
+
+	/** Spy SFX after Spine has painted (same frame stack was ahead of the character). */
+	private cancelSpySoundSchedule(): void {
+		if (this.spySoundPostUpdateHandler) {
+			try {
+				this.scene.events.off("postupdate", this.spySoundPostUpdateHandler);
+			} catch {}
+			this.spySoundPostUpdateHandler = null;
+		}
+	}
+
+	private scheduleSpySoundAfterVisible(): void {
+		this.cancelSpySoundSchedule();
+		let frames = 0;
+		const handler = () => {
+			if (!this.spine) return;
+			frames++;
+			// Two post-render ticks so audio lines up with the first painted frames (immediate play was ahead of draw).
+			if (frames < 2) return;
+			if (!(this.spine as any).visible) return;
+			try {
+				this.scene.events.off("postupdate", handler);
+			} catch {}
+			this.spySoundPostUpdateHandler = null;
+			try {
+				const am = (window as any).audioManager;
+				if (am && typeof am.playSoundEffect === "function") {
+					am.playSoundEffect(SoundEffectType.JIMBOY_SPY);
+				}
+			} catch {}
+		};
+		this.spySoundPostUpdateHandler = handler;
+		this.scene.events.on("postupdate", handler);
 	}
 
 	destroy(): void {
+		this.cancelSpySoundSchedule();
 		this.stopRandomAnimationLoop();
 		try { this.spine?.destroy?.(); } catch {}
 		this.spine = null;
@@ -207,6 +248,7 @@ export class JimboyCharacter implements ICharacterLike {
 		const runCycle = () => {
 			if (!this.spine) return;
 			try { this.spine.setVisible(true); } catch {}
+			// Spy SFX is scheduled from playAnimation after render frames (sync with on-screen appear).
 			const pick = this.pickRandomAnimationName();
 			const played = this.playAnimation(pick, false);
 			if (!played) return;

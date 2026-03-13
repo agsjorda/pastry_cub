@@ -421,21 +421,22 @@ export class AssetConfig {
 				'reelroll': 'assets/sounds/SFX/reelroll_PC.ogg',
 				'reeldrop': 'assets/sounds/SFX/reeldrop_PC.ogg',
 				// Scatter reel-drop variants (played progressively per scatter reel in a spin)
-				'scatterdrop1': 'assets/sounds/SFX/symbol_win/scatterdrop_brass_1.ogg',
-				'scatterdrop2': 'assets/sounds/SFX/symbol_win/scatterdrop_brass_2.ogg',
-				'scatterdrop3': 'assets/sounds/SFX/symbol_win/scatterdrop_brass_3.ogg',
-				'scatterdrop4': 'assets/sounds/SFX/symbol_win/scatterdrop_brass_4.ogg',
+				'scatterdrop1': 'assets/sounds/SFX/symbol_win/scatter_1_PC.ogg',
+				'scatterdrop2': 'assets/sounds/SFX/symbol_win/scatter_2_PC.ogg',
+				'scatterdrop3': 'assets/sounds/SFX/symbol_win/scatter_3_PC.ogg',
+				'scatterdrop4': 'assets/sounds/SFX/symbol_win/scatter_4_PC.ogg',
 				'turbodrop': 'assets/sounds/SFX/turbo_PC.ogg',
 				// Non-scatter box close SFX (played once when all regular symbol wins finish)
 				'box_close': 'assets/sounds/SFX/box_close.ogg',
+				'man_spy_pc': 'assets/sounds/SFX/man_spy_PC.ogg',
 				// Radial light transition whistle SFX
 				'whistle': 'assets/sounds/SFX/whistle_BB.ogg',
 				'scatter': 'assets/sounds/SFX/scatter_PC.ogg',
 				// Tumble symbol-win SFX (play per tumble index)
-				'twin1': 'assets/sounds/SFX/symbol_win/twin1_BB.ogg',
-				'twin2': 'assets/sounds/SFX/symbol_win/twin2_BB.ogg',
-				'twin3': 'assets/sounds/SFX/symbol_win/twin3_BB.ogg',
-				'twin4': 'assets/sounds/SFX/symbol_win/twin4_BB.ogg',
+				'twin1': 'assets/sounds/SFX/symbol_win/twin_1_PC.ogg',
+				'twin2': 'assets/sounds/SFX/symbol_win/twin_2_PC.ogg',
+				'twin3': 'assets/sounds/SFX/symbol_win/twin_3_PC.ogg',
+				'twin4': 'assets/sounds/SFX/symbol_win/twin_4_PC.ogg',
 				// Win dialog SFX
 				'bigw': 'assets/sounds/Wins/bigw_PC.ogg',
 				'megaw': 'assets/sounds/Wins/megaw_PC.ogg',

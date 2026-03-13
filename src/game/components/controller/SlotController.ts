@@ -2814,6 +2814,13 @@ export class SlotController {
 	}
 
 	/**
+	 * Remaining base-game autoplay spins saved when scatter pauses autoplay (not consumed).
+	 */
+	public getPausedAutoplaySpinsRemaining(): number {
+		return Math.max(0, this.pausedAutoplaySpinsRemaining ?? 0);
+	}
+
+	/**
 	 * Consume (read + clear) the paused autoplay cache.
 	 */
 	private consumePausedAutoplaySpinsRemaining(): number {
@@ -2824,17 +2831,17 @@ export class SlotController {
 
 	/**
 	 * Resume base-game autoplay using cached data from `pauseAutoplay()`.
-	 * Safe to call multiple times; it will no-op unless a paused cache exists.
+	 * Does not clear the cache unless resume actually starts (so blocked calls can retry).
 	 */
 	public resumeAutoplayFromPause(): void {
-		const spins = this.consumePausedAutoplaySpinsRemaining();
+		const spins = this.pausedAutoplaySpinsRemaining ?? 0;
 		if (spins <= 0) {
+			this.pausedAutoplaySpinsRemaining = null;
 			return;
 		}
 
-		// Only resume in base mode after transitions finish.
 		if (gameStateManager.isBonus || gameStateManager.isScatter || gameStateManager.isShowingWinDialog) {
-			console.log('[SlotController] resumeAutoplayFromPause blocked (state not ready yet):', {
+			console.log('[SlotController] resumeAutoplayFromPause blocked (state not ready yet) — cache kept:', {
 				isBonus: gameStateManager.isBonus,
 				isScatter: gameStateManager.isScatter,
 				isShowingWinDialog: gameStateManager.isShowingWinDialog,
@@ -2843,16 +2850,13 @@ export class SlotController {
 			return;
 		}
 
-		// Do not resume while a spin is still finishing.
 		if (gameStateManager.isProcessingSpin || gameStateManager.isReelSpinning) {
-			console.log('[SlotController] resumeAutoplayFromPause waiting for spin boundary:', {
-				isProcessingSpin: gameStateManager.isProcessingSpin,
-				isReelSpinning: gameStateManager.isReelSpinning,
-				spins,
-			});
+			console.log('[SlotController] resumeAutoplayFromPause scheduling retry (spin in flight):', { spins });
+			this.scene?.time?.delayedCall(450, () => this.resumeAutoplayFromPause());
 			return;
 		}
 
+		this.consumePausedAutoplaySpinsRemaining();
 		console.log('[SlotController] Resuming autoplay from paused cache:', { spins });
 		this.startAutoplay(spins);
 	}
@@ -4027,12 +4031,21 @@ export class SlotController {
 			console.log(`[SlotController] scatterBonusActivated event received with data:`, data);
 			console.log(`[SlotController] Data validation: scatterIndex=${data.scatterIndex}, actualFreeSpins=${data.actualFreeSpins}`);
 			
-			// Pause normal base-game autoplay when scatter is hit so it can be resumed
-			// after the free spin bonus completes (mirrors shuten_doji behavior).
-			const spinsRemaining = this.getAutoplaySpinsRemaining();
-			if (spinsRemaining > 0) {
-				console.log(`[SlotController] Scatter hit during autoplay - pausing normal autoplay (${spinsRemaining} spins remaining)`);
-				this.pauseAutoplay('scatterBonusActivated');
+			// Pause normal base-game autoplay when scatter hits (cache spins; resume after bonus).
+			if (!data.fromUnresolvedSpin) {
+				const spinsRemaining = this.getAutoplaySpinsRemaining();
+				const autoplayActive =
+					spinsRemaining > 0 ||
+					!!gameStateManager.isAutoPlaying ||
+					!!this.getGameData()?.isAutoPlaying;
+				if (autoplayActive && spinsRemaining > 0) {
+					console.log(`[SlotController] Scatter during autoplay — pausing (${spinsRemaining} spins left after current spin)`);
+					this.pauseAutoplay('scatterBonusActivated');
+				} else if (autoplayActive && spinsRemaining <= 0) {
+					// REELS_START may have decremented to 0 while scatter still processing; stop without resume.
+					console.log('[SlotController] Scatter during autoplay but no spins left to cache - stopAutoplay');
+					this.stopAutoplay();
+				}
 			}
 			
 		// Keep controls disabled/greyed out while scatter/bonus sequence proceeds
