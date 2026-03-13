@@ -541,7 +541,6 @@ export class Game extends Scene {
 		}
 
 		try {
-			unresolvedSpinManager.applyBonusModeVisuals(this);
 			if (unresolvedSpinManager.hasUnresolvedSpin && this.slotController) {
 				const unresolved = unresolvedSpinManager.unresolvedSpin;
 				if (unresolved) {
@@ -552,13 +551,19 @@ export class Game extends Scene {
 				}
 			}
 		} catch (e) {
-			console.warn('[Game] Failed to force unresolved bonus visuals:', e);
+			console.warn('[Game] Failed to force unresolved free-spin display:', e);
 		}
 	}
 
 	private resumeFromUnresolvedSpin(): void {
 		const unresolved = unresolvedSpinManager.unresolvedSpin;
 		if (!unresolved) return;
+
+		try {
+			unresolvedSpinManager.applyBonusModeVisuals(this);
+		} catch (e) {
+			console.warn('[Game] applyBonusModeVisuals on unresolved resume failed:', e);
+		}
 
 		try {
 			this.gameStateManager.isBonus = true;
@@ -940,9 +945,14 @@ export class Game extends Scene {
 				this.gameStateManager.isBonus = false;
 				this.gameStateManager.isBonusFinished = false;
 				this.gameStateManager.suppressTotalWinDialog = false;
-				// Clear autoplay-related flags like on fresh spin
-				this.gameStateManager.isAutoPlaying = false;
-				this.gameStateManager.isAutoPlaySpinRequested = false;
+				this.gameStateManager.isScatter = false;
+				// Clear autoplay flags unless we will resume paused base-game autoplay
+				const pausedSpins =
+					(this.slotController as any)?.getPausedAutoplaySpinsRemaining?.() ?? 0;
+				if (pausedSpins <= 0) {
+					this.gameStateManager.isAutoPlaying = false;
+					this.gameStateManager.isAutoPlaySpinRequested = false;
+				}
 				this.gameStateManager.isShowingWinDialog = false;
 				// Suppress any win dialogs that might be triggered during the transition back to base
 				this.suppressWinDialogsUntilNextSpin = true;
@@ -970,8 +980,10 @@ export class Game extends Scene {
 				} catch (e) {
 					console.warn('[Game] Failed to hide winnings displays on bonus end:', e);
 				}
-				// Notify other systems autoplay is fully stopped
-				gameEventManager.emit(GameEventType.AUTO_STOP);
+				// Only broadcast AUTO_STOP if we are not about to resume paused base autoplay
+				if (pausedSpins <= 0) {
+					gameEventManager.emit(GameEventType.AUTO_STOP);
+				}
 				// Switch back to main background music
 				if (this.audioManager) {
 					this.audioManager.playBackgroundMusic(MusicType.MAIN);
@@ -1020,12 +1032,16 @@ export class Game extends Scene {
 					});
 				} catch {}
 
-				// If normal base-game autoplay was paused due to the scatter-triggered bonus,
-				// resume it now that we're returning to base mode (after bonus/Congrats flow).
+				// Resume paused base-game autoplay (scatter path). Retry once after transition.
 				try {
 					const slotControllerAny: any = this.slotController as any;
 					if (slotControllerAny && typeof slotControllerAny.resumeAutoplayFromPause === 'function') {
 						slotControllerAny.resumeAutoplayFromPause();
+						this.time.delayedCall(600, () => {
+							try {
+								slotControllerAny.resumeAutoplayFromPause?.();
+							} catch {}
+						});
 					}
 				} catch { }
 			}

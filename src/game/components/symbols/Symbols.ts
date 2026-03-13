@@ -65,6 +65,7 @@ import {
   getSpinTotalFromSpinData,
   getSpinTotalWithFallback,
   QUALIFYING_CLUSTER_COUNT,
+  buildPerSymbolTumbleSummary,
 } from '../Spin';
 
 // Import new modular components
@@ -3827,6 +3828,50 @@ export class Symbols {
     } catch { }
 
     const bonusTumbleMultiplier = this.computeAndAdvanceBonusTumbleMultiplier(removeMask);
+    const baseTumbleTotalForUi = getTumbleTotal(tumble);
+    const effectiveTumbleTotalForUi =
+      bonusTumbleMultiplier > 1
+        ? Number((baseTumbleTotalForUi * bonusTumbleMultiplier).toFixed(2))
+        : baseTumbleTotalForUi;
+    /** Exact payload outs — WinTracker / floating text use these only (no scale-to-tumble, no double bonus). */
+    const originalOutsForUi = Array.isArray((tumble as any)?.symbols?.out)
+      ? ((tumble as any).symbols.out as any[])
+      : [];
+    /**
+     * Bonus-only: if payload outs look like pre-multiplier (sum outs << tumble.win), show scaled outs
+     * so UI matches authoritative tumble total; otherwise trust spin data as-is.
+     */
+    const sumOutWins = originalOutsForUi.reduce((s, o) => s + getOutWin(o), 0);
+    const apiTumbleTotal = Number((tumble as any)?.win ?? 0);
+    const authTotal =
+      Number.isFinite(apiTumbleTotal) && apiTumbleTotal > 0
+        ? apiTumbleTotal
+        : baseTumbleTotalForUi;
+    const outsLookUnscaled =
+      bonusTumbleMultiplier > 1 &&
+      sumOutWins > 0 &&
+      authTotal > 0 &&
+      sumOutWins * bonusTumbleMultiplier <= authTotal * 1.02 &&
+      sumOutWins < authTotal * 0.98;
+    const outsArrForUi =
+      outsLookUnscaled
+        ? originalOutsForUi.map((out: any) => {
+            const baseWin = getOutWin(out);
+            if (!Number.isFinite(baseWin) || baseWin <= 0) return out;
+            const scaledWin = Number((baseWin * bonusTumbleMultiplier).toFixed(2));
+            const rawWin = out?.win;
+            if (rawWin && typeof rawWin === 'object') {
+              const nextWin = { ...(rawWin as any) };
+              nextWin.total = scaledWin;
+              if (!Number.isFinite(Number(nextWin.base))) nextWin.base = baseWin;
+              nextWin.multiplier = bonusTumbleMultiplier;
+              return { ...out, win: nextWin };
+            }
+            return { ...out, win: scaledWin };
+          })
+        : originalOutsForUi;
+    // Never normalize per-symbol totals to tumble.win — that rewrites spin data when sums differ slightly.
+    const perSymbolTumbleSummary = buildPerSymbolTumbleSummary(outsArrForUi, undefined);
 
     // Optional: draw red borders around winning symbols for visualization (scene layer, use grid cell position)
     if (SHOW_WIN_BORDER_SYMBOLS && self.grid) {
@@ -3879,14 +3924,7 @@ export class Symbols {
           positionsForSymbol[val].push({ col, row });
         }
       }
-      // Map of per-symbol win amount from outs
-      const winBySymbol: { [key: number]: number } = {};
-      for (const out of outs as any[]) {
-        const s = Number((out as any)?.symbol);
-        const w = getOutWin(out);
-        if (!isNaN(s) && !isNaN(w) && w > 0) winBySymbol[s] = w;
-      }
-      const tumbleWin = Number((tumble as any)?.win || 0);
+      // Same per-symbol totals as WinTracker (aggregate outs; no scale-to-tumble)
       // Choose one position per winning symbol and display text
       let winTrackerShown = false;
       for (const keyStr of Object.keys(positionsForSymbol)) {
@@ -3899,10 +3937,8 @@ export class Symbols {
         const pick = pool[Math.floor(Math.random() * pool.length)];
         const obj = self.symbols[pick.col][pick.row];
         if (!obj) continue;
-        const baseAmount = (winBySymbol[sym] !== undefined) ? winBySymbol[sym] : (tumbleWin > 0 ? tumbleWin : 0);
-        const amount = (bonusTumbleMultiplier > 1)
-          ? (baseAmount * bonusTumbleMultiplier)
-          : baseAmount;
+        const amount =
+          perSymbolTumbleSummary?.get(sym)?.totalWin ?? 0;
         if (amount <= 0) continue;
         // Remove any previous win text on this symbol
         try {
@@ -3927,37 +3963,20 @@ export class Symbols {
                 try { gameEventManager.emit(GameEventType.WIN_START); } catch { }
                 // Show only the current tumble's wins
                 try {
-                  const originalOutsArr = Array.isArray((tumble as any)?.symbols?.out) ? (tumble as any).symbols.out : [];
-                  const outsArr = (bonusTumbleMultiplier > 1)
-                    ? originalOutsArr.map((out: any) => {
-                      const baseWin = getOutWin(out);
-                      if (!Number.isFinite(baseWin) || baseWin <= 0) return out;
-                      const scaledWin = Number((baseWin * bonusTumbleMultiplier).toFixed(2));
-                      const rawWin = out?.win;
-                      if (rawWin && typeof rawWin === 'object') {
-                        const nextWin = { ...(rawWin as any) };
-                        nextWin.total = scaledWin;
-                        if (!Number.isFinite(Number(nextWin.base))) nextWin.base = baseWin;
-                        nextWin.multiplier = bonusTumbleMultiplier;
-                        return { ...out, win: nextWin };
-                      }
-                      return { ...out, win: scaledWin };
-                    })
-                    : originalOutsArr;
                   if (typeof wt.showPagedForTumble === 'function') {
                     wt.showPagedForTumble(
-                      outsArr,
+                      outsArrForUi,
                       self.currentSpinData || null,
                       2,
                       1200,
                       200,
-                      tumbleWin > 0 ? tumbleWin : undefined
+                      undefined
                     );
                   } else {
                     wt.showForTumble(
-                      outsArr,
+                      outsArrForUi,
                       self.currentSpinData || null,
-                      tumbleWin > 0 ? tumbleWin : undefined
+                      undefined
                     );
                   }
                 } catch {
@@ -4031,17 +4050,13 @@ export class Symbols {
     const STAGGER_MS = 50; // match drop sequence stagger (shortened)
     // Track first win animation notification (we now trigger on animation start for better SFX sync)
     let firstWinNotified = false;
-    const baseTumbleTotal = getTumbleTotal(tumble);
-    const effectiveTumbleTotal = (bonusTumbleMultiplier > 1)
-      ? Number((baseTumbleTotal * bonusTumbleMultiplier).toFixed(2))
-      : baseTumbleTotal;
     function notifyFirstWinIfNeeded() {
       if (!firstWinNotified) {
-          firstWinNotified = true;
+        firstWinNotified = true;
         console.log(`[Symbols] notifyFirstWinIfNeeded called for tumble index: ${tumbleIndex} (first win animation started)`);
         try {
           if (typeof onFirstWinComplete === 'function') {
-            onFirstWinComplete(baseTumbleTotal);
+            onFirstWinComplete(baseTumbleTotalForUi);
           }
         } catch { }
       }
@@ -4051,7 +4066,7 @@ export class Symbols {
     let boxCloseScheduled = false;
     const scheduleBoxCloseIfNeeded = (estimatedAnimMs: number) => {
       if (boxCloseScheduled) return;
-      if (!anyRemoval || effectiveTumbleTotal <= 0 || !Number.isFinite(estimatedAnimMs) || estimatedAnimMs <= 0) {
+      if (!anyRemoval || effectiveTumbleTotalForUi <= 0 || !Number.isFinite(estimatedAnimMs) || estimatedAnimMs <= 0) {
         return;
       }
       boxCloseScheduled = true;
@@ -4072,7 +4087,7 @@ export class Symbols {
 
     if (skipTumble) {
       try {
-        if (effectiveTumbleTotal > 0 || anyRemoval) {
+        if (effectiveTumbleTotalForUi > 0 || anyRemoval) {
           notifyFirstWinIfNeeded();
         }
       } catch { }
@@ -4275,7 +4290,7 @@ export class Symbols {
     await Promise.all(removalPromises);
     try {
       if (!firstWinNotified) {
-        if (effectiveTumbleTotal > 0 || anyRemoval) {
+        if (effectiveTumbleTotalForUi > 0 || anyRemoval) {
           notifyFirstWinIfNeeded();
         }
       }

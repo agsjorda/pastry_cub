@@ -1,6 +1,11 @@
 import { Scene } from 'phaser';
 import { SpinData } from '../../backend/SpinData';
-import { QUALIFYING_CLUSTER_COUNT, getOutCount, getOutWin } from './Spin';
+import {
+  QUALIFYING_CLUSTER_COUNT,
+  getOutCount,
+  getOutWin,
+  buildPerSymbolTumbleSummary,
+} from './Spin';
 import { UI_CONFIG } from '../../config/GameConfig';
 import { Logger } from '../../utils/Logger';
 import { CurrencyManager } from './CurrencyManager';
@@ -405,53 +410,17 @@ export class WinTracker {
     spinData: SpinData | null,
     tumbleWinOverride?: number
   ): Map<number, SymbolSummary> | null {
-    if (!outs || outs.length === 0) return null;
+    const raw = buildPerSymbolTumbleSummary(outs as any, tumbleWinOverride);
+    if (!raw) return null;
     const summary = new Map<number, SymbolSummary>();
-    for (const out of outs) {
-      const symbolId = Number(out?.symbol);
-      const count = getOutCount(out as any);
-      const win = getOutWin(out as any);
-      if (!isFinite(symbolId) || count < QUALIFYING_CLUSTER_COUNT || win <= 0) continue;
-      const existing = summary.get(symbolId) || {
-        lines: 0,
-        totalWin: 0,
+    for (const [symbolId, data] of raw.entries()) {
+      summary.set(symbolId, {
+        lines: data.lines,
+        totalWin: data.totalWin,
         multiplier: 1,
-        baseValue: 0
-      };
-      existing.lines += count;
-      existing.totalWin += win;
-      summary.set(symbolId, existing);
+        baseValue: data.lines > 0 ? data.totalWin / data.lines : 0,
+      });
     }
-    if (summary.size === 0) return null;
-
-    // First compute baseValue per symbol from the unscaled totals.
-    for (const [symbolId, data] of Array.from(summary.entries())) {
-      data.baseValue = data.totalWin > 0 && data.lines > 0 ? (data.totalWin / data.lines) : 0;
-      summary.set(symbolId, data);
-    }
-
-    // If we have an explicit tumble win from SpinData (e.g., freeSpin.items[currentIndex].tumbles[tumbleIndex].win),
-    // normalize per-symbol totals so that their sum matches this authoritative value.
-    const targetTotal =
-      typeof tumbleWinOverride === 'number' && Number.isFinite(tumbleWinOverride) && tumbleWinOverride > 0
-        ? tumbleWinOverride
-        : null;
-
-    if (targetTotal !== null) {
-      let currentTotal = 0;
-      for (const [, data] of summary.entries()) {
-        currentTotal += data.totalWin;
-      }
-      if (currentTotal > 0 && Math.abs(currentTotal - targetTotal) > 0.0001) {
-        const scale = targetTotal / currentTotal;
-        for (const [symbolId, data] of Array.from(summary.entries())) {
-          const scaledTotal = Number((data.totalWin * scale).toFixed(2));
-          data.totalWin = scaledTotal;
-          summary.set(symbolId, data);
-        }
-      }
-    }
-
     return summary;
   }
 

@@ -72,6 +72,10 @@ class UnresolvedSpinPopup extends GameObjects.Container {
       try {
         (window as any).audioManager?.playSoundEffect?.("button_fx");
       } catch {}
+      try {
+        this.overlay.setVisible(false);
+        this.overlay.disableInteractive?.();
+      } catch {}
       this.hide(() => this.onContinue?.());
     });
     this.buttonImage.on("pointerover", () => this.buttonImage.setTint(0xcccccc));
@@ -106,6 +110,9 @@ class UnresolvedSpinPopup extends GameObjects.Container {
   }
 
   public hide(callback?: () => void): void {
+    try {
+      this.overlay.setVisible(false);
+    } catch {}
     this.scene.tweens.add({
       targets: this,
       scaleX: 0.5,
@@ -115,7 +122,9 @@ class UnresolvedSpinPopup extends GameObjects.Container {
       ease: "Back.In",
       onComplete: () => {
         this.setVisible(false);
-        this.overlay.setVisible(false);
+        try {
+          this.overlay.setVisible(false);
+        } catch {}
         callback?.();
       },
     });

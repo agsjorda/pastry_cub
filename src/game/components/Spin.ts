@@ -476,6 +476,55 @@ export function getTotalCountFromOuts(outs: TumbleOut[] | null | undefined): num
   return outs.reduce((s, o) => s + getOutCount(o), 0);
 }
 
+/** Per-symbol aggregate for one tumble (matches WinTracker / floating win text). */
+export interface PerSymbolTumbleSummary {
+  lines: number;
+  totalWin: number;
+}
+
+/**
+ * Build per-symbol line count and total win from tumble outs (same rules as WinTracker).
+ * Multiple outs for the same symbol are summed. Optional tumbleWinOverride scales totals
+ * so their sum matches the authoritative tumble total (rounding / API mismatch).
+ */
+export function buildPerSymbolTumbleSummary(
+  outs: TumbleOut[] | null | undefined,
+  tumbleWinOverride?: number
+): Map<number, PerSymbolTumbleSummary> | null {
+  if (!Array.isArray(outs) || outs.length === 0) return null;
+  const summary = new Map<number, PerSymbolTumbleSummary>();
+  for (const out of outs) {
+    const symbolId = Number(out?.symbol);
+    const count = getOutCount(out);
+    const win = getOutWin(out);
+    if (!Number.isFinite(symbolId) || count < QUALIFYING_CLUSTER_COUNT || win <= 0) continue;
+    const existing = summary.get(symbolId) || { lines: 0, totalWin: 0 };
+    existing.lines += count;
+    existing.totalWin += win;
+    summary.set(symbolId, existing);
+  }
+  if (summary.size === 0) return null;
+
+  const targetTotal =
+    typeof tumbleWinOverride === 'number' &&
+    Number.isFinite(tumbleWinOverride) &&
+    tumbleWinOverride > 0
+      ? tumbleWinOverride
+      : null;
+  if (targetTotal !== null) {
+    let currentTotal = 0;
+    for (const [, data] of summary.entries()) currentTotal += data.totalWin;
+    if (currentTotal > 0 && Math.abs(currentTotal - targetTotal) > 0.0001) {
+      const scale = targetTotal / currentTotal;
+      for (const [symbolId, data] of summary.entries()) {
+        data.totalWin = Number((data.totalWin * scale).toFixed(2));
+        summary.set(symbolId, data);
+      }
+    }
+  }
+  return summary;
+}
+
 /**
  * Total win from slot's freespin data only (totalWin or sum of items). Use for bonus/congrats dialog when not using cumulative from header.
  */
