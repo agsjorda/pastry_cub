@@ -338,7 +338,7 @@ export class Dialogs {
 			scene.events.emit('dialogShown', this.currentDialogType);
 		} catch { }
 
-		// Play dialog-specific SFX (FreeSpin/ Congrats) when shown
+		// Play dialog-specific SFX (FreeSpin / Congrats / MaxWin) when shown
 		try {
 			const audioManager = (window as any).audioManager;
 			if (audioManager && typeof audioManager.playSoundEffect === 'function') {
@@ -350,8 +350,14 @@ export class Dialogs {
 					if (typeof audioManager.duckBackground === 'function') {
 						audioManager.duckBackground(0.3);
 					}
-				} else if (type === 'Congrats') {
+				} else if (type === 'congrats') {
 					audioManager.playSoundEffect('dialog_congrats');
+					if (typeof audioManager.duckBackground === 'function') {
+						audioManager.duckBackground(0.3);
+					}
+				} else if (type === 'maxwin') {
+					// Dedicated MaxWin SFX
+					audioManager.playSoundEffect(SoundEffectType.MAX_WIN);
 					if (typeof audioManager.duckBackground === 'function') {
 						audioManager.duckBackground(0.3);
 					}
@@ -1363,6 +1369,13 @@ export class Dialogs {
 		// Route MaxWin through the same normal black-screen transition as TotalWin/Congrats.
 		if (this.currentDialogType === 'MaxWin') {
 			console.log('[Dialogs] MaxWin dialog clicked - starting normal transition');
+			// Play MaxWin end SFX when closing MaxWin dialog
+			try {
+				const audioManager = (window as any).audioManager;
+				if (audioManager && typeof audioManager.playSoundEffect === 'function') {
+					audioManager.playSoundEffect(SoundEffectType.MAX_WIN_END);
+				}
+			} catch { }
 			this.disableAllWinDialogElements();
 			this.startNormalTransition(scene);
 			return;

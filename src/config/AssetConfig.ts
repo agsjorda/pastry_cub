@@ -442,6 +442,7 @@ export class AssetConfig {
 				'superw': 'assets/sounds/Wins/superw_PC.ogg',
 				'epicw': 'assets/sounds/Wins/epicw_PC.ogg',
 				'maxw': 'assets/sounds/Wins/maxw_PC.ogg',
+				'maxwend': 'assets/sounds/Wins/maxwend_PC.ogg',
 				'totalw': 'assets/sounds/Wins/totalw_PC.ogg',
 				'retrigger': 'assets/sounds/Wins/retrigger_PC.ogg',
 			}

@@ -362,6 +362,56 @@ export class FreeSpinController {
   }
 
   /**
+   * True when current spinData's free-spin item (area match) is marked isMaxWin.
+   * After this spin, no further free spins should run; MaxWin dialog ends bonus.
+   */
+  public static isCurrentFreeSpinItemMaxWin(spinData: any): boolean {
+    try {
+      const slot = spinData?.slot;
+      const fs = slot?.freespin || slot?.freeSpin;
+      const items = fs?.items;
+      const area = slot?.area;
+      if (!Array.isArray(items) || !Array.isArray(area)) return false;
+      const areaJson = JSON.stringify(area);
+      const item = items.find(
+        (it: any) => Array.isArray(it?.area) && JSON.stringify(it.area) === areaJson,
+      );
+      return item?.isMaxWin === true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Stop free-spin autoplay after max win: no congrats queue, no further simulateFreeSpin.
+   * Call when the spin that hit isMaxWin completes (same moment as MaxWin dialog).
+   */
+  public stopFreeSpinsAfterMaxWin(): void {
+    console.log('[FreeSpinController] stopFreeSpinsAfterMaxWin — ending bonus autoplay');
+    if (this.autoplayTimer) {
+      this.autoplayTimer.destroy();
+      this.autoplayTimer = null;
+    }
+    this._isActive = false;
+    this.spinsRemaining = 0;
+    this.waitingForReelsStop = false;
+    this.waitingForWinAnimation = false;
+    this.hasTriggered = false;
+    this.awaitingReelsStart = false;
+    this.dialogListenerSetup = false;
+    gameStateManager.bonusEndedByMaxWin = true;
+    gameStateManager.isAutoPlaying = false;
+    gameStateManager.isAutoPlaySpinRequested = false;
+    if (this.scene.gameData) {
+      this.scene.gameData.isAutoPlaying = false;
+    }
+    if (this.callbacks.onSetTurboMode) {
+      this.callbacks.onSetTurboMode(false);
+    }
+    gameEventManager.emit(GameEventType.AUTO_STOP);
+  }
+
+  /**
    * Handle WIN_STOP event
    */
   private handleWinStop(): void {
@@ -372,6 +422,16 @@ export class FreeSpinController {
     }
 
     this.waitingForWinAnimation = false;
+
+    try {
+      const spinData =
+        this.callbacks.getCurrentSpinData?.() ?? (this.scene as any)?.symbols?.currentSpinData;
+      if (FreeSpinController.isCurrentFreeSpinItemMaxWin(spinData)) {
+        console.log('[FreeSpinController] isMaxWin item — stopping autoplay (no further free spins)');
+        this.stopFreeSpinsAfterMaxWin();
+        return;
+      }
+    } catch { }
 
     // If a scatter or Symbol0 retrigger is pending, wait for the retrigger dialog to finish
     // before scheduling the next spin.
@@ -673,7 +733,24 @@ export class FreeSpinController {
         const areaJson = JSON.stringify(slotArea);
         const match = items.find((it: any) => Array.isArray(it?.area) && JSON.stringify(it.area) === areaJson);
         if (match && typeof match.spinsLeft === 'number' && match.spinsLeft > 0) {
-          return { spinsLeft: match.spinsLeft, itemsLen };
+          let spinsLeft = match.spinsLeft;
+          // If this item is MaxWin, adjust spinsLeft based on the previous item's spinsLeft
+          // so that the controller display matches "previousSpinsLeft - 1" on the MaxWin spin.
+          try {
+            const idx = items.indexOf(match);
+            const prev = idx > 0 ? items[idx - 1] : null;
+            if (match.isMaxWin === true && prev && typeof prev.spinsLeft === 'number') {
+              const prevSpinsLeft = Number(prev.spinsLeft) || 0;
+              const adjusted = Math.max(0, prevSpinsLeft - 1);
+              console.log('[FreeSpinController] MaxWin area-match adjustment:', {
+                prevSpinsLeft,
+                originalSpinsLeft: match.spinsLeft,
+                adjustedSpinsLeft: adjusted,
+              });
+              spinsLeft = adjusted;
+            }
+          } catch { }
+          return { spinsLeft, itemsLen };
         }
       }
 
@@ -684,7 +761,23 @@ export class FreeSpinController {
           (it.spinsLeft === this.spinsRemaining || it.spinsLeft === this.spinsRemaining + 1)
         );
         if (bySpins) {
-          return { spinsLeft: bySpins.spinsLeft, itemsLen };
+          let spinsLeft = bySpins.spinsLeft;
+          // Apply the same MaxWin adjustment when we locate the item by spinsLeft.
+          try {
+            const idx = items.indexOf(bySpins);
+            const prev = idx > 0 ? items[idx - 1] : null;
+            if (bySpins.isMaxWin === true && prev && typeof prev.spinsLeft === 'number') {
+              const prevSpinsLeft = Number(prev.spinsLeft) || 0;
+              const adjusted = Math.max(0, prevSpinsLeft - 1);
+              console.log('[FreeSpinController] MaxWin spins-match adjustment:', {
+                prevSpinsLeft,
+                originalSpinsLeft: bySpins.spinsLeft,
+                adjustedSpinsLeft: adjusted,
+              });
+              spinsLeft = adjusted;
+            }
+          } catch { }
+          return { spinsLeft, itemsLen };
         }
       }
 

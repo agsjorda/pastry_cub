@@ -937,6 +937,13 @@ export class Symbols {
     console.log('[Symbols] WIN_DIALOG_CLOSED');
     gameStateManager.isShowingWinDialog = false;
 
+    if (gameStateManager.bonusEndedByMaxWin) {
+      gameStateManager.bonusEndedByMaxWin = false;
+      gameStateManager.suppressTotalWinDialog = false;
+      // MaxWin close already returned to base via Dialogs; no congrats after max win.
+      return;
+    }
+
     if (gameStateManager.isBonusFinished) {
       this.showCongratsDialogAfterDelay();
       gameStateManager.isBonusFinished = false;
@@ -991,6 +998,11 @@ export class Symbols {
   public resetFreeSpinAutoplayState(): void {
     this.freeSpinController.reset();
     this.dialogListenerSetup = false;
+  }
+
+  /** End free-spin autoplay after max win; no further items, no congrats after MaxWin dialog. */
+  public stopFreeSpinsAfterMaxWin(): void {
+    this.freeSpinController?.stopFreeSpinsAfterMaxWin?.();
   }
 
   public get freeSpinAutoplaySpinsRemaining(): number {
@@ -3232,12 +3244,13 @@ export class Symbols {
           const prevOnComplete = last.onComplete;
           last.onComplete = () => {
             try { if (prevOnComplete) prevOnComplete(); } catch { }
+            // Skip (and turbo+skip): still play reel/scatter drop per column on main land
+            // (playSpinReelDropSoundForColumn dedupes per column for the spin).
+            if (isSkip && (window as any).audioManager) {
+              try { this.playSpinReelDropSoundForColumn(col); } catch { }
+            }
             completedAnimations++;
             if (completedAnimations === totalAnimations) {
-              // In skip mode (non-turbo), play a single reel-drop sound after the last symbol lands.
-              if (isSkip && !isTurbo && (window as any).audioManager) {
-                try { this.playSpinReelDropSoundForColumn(col); } catch { }
-              }
               resolve();
             }
           };
@@ -3500,26 +3513,36 @@ export class Symbols {
     }
   }
 
-  private async applySingleTumble(tumble: any, tumbleIndex: number, onFirstWinComplete?: (tumbleTotal: number) => void): Promise<void> {
+  private async applySingleTumble(
+    tumble: any,
+    tumbleIndex: number,
+    onFirstWinComplete?: (tumbleTotal: number) => void
+  ): Promise<void> {
     const self = this;
     const disableScaling = gameStateManager.isBonus || gameStateManager.isBuyFeatureSpin;
     const skipTumble = this.skipTumblesActive;
     const tumbleLogContext = {
       tumbleIndex,
-      spinsLeft: this.activeFreeSpinSpinsLeft
+      spinsLeft: this.activeFreeSpinSpinsLeft,
     };
-    // Keep currentSymbolData in sync with live grid to avoid removal mismatches
+
+    // -------------------------------------------------------------------------
+    // 1) Sync live grid state and extract tumble payload
+    // -------------------------------------------------------------------------
     this.syncCurrentSymbolDataFromSymbols();
     this.captureClusterWinGridSnapshot(`beforeTumble#${tumbleIndex}`);
+
     const outs = (tumble?.symbols?.out || []) as any[];
     const ins = (tumble?.symbols?.in || []) as number[][]; // per real column (x index)
 
     // If this tumble removes any symbols, it represents a win event during this item
     let anyRemoval = false;
     try {
-      anyRemoval = Array.isArray(outs) && outs.some(o => getOutCount(o) > 0);
-      if (anyRemoval) { (self as any).hadWinsInCurrentItem = true; }
-    } catch { }
+      anyRemoval = Array.isArray(outs) && outs.some((o) => getOutCount(o) > 0);
+      if (anyRemoval) {
+        (self as any).hadWinsInCurrentItem = true;
+      }
+    } catch {}
 
     if (!self.symbols || !self.symbols.length || !self.symbols[0] || !self.symbols[0].length) {
       console.warn('[Symbols] applySingleTumble: Symbols grid not initialized');
@@ -3532,21 +3555,30 @@ export class Symbols {
     const numRows = self.symbols[0].length;
 
     // Match manual drop timings and staggering for visual consistency
-    const MANUAL_STAGGER_MS: number = (self.scene?.gameData?.tumbleStaggerMs ?? 100);
+    const MANUAL_STAGGER_MS: number = self.scene?.gameData?.tumbleStaggerMs ?? 100;
 
     try {
       const totalOutRequested = getTotalCountFromOuts(outs);
-      const totalInProvided = (Array.isArray(ins) ? ins.flat().length : 0);
+      const totalInProvided = Array.isArray(ins) ? ins.flat().length : 0;
       console.log('[Symbols] Tumble payload:', {
         outs,
-        insColumns: Array.isArray(ins) ? ins.map((col, idx) => ({ col: idx, count: Array.isArray(col) ? col.length : 0 })) : [],
-        totals: { totalOutRequested, totalInProvided }
+        insColumns: Array.isArray(ins)
+          ? ins.map((col, idx) => ({
+              col: idx,
+              count: Array.isArray(col) ? col.length : 0,
+            }))
+          : [],
+        totals: { totalOutRequested, totalInProvided },
       });
-    } catch { }
+    } catch {}
 
-    // Build a removal mask per cell
+    // -------------------------------------------------------------------------
+    // 2) Build removal mask and derive valid cluster cells
+    // -------------------------------------------------------------------------
     // removeMask[col][row]
-    const removeMask: boolean[][] = Array.from({ length: numCols }, () => Array<boolean>(numRows).fill(false));
+    const removeMask: boolean[][] = Array.from({ length: numCols }, () =>
+      Array<boolean>(numRows).fill(false)
+    );
 
     const highCountSymbols = getHighCountSymbolsFromOuts(outs);
     const clusterCellKey = (col: number, row: number): string => `${col},${row}`;
@@ -3557,7 +3589,9 @@ export class Symbols {
     // column-major data in row 0 = bottom, so we convert before evaluating.
     const validClusterCellsBySymbol: { [key: number]: Set<string> } = {};
     try {
-      const colMajorGrid: number[][] = Array.from({ length: numCols }, () => Array<number>(numRows).fill(-1));
+      const colMajorGrid: number[][] = Array.from({ length: numCols }, () =>
+        Array<number>(numRows).fill(-1)
+      );
       for (let col = 0; col < numCols; col++) {
         for (let rowTop = 0; rowTop < numRows; rowTop++) {
           const value = self.currentSymbolData?.[rowTop]?.[col];
@@ -3583,9 +3617,12 @@ export class Symbols {
       console.warn('[Symbols] Failed deriving valid cluster cells for tumble:', e);
     }
 
-    // Apply explicit removal positions from tumble outs (if provided)
+    // -------------------------------------------------------------------------
+    // 3) Apply explicit removal positions from tumble outs (if provided)
+    // -------------------------------------------------------------------------
     const preMarkedByCol: number[] = Array.from({ length: numCols }, () => 0);
     const preMarkedByOut: number[] = Array.from({ length: outs.length }, () => 0);
+
     const parseOutPositions = (raw: any): Array<{ col: number; row: number }> => {
       if (!Array.isArray(raw)) return [];
       const list: Array<{ col: number; row: number }> = [];
@@ -3605,15 +3642,19 @@ export class Symbols {
       }
       return list;
     };
+
     const resolveOutPositions = (out: any): Array<{ col: number; row: number }> => {
       const raw = parseOutPositions(out?.positions);
       if (raw.length === 0) return [];
-      const inBounds = raw.filter(p => p.col >= 0 && p.col < numCols && p.row >= 0 && p.row < numRows);
+      const inBounds = raw.filter(
+        (p) => p.col >= 0 && p.col < numCols && p.row >= 0 && p.row < numRows
+      );
       if (inBounds.length === 0) return [];
       // Tumble out.positions are treated as row 0 = bottom; convert to
       // render/grid space where row 0 = top.
-      return inBounds.map(p => ({ col: p.col, row: numRows - 1 - p.row }));
+      return inBounds.map((p) => ({ col: p.col, row: numRows - 1 - p.row }));
     };
+
     outs.forEach((out, idx) => {
       const requestedCount = getOutCount(out);
       const targetSymbol = Number(out?.symbol);
@@ -3623,7 +3664,7 @@ export class Symbols {
           console.warn('[Symbols] Ignoring out.positions below qualifying cluster count', {
             ...tumbleLogContext,
             targetSymbol,
-            requestedCount
+            requestedCount,
           });
         }
         return;
@@ -3635,7 +3676,7 @@ export class Symbols {
         console.warn('[Symbols] Ignoring out.positions for non-cluster symbol during tumble', {
           ...tumbleLogContext,
           targetSymbol,
-          count: positions.length
+          count: positions.length,
         });
         return;
       }
@@ -3654,9 +3695,14 @@ export class Symbols {
       preMarkedByOut[idx] = markedForOut;
     });
 
-    // Build position indices by symbol from validated cluster cells only.
-    const positionsBySymbol: { [key: number]: Array<{ col: number; row: number }> } = {};
+    // -------------------------------------------------------------------------
+    // 4) Build per-symbol positions and per-column incoming counts
+    // -------------------------------------------------------------------------
+    const positionsBySymbol: {
+      [key: number]: Array<{ col: number; row: number }>;
+    } = {};
     let sequenceIndex = 0; // ensures 1-by-1 ordering across columns left-to-right
+
     for (const symbolKey of Object.keys(validClusterCellsBySymbol)) {
       const symbol = Number(symbolKey);
       const set = validClusterCellsBySymbol[symbol];
@@ -3671,14 +3717,19 @@ export class Symbols {
         positionsBySymbol[symbol].push({ col, row });
       }
     }
+
     // Sort each symbol's positions top-to-bottom (row asc), then left-to-right (col asc)
-    Object.keys(positionsBySymbol).forEach(k => {
+    Object.keys(positionsBySymbol).forEach((k) => {
       positionsBySymbol[Number(k)].sort((a, b) => a.row - b.row || a.col - b.col);
     });
 
-    // Determine per-column incoming counts
-    const insCountByCol: number[] = Array.from({ length: numCols }, (_, c) => (Array.isArray(ins?.[c]) ? ins[c].length : 0));
-    let targetRemovalsPerCol: number[] = insCountByCol.map((n, c) => Math.max(0, n - (preMarkedByCol[c] || 0)));
+    const insCountByCol: number[] = Array.from(
+      { length: numCols },
+      (_, c) => (Array.isArray(ins?.[c]) ? ins[c].length : 0)
+    );
+    let targetRemovalsPerCol: number[] = insCountByCol.map((n, c) =>
+      Math.max(0, n - (preMarkedByCol[c] || 0))
+    );
 
     // Helper to pick and mark a position for a symbol in a preferred column
     function pickAndMark(symbol: number, preferredCol: number | null): boolean {
@@ -3695,7 +3746,9 @@ export class Symbols {
       return false;
     }
 
-    // First pass: satisfy per-column targets using outs composition
+    // -------------------------------------------------------------------------
+    // 5) First pass: satisfy per-column targets using outs composition
+    // -------------------------------------------------------------------------
     for (let outIndex = 0; outIndex < outs.length; outIndex++) {
       const out = outs[outIndex];
       const requestedCount = getOutCount(out);
@@ -4381,6 +4434,13 @@ export class Symbols {
               const computedStartDelay = (self.scene?.gameData?.tumbleDropStartDelayMs ?? 0) + (DROP_STAGGER_MS * sequenceIndex);
               const skipPreHop = !!(self.scene?.gameData?.tumbleSkipPreHop);
               const tweensArr: any[] = [];
+              const playReelDropOnMainLand = () => {
+                try {
+                  if (!self.scene.gameData.isTurbo && (window as any).audioManager) {
+                    (window as any).audioManager.playSoundEffect(SoundEffectType.REEL_DROP);
+                  }
+                } catch { }
+              };
               if (!skipPreHop) {
                 tweensArr.push({
                   delay: computedStartDelay,
@@ -4390,37 +4450,32 @@ export class Symbols {
                 });
                 tweensArr.push({
                   y: targetY,
-                  duration: (self.scene.gameData.dropDuration * 0.9),
+                  duration: (self.scene.gameData.dropDuration * 0.8),
                   ease: Phaser.Math.Easing.Linear,
+                  onComplete: playReelDropOnMainLand,
                 });
               } else {
                 tweensArr.push({
                   delay: computedStartDelay,
                   y: targetY,
-                  duration: (self.scene.gameData.dropDuration * 0.9),
+                  duration: (self.scene.gameData.dropDuration * 0.8),
                   ease: Phaser.Math.Easing.Linear,
+                  onComplete: playReelDropOnMainLand,
                 });
               }
               if (!isTurbo) {
-                // Normal mode: include the small post-drop bounce and SFX
+                // Normal mode: post-drop bounce only; SFX on main drop tween onComplete above
                 tweensArr.push(
                   {
                     y: `+= ${10}`,
-                    duration: self.scene.gameData.dropDuration * 0.05,
+                    duration: self.scene.gameData.dropDuration * 0.04,
                     ease: Phaser.Math.Easing.Linear,
                   },
                   {
                     y: `-= ${10}`,
-                    duration: self.scene.gameData.dropDuration * 0.05,
+                    duration: self.scene.gameData.dropDuration * 0.04,
                     ease: Phaser.Math.Easing.Linear,
-                    onComplete: () => {
-                      try {
-                        if (!self.scene.gameData.isTurbo && (window as any).audioManager) {
-                          (window as any).audioManager.playSoundEffect(SoundEffectType.REEL_DROP);
-                        }
-                      } catch { }
-                      resolve();
-                    }
+                    onComplete: () => resolve(),
                   }
                 );
               } else {
@@ -4529,28 +4584,39 @@ export class Symbols {
               const computedStartDelay = (self.scene?.gameData?.tumbleDropStartDelayMs ?? 0) + (DROP_STAGGER_MS * sequenceIndex);
               const skipPreHop = !!(self.scene?.gameData?.tumbleSkipPreHop);
               const tweensArr: any[] = [];
+              const playReelDropOnMainLand2 = () => {
+                try {
+                  if (!self.scene.gameData.isTurbo && (window as any).audioManager) {
+                    (window as any).audioManager.playSoundEffect(SoundEffectType.REEL_DROP);
+                  }
+                } catch { }
+              };
               if (!skipPreHop) {
                 tweensArr.push({ delay: computedStartDelay, y: `-= ${symbolHop}`, duration: self.scene.gameData.winUpDuration, ease: Phaser.Math.Easing.Circular.Out });
-                tweensArr.push({ y: targetY, duration: (self.scene.gameData.dropDuration * 0.9), ease: Phaser.Math.Easing.Linear });
+                tweensArr.push({
+                  y: targetY,
+                  duration: (self.scene.gameData.dropDuration * 0.9),
+                  ease: Phaser.Math.Easing.Linear,
+                  onComplete: playReelDropOnMainLand2,
+                });
               } else {
-                tweensArr.push({ delay: computedStartDelay, y: targetY, duration: (self.scene.gameData.dropDuration * 0.9), ease: Phaser.Math.Easing.Linear });
+                tweensArr.push({
+                  delay: computedStartDelay,
+                  y: targetY,
+                  duration: (self.scene.gameData.dropDuration * 0.9),
+                  ease: Phaser.Math.Easing.Linear,
+                  onComplete: playReelDropOnMainLand2,
+                });
               }
               if (!isTurbo) {
-                // Normal mode: include the small post-drop bounce and SFX
+                // Normal mode: bounce only; SFX on main drop onComplete above
                 tweensArr.push(
                   { y: `+= ${10}`, duration: self.scene.gameData.dropDuration * 0.05, ease: Phaser.Math.Easing.Linear },
                   {
                     y: `-= ${10}`,
                     duration: self.scene.gameData.dropDuration * 0.05,
                     ease: Phaser.Math.Easing.Linear,
-                    onComplete: () => {
-                      try {
-                        if (!self.scene.gameData.isTurbo && (window as any).audioManager) {
-                          (window as any).audioManager.playSoundEffect(SoundEffectType.REEL_DROP);
-                        }
-                      } catch { }
-                      resolve();
-                    }
+                    onComplete: () => resolve(),
                   }
                 );
               } else {

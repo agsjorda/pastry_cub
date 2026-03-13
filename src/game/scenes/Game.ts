@@ -714,6 +714,9 @@ export class Game extends Scene {
 			const slotTotal = Number((spinData.slot as any)?.totalWin);
 			const winAmount = Number.isFinite(slotTotal) ? slotTotal : 0;
 			try {
+				this.symbols?.stopFreeSpinsAfterMaxWin?.();
+			} catch { }
+			try {
 				if (this.dialogs?.showMaxWin) {
 					gameStateManager.isShowingWinDialog = true;
 					gameStateManager.suppressTotalWinDialog = true;
@@ -891,6 +894,7 @@ export class Game extends Scene {
 
 			// Ensure winnings display stays visible and transfers to bonus header on bonus start
 				if (isBonus) {
+					this.gameStateManager.bonusEndedByMaxWin = false;
 					// Only transfer winnings if we're NOT already in bonus mode (i.e., this is the initial bonus activation)
 					// During retriggers, we're already in bonus mode, so we should preserve the accumulated total
 					const wasAlreadyInBonus = this.gameStateManager.isBonus;

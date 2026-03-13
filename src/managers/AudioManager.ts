@@ -31,6 +31,8 @@ export enum SoundEffectType {
 	WIN_MEGA = 'win_mega',
 	WIN_SUPER = 'win_super',
 	WIN_EPIC = 'win_epic',
+	MAX_WIN = 'maxw',
+	MAX_WIN_END = 'maxwend',
 	DIALOG_CONGRATS = 'dialog_congrats',
 	DIALOG_RETRIGGER = 'dialog_retrigger',
 	// Non-scatter box close SFX (played once when all regular symbol wins finish)
@@ -244,6 +246,26 @@ export class AudioManager {
 			this.sfxInstances.set(SoundEffectType.WIN_SUPER, superWinSfx);
 			const epicWinSfx = this.scene.sound.add('epicw', { volume: this.sfxVolume, loop: false });
 			this.sfxInstances.set(SoundEffectType.WIN_EPIC, epicWinSfx);
+			// MaxWin win dialog SFX (if loaded for this game)
+			if (this.scene.cache.audio.exists('maxw')) {
+				try {
+					const maxWinSfx = this.scene.sound.add('maxw', { volume: this.sfxVolume, loop: false });
+					this.sfxInstances.set(SoundEffectType.MAX_WIN, maxWinSfx);
+					console.log('[AudioManager] MaxWin dialog SFX instance created');
+				} catch (e) {
+					console.warn('[AudioManager] Failed to create MaxWin SFX instance:', e);
+				}
+			}
+			// MaxWin end SFX (played when closing MaxWin dialog), if loaded
+			if (this.scene.cache.audio.exists('maxwend')) {
+				try {
+					const maxWinEndSfx = this.scene.sound.add('maxwend', { volume: this.sfxVolume, loop: false });
+					this.sfxInstances.set(SoundEffectType.MAX_WIN_END, maxWinEndSfx);
+					console.log('[AudioManager] MaxWin end SFX instance created');
+				} catch (e) {
+					console.warn('[AudioManager] Failed to create MaxWin end SFX instance:', e);
+				}
+			}
 			console.log('[AudioManager] Win dialog SFX instances created');
 
 			// Create dialog-specific SFX instances (only if loaded for this game)
