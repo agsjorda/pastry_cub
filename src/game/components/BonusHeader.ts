@@ -83,7 +83,8 @@ export class BonusHeader {
 		// Set up event listeners for winnings updates (like regular header)
 		this.setupWinningsEventListener();
 
-		// Hide win bar text while TotalWin dialog is visible
+		// Previously hid win bar text while TotalWin dialog was visible.
+		// Requirement change: keep win bar visible even when TotalWin dialog shows.
 		this.setupWinbarSuppressionListeners(scene);
 		
 		// Initialize winnings display - start hidden
@@ -91,13 +92,8 @@ export class BonusHeader {
 	}
 
 	private setupWinbarSuppressionListeners(scene: Scene): void {
-		scene.events.on('dialogShown', (dialogType: string) => {
-			if (dialogType === 'TotalWin') {
-				this.suppressWinbarDisplay = true;
-				this.forceHideWinningsDisplay();
-				console.log('[BonusHeader] TotalWin shown - suppressing winbar display');
-			}
-		});
+		// Do not hide win bar text for TotalWin dialog anymore; keep listener reserved
+		// for potential future dialog types if needed.
 		scene.events.on('hideBonusHeader', () => {
 			this.suppressWinbarDisplay = false;
 		});
@@ -162,7 +158,8 @@ export class BonusHeader {
 			const winBarY = anchorY + containerHeight + HEADER_CONFIG.WIN_BAR_OFFSET_Y;
 			this.headerWinBarImage = this.createScaledHeaderImage(scene, 'Header_WinBar', centerX, winBarY);
 			this.headerWinBarImage.setScale((scene.scale.width / this.headerWinBarImage.width) * HEADER_CONFIG.WIN_BAR_SCALE);
-			this.headerWinBarImage.setDepth(9500); // Below frame
+			// Keep win bar image below win bar text (9500) and dialogs/menu (9501+)
+			this.headerWinBarImage.setDepth(9499); // Below win bar text and frame
 			this.bonusHeaderContainer.add(this.headerWinBarImage);
 			this.createWinBarGlows(scene);
 			this.updateWinBarGlowTransform();
@@ -379,9 +376,8 @@ export class BonusHeader {
 		this.createWinBarText(scene, scene.scale.width * 0.5, winBarTextY);
 	}
 
-	// Depth above RadialLightTransition overlay (20000) so Total win stays visible during candy/radial light
-	// Keep win bar text below dialog overlay layers (Dialogs uses ~13000+).
-	private static readonly WIN_BAR_DEPTH = 9502;
+	// In bonus mode: win bar text above win bar image (9499) and below dialogs/menu (9501+).
+	private static readonly WIN_BAR_DEPTH = 9500;
 	private static readonly WIN_BAR_SCALE_EPSILON = 0.01;
 
 	private createWinBarText(scene: Scene, x: number, y: number): void {

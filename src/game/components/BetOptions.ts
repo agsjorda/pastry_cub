@@ -55,7 +55,7 @@ export class BetOptions {
 		
 		// Create main container
 		this.container = scene.add.container(0, 0);
-		this.container.setDepth(9501); // Above header (9500) and backgrounds (850/9000); below dialogs (12000)
+		this.container.setDepth(9502); // Above dialogs (9501), header (9500) and backgrounds (850/9000)
 		
 		// Create background
 		this.createBackground(scene);

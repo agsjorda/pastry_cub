@@ -34,7 +34,8 @@ export class BuyFeature {
     0.2, 0.4, 0.6, 0.8, 1, 1.2, 1.6, 2, 2.4, 2.8, 3.2, 3.6, 4, 5, 6, 8, 10, 14,
     18, 24, 32, 40, 60, 80, 100, 110, 120, 130, 140, 150,
   ];
-  private currentBetIndex: number = 0; // Index in betOptions array
+  // Index in betOptions array; -1 means "not initialized from base bet yet"
+  private currentBetIndex: number = -1;
   private closeButton!: Phaser.GameObjects.Text;
   private confirmButton!: Phaser.GameObjects.Text;
   private betDisplay!: Phaser.GameObjects.Text;
@@ -176,6 +177,10 @@ export class BuyFeature {
    * Initialize bet index based on current bet from SlotController
    */
   private initializeBetIndex(): void {
+    // Only initialize once per session; afterwards we keep the user's last bet choice.
+    if (this.currentBetIndex >= 0) {
+      return;
+    }
     if (this.slotController) {
       const currentBaseBet = this.slotController.getBaseBetAmount();
 
@@ -204,7 +209,7 @@ export class BuyFeature {
 
     // Create main container
     this.container = scene.add.container(0, 0);
-    this.container.setDepth(9501); // Above header/background in pastry_cub
+    this.container.setDepth(9502); // Above dialogs (9501) and header/background in pastry_cub
 
     // Create background
     this.createBackground(scene);

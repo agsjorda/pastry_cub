@@ -172,9 +172,9 @@ export class Dialogs {
 
 		this.radialLightTransition = new RadialLightTransition(scene);
 
-		// Create main dialog overlay container (just below menu popup depth 9501)
+		// Create main dialog overlay container (above win bar text, below menu popups)
 		this.dialogOverlay = scene.add.container(0, 0);
-		this.dialogOverlay.setDepth(9500);
+		this.dialogOverlay.setDepth(9501);
 		this.dialogOverlay.setVisible(false); // Hidden by default
 
 		// Create black overlay background just behind dialog overlay

@@ -128,7 +128,7 @@ export class Menu {
 
     // Create main menu container
     const menuContainer = scene.add.container(0, 0) as ButtonContainer;
-    menuContainer.setDepth(9501); // Above header (9500) and backgrounds (850/9000); below dialogs (12000)
+    menuContainer.setDepth(9502); // Above dialogs (9501), header (9500) and backgrounds (850/9000)
     menuContainer.setVisible(false);
     menuContainer.setAlpha(0);
 
