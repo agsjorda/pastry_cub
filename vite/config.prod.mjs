@@ -15,7 +15,18 @@ const phasermsg = () => {
             process.stdout.write(`✨ Done ✨\n`);
         }
     }
-}   
+}
+
+// Inject console suppression script before any modules load (production only)
+const suppressConsole = () => {
+    return {
+        name: 'suppress-console',
+        transformIndexHtml(html) {
+            const script = `<script>(function(){var e=function(){};var c=console;c.log=e;c.info=e;c.warn=e;c.error=e;c.debug=e;c.trace=e;c.group=e;c.groupCollapsed=e;c.groupEnd=e;c.time=e;c.timeEnd=e;c.timeLog=e;c.table=e;c.dir=e;c.dirxml=e;c.count=e;c.countReset=e;c.assert=e;c.profile=e;c.profileEnd=e;c.clear=e;})();</script>`;
+            return html.replace('<head>', '<head>' + script);
+        }
+    };
+};
 
 export default defineConfig({
     base: './',
@@ -64,6 +75,8 @@ export default defineConfig({
             deleteOriginalAssets: false,
             threshold: 1024,
             filter: (file) => /\.(js|css|html|svg|json|ttf|woff2?)$/i.test(file)
-        })
+        }),
+        // Suppress console output in production builds (matches genghisbao behavior)
+        suppressConsole()
     ]
 });

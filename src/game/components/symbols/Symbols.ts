@@ -2122,6 +2122,15 @@ export class Symbols {
         });
       });
     });
+
+    // Play scatter collect SFX once as the merge-to-center motion starts.
+    try {
+      const am = (window as any)?.audioManager;
+      if (am && typeof am.playSoundEffect === 'function') {
+        am.playSoundEffect(SoundEffectType.SCATTER_COLLECT);
+      }
+    } catch { /* ignore audio errors so merge flow always completes */ }
+
     await Promise.all(gatherPromises);
 
     // Track the merged scatter symbols so win/idle flows can target the exact instances.
@@ -2167,6 +2176,15 @@ export class Symbols {
               if (audio?.playSoundEffect) {
                 if (audio.hasSoundEffect?.(SoundEffectType.SCATTER)) {
                   audio.playSoundEffect(SoundEffectType.SCATTER);
+                  // Chain scatter_burn after scatter_PC to emphasize the win
+                  if (audio.hasSoundEffect?.(SoundEffectType.SCATTER_BURN)) {
+                    const delayMs = 800;
+                    this.scene.time.delayedCall(delayMs, () => {
+                      try {
+                        audio.playSoundEffect(SoundEffectType.SCATTER_BURN);
+                      } catch { }
+                    });
+                  }
                 }
               }
             } catch { }

@@ -127,7 +127,9 @@ export class BuyFeature {
     { title: "Chef's Big Meaty Surprise v.2", scatterCount: 3, startMultiplier: 2 },
   ];
 
-  private buyFeatureSelectedCardIndex: number = 0;
+  // Persist currently selected buy feature card within the session.
+  // -1 indicates "no selection yet" and will default to the first card on first show().
+  private buyFeatureSelectedCardIndex: number = -1;
 
   /**
    * Set the SlotController reference for accessing current bet
@@ -1432,7 +1434,17 @@ export class BuyFeature {
 
     // Initialize bet index based on current bet from SlotController
     this.initializeBetIndex();
-    this.selectBuyFeatureCard(0);
+
+    // If no card has been selected yet this session, default to the first card.
+    // Otherwise, keep the last selected card as the active choice.
+    if (
+      this.buyFeatureSelectedCardIndex < 0 ||
+      this.buyFeatureSelectedCardIndex >= BuyFeature.CARD_ITEMS.length
+    ) {
+      this.selectBuyFeatureCard(0);
+    } else {
+      this.selectBuyFeatureCard(this.buyFeatureSelectedCardIndex);
+    }
 
     this.updatePriceDisplay();
     this.updateBetDisplay();

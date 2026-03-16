@@ -21,6 +21,10 @@ export enum SoundEffectType {
 	SPIN_CLICK = 'spin_click',
 	WHISTLE_BB = 'whistle_bb',
 	SCATTER = 'scatter',
+	/** Scatter collect when scatters merge to center */
+	SCATTER_COLLECT = 'scatter_collect',
+	/** Scatter burn, chained after scatter_PC during scatter win animation */
+	SCATTER_BURN = 'scatter_burn',
 	// Tumble-driven symbol-win SFX (play per tumble index)
 	SYMBOL_WIN_1 = 'symbol_win_1',
 	SYMBOL_WIN_2 = 'symbol_win_2',
@@ -243,6 +247,28 @@ export class AudioManager {
 				console.log('[AudioManager] Scatter SFX instance created');
 			} catch (e) {
 				console.warn('[AudioManager] Failed to create scatter SFX instance:', e);
+			}
+
+			// Scatter collect SFX (played when scatter symbols merge to center), if loaded for this game
+			if (this.scene.cache.audio.exists('scatter_collect')) {
+				try {
+					const scatterCollectSfx = this.scene.sound.add('scatter_collect', { volume: this.sfxVolume, loop: false });
+					this.sfxInstances.set(SoundEffectType.SCATTER_COLLECT, scatterCollectSfx);
+					console.log('[AudioManager] Scatter collect SFX instance created');
+				} catch (e) {
+					console.warn('[AudioManager] Failed to create scatter_collect SFX instance:', e);
+				}
+			}
+
+			// Scatter burn SFX (chained after scatter_PC during scatter win animation), if loaded for this game
+			if (this.scene.cache.audio.exists('scatter_burn')) {
+				try {
+					const scatterBurnSfx = this.scene.sound.add('scatter_burn', { volume: this.sfxVolume, loop: false });
+					this.sfxInstances.set(SoundEffectType.SCATTER_BURN, scatterBurnSfx);
+					console.log('[AudioManager] Scatter burn SFX instance created');
+				} catch (e) {
+					console.warn('[AudioManager] Failed to create scatter_burn SFX instance:', e);
+				}
 			}
 
 			// Scatter win "nom nom" SFX is not used in pastry_cub; no instance created.

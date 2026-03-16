@@ -425,9 +425,13 @@ export class AssetConfig {
 				'scatterdrop2': 'assets/sounds/SFX/symbol_win/scatter_2_PC.ogg',
 				'scatterdrop3': 'assets/sounds/SFX/symbol_win/scatter_3_PC.ogg',
 				'scatterdrop4': 'assets/sounds/SFX/symbol_win/scatter_4_PC.ogg',
+				// Scatter collect SFX (played when scatter symbols merge to center)
+				'scatter_collect': 'assets/sounds/SFX/scatter_collect_PC.ogg',
+				// Scatter burn SFX (chained after scatter_PC during scatter win animation)
+				'scatter_burn': 'assets/sounds/SFX/scatter_burn_PC.ogg',
 				'turbodrop': 'assets/sounds/SFX/turbo_PC.ogg',
 				// Non-scatter box close SFX (played once when all regular symbol wins finish)
-				'box_close': 'assets/sounds/SFX/box_close.ogg',
+				'box_close': 'assets/sounds/SFX/tumble_box_PC.ogg',
 				'man_spy_pc': 'assets/sounds/SFX/man_spy_PC.ogg',
 				// Radial light transition whistle SFX
 				'whistle': 'assets/sounds/SFX/whistle_BB.ogg',
@@ -444,6 +448,8 @@ export class AssetConfig {
 				'epicw': 'assets/sounds/Wins/epicw_PC.ogg',
 				'maxw': 'assets/sounds/Wins/maxw_PC.ogg',
 				'maxwend': 'assets/sounds/Wins/maxwend_PC.ogg',
+				// Use totalw SFX as the Congrats/TotalWin dialog sound (mapped to 'congrats')
+				'congrats': 'assets/sounds/Wins/totalw_PC.ogg',
 				'totalw': 'assets/sounds/Wins/totalw_PC.ogg',
 				'retrigger': 'assets/sounds/Wins/retrigger_PC.ogg',
 			}

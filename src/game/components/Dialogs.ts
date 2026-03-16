@@ -172,9 +172,9 @@ export class Dialogs {
 
 		this.radialLightTransition = new RadialLightTransition(scene);
 
-		// Create main dialog overlay container
+		// Create main dialog overlay container (just below menu popup depth 9501)
 		this.dialogOverlay = scene.add.container(0, 0);
-		this.dialogOverlay.setDepth(13000); // Above all popups (9501), header (9500), and backgrounds (850/9000)
+		this.dialogOverlay.setDepth(9500);
 		this.dialogOverlay.setVisible(false); // Hidden by default
 
 		// Create black overlay background just behind dialog overlay
@@ -185,7 +185,7 @@ export class Dialogs {
 		this.blackOverlay.setVisible(false);
 		this.blackOverlay.setAlpha(0);
 
-		// Create dialog content container (same layer as numbers)
+		// Create dialog content container (base layer for dialog visuals; below menu)
 		this.dialogContentContainer = scene.add.container(0, 0);
 		this.dialogContentContainer.setDepth(103);
 		this.dialogOverlay.add(this.dialogContentContainer);
@@ -344,14 +344,13 @@ export class Dialogs {
 			if (audioManager && typeof audioManager.playSoundEffect === 'function') {
 				const type = (this.currentDialogType || '').toLowerCase();
 				if (type === 'freespin_bz') {
-					// Use Congrats for the FreeSpin dialog per request
-					audioManager.playSoundEffect('dialog_congrats');
-					// Duck background music similar to win dialogs
+					// Use retrigger SFX (retrigger_PC.ogg) for the FreeSpin dialog
+					audioManager.playSoundEffect(SoundEffectType.DIALOG_RETRIGGER);
 					if (typeof audioManager.duckBackground === 'function') {
 						audioManager.duckBackground(0.3);
 					}
 				} else if (type === 'congrats') {
-					audioManager.playSoundEffect('dialog_congrats');
+					audioManager.playSoundEffect(SoundEffectType.DIALOG_CONGRATS);
 					if (typeof audioManager.duckBackground === 'function') {
 						audioManager.duckBackground(0.3);
 					}
@@ -899,9 +898,9 @@ export class Dialogs {
 		this.numberDisplay = numberDisplay;
 		this.numberTargetValue = displayValue;
 
-		// Create container for number display
+		// Create container for number display (above dialog content but still below menu)
 		this.numberDisplayContainer = scene.add.container(0, 0);
-		this.numberDisplayContainer.setDepth((this.dialogOverlay?.depth ?? 12000) + 10);
+		this.numberDisplayContainer.setDepth((this.dialogOverlay?.depth ?? 9500) - 1);
 		this.numberDisplayContainer.add(numberDisplay.getContainer());
 
 		// Start with alpha 0 (invisible) - will be faded in after delay
@@ -1552,9 +1551,9 @@ export class Dialogs {
 			}
 		}
 
-		// Create centralized black screen overlay
+		// Create centralized black screen overlay (transition layer; keep below menu popup)
 		const blackScreen = scene.add.graphics();
-		blackScreen.setDepth(10000); // Very high depth to cover everything
+		blackScreen.setDepth(9490);
 		blackScreen.fillStyle(0x000000, 1);
 		blackScreen.fillRect(0, 0, scene.scale.width, scene.scale.height);
 		blackScreen.setAlpha(0); // Start transparent
@@ -2062,9 +2061,9 @@ export class Dialogs {
 		}
 
 		if (this.currentScene) {
-			// Create a black overlay for transition
+			// Create a black overlay for transition (below menu popup depth 9501)
 			const transitionOverlay = this.currentScene.add.graphics();
-			transitionOverlay.setDepth(10000); // Very high depth to cover everything
+			transitionOverlay.setDepth(9490);
 			transitionOverlay.fillStyle(0x000000, 1);
 			transitionOverlay.fillRect(0, 0, this.currentScene.scale.width, this.currentScene.scale.height);
 			transitionOverlay.setAlpha(0); // Start transparent
