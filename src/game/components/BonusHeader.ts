@@ -1129,29 +1129,15 @@ export class BonusHeader {
 						}
 						this.lastTumbleCumulative = cumulativeFromEvent;
 					}
-					if (hasMaxWinCap && this.cumulativeBonusWin > maxWinCapTotal) {
-						this.cumulativeBonusWin = maxWinCapTotal;
-					}
+				if (hasMaxWinCap && this.cumulativeBonusWin > maxWinCapTotal) {
+					this.cumulativeBonusWin = maxWinCapTotal;
+				}
 
-					// After showing YOU WON, update TOTAL WIN with the accumulated total.
-					if (this.scene) {
-						try {
-							this.tumbleTotalDisplayTimer?.destroy();
-						} catch { }
-						const delayMs = Math.max(0, BONUS_TUMBLE_TOTAL_WIN_DELAY_MS || 0);
-						this.tumbleTotalDisplayTimer = this.scene.time.delayedCall(delayMs, () => {
-							if (!gameStateManager.isBonus) return;
-							if (this.youWonText) {
-								this.youWonText.setText('TOTAL WIN');
-							}
-							const totalToShow = hasMaxWinCap
-								? Math.min(this.cumulativeBonusWin, maxWinCapTotal)
-								: this.cumulativeBonusWin;
-							this.showWinningsDisplay(totalToShow);
-						});
-					}
+				// Note: TOTAL WIN is now shown only once per spin, in the WIN_STOP
+				// handler, after all tumbles for that spin have completed. Here we
+				// only show per-tumble "YOU WON" values.
 
-					if (hasMaxWinCap && this.cumulativeBonusWin >= maxWinCapTotal) {
+				if (hasMaxWinCap && this.cumulativeBonusWin >= maxWinCapTotal) {
 						try { symbolsComponent?.requestSkipTumbles?.(); } catch {}
 					}
 				}
