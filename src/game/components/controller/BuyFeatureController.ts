@@ -14,6 +14,7 @@ export interface BuyFeatureCallbacks {
   getBalanceAmount: () => number;
   updateBalanceAmount: (balance: number) => void;
   updateBetAmount: (bet: number) => void;
+  setFeatureButtonAmountOverride: (amount: number | null) => void;
   enableSpinButton: () => void;
   enableAutoplayButton: () => void;
   enableFeatureButton: () => void;
@@ -120,7 +121,13 @@ export class BuyFeatureController {
       // Price is 100x the effective total bet (v.2 uses 5x bet).
       const calculatedPrice = effectiveBet * 100;
 
-      this.callbacks.updateBetAmount(effectiveBet);
+      // Keep the game's base bet aligned to the Buy Feature base bet selection.
+      // For v.2, effective bet is 5x for pricing/spin logic, but persisting that as
+      // base bet would inflate option cards after free spins (e.g. 40/200 -> 200/1000).
+      this.callbacks.updateBetAmount(buyFeatureBet);
+      // Keep Buy Feature button amount aligned with the confirmed option card amount
+      // (v.2 should display 5x card price on the feature button after confirm).
+      this.callbacks.setFeatureButtonAmountOverride(calculatedPrice);
 
       console.log(`[SlotController] Buy feature bet: $${effectiveBet.toFixed(2)} (base: $${buyFeatureBet.toFixed(2)}), calculated price: $${calculatedPrice.toFixed(2)}, selected buy feature type: ${selectedBuyFeatureType}`);
 

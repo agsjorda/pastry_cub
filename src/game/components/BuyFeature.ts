@@ -52,6 +52,7 @@ export class BuyFeature {
   private backgroundImage!: Phaser.GameObjects.Image;
   private onCloseCallback?: () => void;
   private onConfirmCallback?: () => void;
+  private lastExternalBaseBet: number | null = null;
   private scatterSpine?: any;
   private scatterFallbackSprite?: Phaser.GameObjects.Image;
   private scatterRetryCount: number = 0;
@@ -155,11 +156,13 @@ export class BuyFeature {
   }
 
   /**
-   * Bet amount to show in the popup: 5x when buy feature 2 (v.2) is selected, else 1x.
+   * Bet amount to show in the popup input between -/+.
+   * This always reflects the base bet ladder value (currentBet), regardless of
+   * which buy feature option is selected. Option 2 still uses 5x for its card
+   * price and spin price, but the editable bet field stays at the base bet.
    */
   private getDisplayBetAmount(): number {
-    const item = BuyFeature.CARD_ITEMS[this.buyFeatureSelectedCardIndex];
-    return item?.startMultiplier === 2 ? this.currentBet * 5 : this.currentBet;
+    return this.currentBet;
   }
 
   /**
@@ -167,6 +170,28 @@ export class BuyFeature {
    */
   public getCurrentBetAmount(): number {
     return this.currentBet;
+  }
+
+  /**
+   * Re-seed the buy feature bet from an external base bet (e.g., autoplay panel).
+   * This updates the internal ladder index and currentBet so that option 1 matches
+   * the given base bet and option 2 remains 5x that base.
+   */
+  public resetBetFromExternal(baseBet: number): void {
+    if (!Number.isFinite(baseBet) || baseBet <= 0) return;
+    // Find closest bet option on the ladder
+    let closestIndex = 0;
+    let closestDifference = Math.abs(this.betOptions[0] - baseBet);
+    for (let i = 1; i < this.betOptions.length; i++) {
+      const difference = Math.abs(this.betOptions[i] - baseBet);
+      if (difference < closestDifference) {
+        closestDifference = difference;
+        closestIndex = i;
+      }
+    }
+    this.currentBetIndex = closestIndex;
+    this.currentBet = this.betOptions[closestIndex];
+    this.lastExternalBaseBet = this.currentBet;
   }
 
   public getSelectedBuyFeatureType(): 1 | 2 {
@@ -198,6 +223,7 @@ export class BuyFeature {
 
       this.currentBetIndex = closestIndex;
       this.currentBet = this.betOptions[closestIndex];
+      this.lastExternalBaseBet = this.currentBet;
       console.log(
         `[BuyFeature] Initialized bet index ${closestIndex} with bet $${this.currentBet.toFixed(2)}`,
       );
@@ -1437,8 +1463,19 @@ export class BuyFeature {
       }
     }
 
-    // Initialize bet index based on current bet from SlotController
-    this.initializeBetIndex();
+    // Initialize/sync buy feature bet from the latest external base bet.
+    // This keeps Bet Options / Autoplay changes reflected in the popup while
+    // still preserving the buy-feature bet until an external base-bet change occurs.
+    const latestBaseBet = this.slotController?.getBaseBetAmount?.();
+    if (
+      Number.isFinite(latestBaseBet) &&
+      latestBaseBet! > 0 &&
+      (this.lastExternalBaseBet === null || Math.abs(latestBaseBet! - this.lastExternalBaseBet) > 0.0001)
+    ) {
+      this.resetBetFromExternal(latestBaseBet!);
+    } else {
+      this.initializeBetIndex();
+    }
 
     // If no card has been selected yet this session, default to the first card.
     // Otherwise, keep the last selected card as the active choice.

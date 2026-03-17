@@ -296,7 +296,7 @@ export const WIN_THRESHOLDS = {
   /** Threshold for "Super Win" dialog */
   SUPER_WIN: 60,
   /** Threshold for "Max Win" dialog */
-  MAX_WIN: 2100,
+  MAX_WIN: 21000,
 } as const;
 
 // =============================================================================

@@ -1,5 +1,7 @@
 import { Scene } from 'phaser';
 import { AssetLoader } from '../../utils/AssetLoader';
+import { ensureSpineFactory } from '../../utils/SpineGuard';
+import { startAnimation } from '../../utils/SpineAnimationHelper';
 
 export interface StudioLoadingScreenOptions {
     loadingFrameOffsetX?: number;
@@ -26,6 +28,7 @@ export class StudioLoadingScreen {
     private scene: Scene;
     private container: Phaser.GameObjects.Container;
     private shownAtMs: number = 0;
+    private spine?: any;
     private bg?: Phaser.GameObjects.Rectangle;
     private loadingFrame?: Phaser.GameObjects.Image;
     private text?: Phaser.GameObjects.Text;
@@ -42,6 +45,9 @@ export class StudioLoadingScreen {
     private onProgressHandler?: (progress: number) => void;
     private options: StudioLoadingScreenOptions;
     private dotGrid?: Phaser.GameObjects.Graphics;
+    private dijokerLogo?: Phaser.GameObjects.Image;
+    private loadingCharacter: any = null;
+    private spineUpdateListener: ((time: number, delta: number) => void) | null = null;
 
     constructor(scene: Scene, options?: StudioLoadingScreenOptions) {
         this.scene = scene;
@@ -251,12 +257,23 @@ export class StudioLoadingScreen {
 
             // Time display disabled in this game (no TimeUtils helper available)
 
-            // Progress bar – positioned in lower area
+            // Show DI JOKER the same way the shuten_doji preloader does:
+            // spine on the left-center with the logo to its right.
+            this.createLoadingCharacter();
+
+            // Progress bar – positioned just below the loading character area.
             const assetScale = 1; // static scale for studio screen
             const barWidth = this.scene.scale.width * 0.5;
             const barHeight = Math.max(13, 13 * assetScale);
             const barX = this.scene.scale.width * 0.5;
-            const barY = this.scene.scale.height * 0.8;
+            let barY = this.scene.scale.height * 0.8;
+            if (this.spine) {
+                const cy = this.scene.scale.height * 0.48;
+                const spineH = ((this.spine as any).height || 800) as number;
+                const appliedScaleY = (this.spine.scaleY ?? this.spine.scale ?? 1) as number;
+                const displayH = spineH * appliedScaleY;
+                barY = cy + displayH * 0.5 + Math.max(20, 24 * assetScale);
+            }
 
             // Store progress bar properties for animation updates
             this.progressBarX = barX;
@@ -323,15 +340,13 @@ export class StudioLoadingScreen {
         const elapsed = this.scene.time.now - this.shownAtMs;
         const wait = Math.max(0, minVisibleMs - elapsed);
         this.scene.time.delayedCall(wait, () => {
-			// Detach progress listener and hide progress bar before fade
-			try {
-				if (this.onProgressHandler) {
-					this.scene.load.off('progress', this.onProgressHandler as any);
-					this.onProgressHandler = undefined;
-				}
-				this.progressBarFill?.setVisible(false);
-				this.progressBarBg?.setVisible(false);
-			} catch {}
+            // Detach progress listener if it was registered
+            try {
+                if (this.onProgressHandler) {
+                    this.scene.load.off('progress', this.onProgressHandler as any);
+                    this.onProgressHandler = undefined;
+                }
+            } catch {}
 
             // Stop time update timer
             try {
@@ -341,24 +356,164 @@ export class StudioLoadingScreen {
                 }
             } catch {}
 
-            // Fade out the entire container (including background, loading frame, and all children)
-            // This ensures everything (including the loading frame) fades together smoothly
+            // Swap frame variant if available, matching the shuten_doji transition style.
+            try {
+                if (this.loadingFrame && this.scene.textures.exists('loading_frame_2')) {
+                    this.loadingFrame.setTexture('loading_frame_2');
+                }
+            } catch {}
+
+            const fadeTargets: Phaser.GameObjects.GameObject[] = [];
+            if (this.bg) fadeTargets.push(this.bg);
+            if (this.dotGrid) fadeTargets.push(this.dotGrid);
+
+            const bottomTextTargets: Phaser.GameObjects.GameObject[] = [];
+            if (this.text) bottomTextTargets.push(this.text);
+            if (this.text2) bottomTextTargets.push(this.text2);
+            if (this.loadingFrame) bottomTextTargets.push(this.loadingFrame);
+
+            if (bottomTextTargets.length > 0) {
+                this.scene.tweens.add({
+                    targets: bottomTextTargets,
+                    y: '+=50',
+                    duration: fadeMs,
+                    ease: 'Power2',
+                });
+            }
+
+            if (this.dijokerLogo) this.dijokerLogo.setVisible(false);
+            if (this.spine) this.spine.setVisible(false);
+            if (this.loadingCharacter && this.loadingCharacter !== this.spine) {
+                this.loadingCharacter.setVisible?.(false);
+            }
+            if (this.progressBarBg) this.progressBarBg.setVisible(false);
+            if (this.progressBarFill) this.progressBarFill.setVisible(false);
+
+            if (fadeTargets.length === 0) {
+                this.hide();
+                try { this.scene.events.emit('studio-fade-complete'); } catch {}
+                if (onComplete) onComplete();
+                return;
+            }
+
             this.scene.tweens.add({
-                targets: this.container,
+                targets: fadeTargets,
                 alpha: 0,
                 duration: fadeMs,
                 ease: 'Power2',
                 onComplete: () => {
-                    this.hide();
+                    try { this.bg?.destroy(); this.bg = undefined; } catch {}
+                    try { this.dotGrid?.destroy(); this.dotGrid = undefined; } catch {}
+                    try { this.spine?.destroy(); this.spine = undefined; } catch {}
+                    try { this.progressBarBg?.destroy(); this.progressBarBg = undefined; } catch {}
+                    try { this.progressBarFill?.destroy(); this.progressBarFill = undefined; } catch {}
+                    try { this.dijokerLogo?.destroy(); this.dijokerLogo = undefined; } catch {}
+                    try {
+                        if (this.loadingCharacter && this.loadingCharacter !== this.spine) {
+                            this.loadingCharacter.destroy?.();
+                        }
+                    } catch {}
+                    this.loadingCharacter = null;
                     try { this.scene.events.emit('studio-fade-complete'); } catch {}
                     if (onComplete) onComplete();
                 }
+            });
+
+            this.scene.tweens.add({
+                targets: bottomTextTargets,
+                alpha: 1,
+                duration: fadeMs,
+                ease: 'Power2',
             });
         });
     }
 
     public hide(): void {
+        this.removeSpineUpdateListener();
         this.container.destroy(true);
+    }
+
+    private createLoadingCharacter(): void {
+        const centerX = this.scene.scale.width * 0.35;
+        const centerY = this.scene.scale.height * 0.48;
+
+        const hasSpine = ensureSpineFactory(this.scene, '[StudioLoadingScreen] createLoadingCharacter');
+        if (hasSpine) {
+            try {
+                const spine = (this.scene.add as any).spine(centerX, centerY, 'di_joker', 'di_joker-atlas');
+                spine.setOrigin?.(0.5, 0.5);
+                // Match shuten_doji's displayed size.
+                spine.setScale(0.09);
+                this.container.add(spine);
+                this.spine = spine;
+                this.loadingCharacter = spine;
+                startAnimation(spine, {
+                    animationName: 'animation',
+                    loop: true,
+                    trackIndex: 0,
+                    logWhenMissing: false
+                });
+                this.removeSpineUpdateListener();
+                this.spineUpdateListener = (_time: number, delta: number) => {
+                    if (this.loadingCharacter?.updatePose) {
+                        try {
+                            this.loadingCharacter.updatePose(delta);
+                        } catch {}
+                    }
+                };
+                this.scene.events.on('update', this.spineUpdateListener);
+
+                if (this.scene.textures.exists('dijoker_logo')) {
+                    this.dijokerLogo = this.scene.add.image(
+                        centerX + this.scene.scale.width * 0.27,
+                        centerY,
+                        'dijoker_logo'
+                    );
+                    this.dijokerLogo.setScale(1);
+                    this.dijokerLogo.setOrigin(0.5, 0.5);
+                    this.container.add(this.dijokerLogo);
+                } else {
+                    console.warn('[StudioLoadingScreen] DiJoker logo texture not found');
+                }
+
+                console.log('[StudioLoadingScreen] DI JOKER spine displayed using shuten_doji layout');
+                return;
+            } catch (e) {
+                console.warn('[StudioLoadingScreen] Failed to create di_joker spine:', e);
+            }
+        }
+
+        if (this.scene.textures.exists('dijoker_loading')) {
+            const img = this.scene.add.image(centerX, centerY, 'dijoker_loading');
+            img.setOrigin(0.5, 0.5);
+            const scale = Math.min(
+                (this.scene.scale.width * 0.24) / Math.max(1, img.width),
+                (this.scene.scale.height * 0.4) / Math.max(1, img.height)
+            );
+            img.setScale(Math.max(0.1, scale));
+            this.container.add(img);
+            this.loadingCharacter = img;
+
+            if (this.scene.textures.exists('dijoker_logo')) {
+                this.dijokerLogo = this.scene.add.image(
+                    centerX + this.scene.scale.width * 0.27,
+                    centerY,
+                    'dijoker_logo'
+                );
+                this.dijokerLogo.setScale(1);
+                this.dijokerLogo.setOrigin(0.5, 0.5);
+                this.container.add(this.dijokerLogo);
+            }
+
+            console.log('[StudioLoadingScreen] dijoker_loading fallback image displayed using shuten_doji layout');
+        }
+    }
+
+    private removeSpineUpdateListener(): void {
+        if (this.spineUpdateListener) {
+            this.scene.events.off('update', this.spineUpdateListener);
+            this.spineUpdateListener = null;
+        }
     }
 
     private createDotGrid(): void {
