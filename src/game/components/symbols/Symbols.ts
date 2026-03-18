@@ -1336,8 +1336,6 @@ export class Symbols {
               animState.setAnimation(0, `${base}_Idle`, true);
             }
             delete (symbol as any).__pausedMultiplierWin;
-          } else if ((symbol as any).animationState.clearTracks) {
-            (symbol as any).animationState.clearTracks();
           }
         } catch { /* ignore */ }
       }
