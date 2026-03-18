@@ -10,7 +10,7 @@ import { JimboyCharacter } from './JimboyCharacter';
 import { HEADER_CONFIG, SHOW_HEADER_BORDER, SHOW_HEADER_CONFETTI_BORDER, SHOW_HEADER_SCENEFRAME_BORDER } from '../../config/GameConfig';
 import { ensureSpineFactory } from '../../utils/SpineGuard';
 import { startAnimation, stopAnimation } from '../../utils/SpineAnimationHelper';
-import { getTotalWinFromPaylines } from './Spin';
+import { getTotalWinFromPaylines, getTumbleTotal } from './Spin';
 import { GlowEffect } from './vfx/GlowEffect';
 
 
@@ -690,9 +690,9 @@ export class Header {
 				if (gameStateManager.isBonus) {
 					return;
 				}
-				const amount = Number((data as any)?.cumulativeWin ?? 0);
+				const amount = Number((data as any)?.tumbleWin ?? 0);
 				if (amount > 0) {
-					// Ensure label shows YOU WON while accumulating
+					// Base-game tumble pattern: show current tumble only.
 					if (this.youWonText) this.youWonText.setText('YOU WON');
 					this.showWinningsDisplay(amount);
 				}
@@ -707,7 +707,7 @@ export class Header {
 					this.hideWinningsDisplay();
 					return;
 				}
-				const amount = Number((data as any)?.totalWin ?? 0);
+				const amount = this.getBaseSpinAuthoritativeTotalWin();
 				if (amount > 0) {
 					if (this.youWonText) this.youWonText.setText('TOTAL WIN');
 					// Force an animation even if the numeric value hasn't changed from the
@@ -1086,6 +1086,27 @@ export class Header {
 		
 		console.log(`[Header] Calculated total winnings: ${totalWin} from ${paylines.length} paylines`);
 		return totalWin;
+	}
+
+	private getBaseSpinAuthoritativeTotalWin(): number {
+		try {
+			const symbolsComponent = (this.headerContainer.scene as any).symbols;
+			const spinData = symbolsComponent?.currentSpinData;
+			const slot: any = spinData?.slot ?? {};
+			const slotTotalWin = Number(slot?.totalWin ?? 0);
+			if (Number.isFinite(slotTotalWin) && slotTotalWin > 0) {
+				return slotTotalWin;
+			}
+			if (Array.isArray(slot?.tumbles) && slot.tumbles.length > 0) {
+				return slot.tumbles.reduce((sum: number, tumble: any) => {
+					return sum + Number(getTumbleTotal(tumble) || 0);
+				}, 0);
+			}
+			if (Array.isArray(slot?.paylines) && slot.paylines.length > 0) {
+				return this.calculateTotalWinningsFromPaylines(slot.paylines);
+			}
+		} catch {}
+		return 0;
 	}
 
 	/**
