@@ -131,6 +131,8 @@ export class SlotController {
 	private isFreeRoundAutoplay: boolean = false;
 	// Cached base-game autoplay spins used when a scatter-triggered bonus pauses autoplay.
 	private pausedAutoplaySpinsRemaining: number | null = null;
+	// Single retry timer used when paused autoplay resume is blocked by transient state.
+	private resumePausedAutoplayRetryTimer: Phaser.Time.TimerEvent | null = null;
 	// Flag to track if we need to re-enable spin button after first autoplay spin in normal mode
 	private shouldReenableSpinButtonAfterFirstAutoplay: boolean = false;
 	// Throttle API spin requests to prevent spam
@@ -2906,6 +2908,20 @@ export class SlotController {
 		return spins;
 	}
 
+	private scheduleResumeAutoplayFromPauseRetry(delayMs: number, reason: string, spins: number): void {
+		if (!this.scene?.time) {
+			return;
+		}
+		if (this.resumePausedAutoplayRetryTimer) {
+			return;
+		}
+		console.log('[SlotController] resumeAutoplayFromPause retry scheduled:', { reason, delayMs, spins });
+		this.resumePausedAutoplayRetryTimer = this.scene.time.delayedCall(delayMs, () => {
+			this.resumePausedAutoplayRetryTimer = null;
+			this.resumeAutoplayFromPause();
+		});
+	}
+
 	/**
 	 * Resume base-game autoplay using cached data from `pauseAutoplay()`.
 	 * Does not clear the cache unless resume actually starts (so blocked calls can retry).
@@ -2914,30 +2930,39 @@ export class SlotController {
 		const spins = this.pausedAutoplaySpinsRemaining ?? 0;
 		if (spins <= 0) {
 			this.pausedAutoplaySpinsRemaining = null;
+			if (this.resumePausedAutoplayRetryTimer) {
+				try { this.resumePausedAutoplayRetryTimer.destroy(); } catch {}
+				this.resumePausedAutoplayRetryTimer = null;
+			}
 			return;
 		}
 
 		if (gameStateManager.isBonus || gameStateManager.isScatter || gameStateManager.isShowingWinDialog) {
-			console.log('[SlotController] resumeAutoplayFromPause blocked (state not ready yet) — cache kept:', {
+			console.log('[SlotController] resumeAutoplayFromPause blocked (state not ready yet) - cache kept:', {
 				isBonus: gameStateManager.isBonus,
 				isScatter: gameStateManager.isScatter,
 				isShowingWinDialog: gameStateManager.isShowingWinDialog,
 				spins,
 			});
+			this.scheduleResumeAutoplayFromPauseRetry(450, 'waiting-for-bonus-scatter-dialog-state', spins);
 			return;
 		}
 
 		if (gameStateManager.isProcessingSpin || gameStateManager.isReelSpinning) {
 			console.log('[SlotController] resumeAutoplayFromPause scheduling retry (spin in flight):', { spins });
-			this.scene?.time?.delayedCall(450, () => this.resumeAutoplayFromPause());
+			this.scheduleResumeAutoplayFromPauseRetry(450, 'spin-in-flight', spins);
 			return;
+		}
+
+		if (this.resumePausedAutoplayRetryTimer) {
+			try { this.resumePausedAutoplayRetryTimer.destroy(); } catch {}
+			this.resumePausedAutoplayRetryTimer = null;
 		}
 
 		this.consumePausedAutoplaySpinsRemaining();
 		console.log('[SlotController] Resuming autoplay from paused cache:', { spins });
 		this.startAutoplay(spins);
 	}
-
 	/**
 	 * Start a dedicated "freeround autoplay" sequence.
 	 * This uses the same internal autoplay system, but is logged separately so we can
@@ -5022,8 +5047,4 @@ export class SlotController {
 		return dummySpinData;
 	}
 }
-
-
-
-
 

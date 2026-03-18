@@ -1108,34 +1108,6 @@ export class Game extends Scene {
 				this.bonusHeader.setVisible(true);
 				console.log('[Game] Bonus header shown');
 				console.log('[Game] Bonus header container visible:', this.bonusHeader.getContainer().visible);
-				// If we already have a cumulative total (e.g., buy feature trigger win), show it immediately.
-				// Fallback: if cumulative is still 0, seed once from header/spinData and show.
-				try {
-					const bonusHeaderAny: any = this.bonusHeader as any;
-					const currentTotal = typeof bonusHeaderAny.getCumulativeBonusWin === 'function'
-						? Number(bonusHeaderAny.getCumulativeBonusWin()) || 0
-						: 0;
-					if (currentTotal <= 0) {
-						const headerWin = this.header && typeof this.header.getCurrentWinnings === 'function'
-							? Number(this.header.getCurrentWinnings()) || 0
-							: 0;
-						const triggerWin = this.getTriggerSpinWinForBonusStart();
-						const spinData = this.gameAPI?.getCurrentSpinData?.() || (this.symbols as any)?.currentSpinData;
-						if (typeof bonusHeaderAny.seedFromFirstFreeSpinItem === 'function') {
-							bonusHeaderAny.seedFromFirstFreeSpinItem(spinData);
-							console.log('[Game] showBonusHeader fallback seed from first free spin item');
-						} else {
-							const seedWin = Math.max(0, Math.max(headerWin, triggerWin));
-							if (seedWin > 0 && typeof bonusHeaderAny.seedCumulativeWin === 'function') {
-								bonusHeaderAny.seedCumulativeWin(seedWin);
-								console.log(`[Game] showBonusHeader fallback seed: $${seedWin} (header=$${headerWin}, spinData=$${triggerWin})`);
-							}
-						}
-					}
-					if (typeof bonusHeaderAny.showCumulativeTotalIfReady === 'function') {
-						bonusHeaderAny.showCumulativeTotalIfReady();
-					}
-				} catch { }
 			} else {
 				console.error('[Game] BonusHeader is null!');
 			}

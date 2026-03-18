@@ -102,7 +102,7 @@ export class Animals implements ICharacterLike {
 			const x = animal.x ?? 0;
 			if (x < minAnyX) minAnyX = x;
 
-			if (x >= this.animalsLaneRightX - 12) {
+			if (x >= this.animalsLaneRightX - 60) {
 				animal.setVisible(false);
 			}
 
