@@ -1321,7 +1321,6 @@ export class GameAPI {
           responseData.bet = bet.toString();
         }
         if (isBuyFs) {
-          console.log("[DEMO_SPIN_DATA]", responseData);
         }
 
         this.currentSpinData = responseData as SpinData;
@@ -1575,10 +1574,6 @@ export class GameAPI {
             ? "?"
             : items[idx]?.spinsLeft;
         const isMaxWin = items[idx]?.isMaxWin === true;
-        console.log(
-          `[FREESPIN SPINSLEFT] spinsLeft=${spinsLeft} ` +
-            `accumulatedTotalWin=${runningTotal}, isMaxWin=${isMaxWin}`,
-        );
       } catch {}
     };
 

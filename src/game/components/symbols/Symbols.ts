@@ -329,13 +329,11 @@ export class Symbols {
 
     // Listen for START event
     gameEventManager.on(GameEventType.START, () => {
-      console.log('[Symbols] START event received, creating initial symbols...');
       this.createInitialSymbols();
     });
 
     // Listen for SPIN_DATA_RESPONSE
     gameEventManager.on(GameEventType.SPIN_DATA_RESPONSE, async (data: any) => {
-      console.log('[Symbols] SPIN_DATA_RESPONSE received');
       if (!data.spinData?.slot?.area) {
         console.error('[Symbols] Invalid SpinData received - missing slot.area');
         return;
@@ -355,7 +353,6 @@ export class Symbols {
 
     // Listen for reset
     this.scene.events.on('resetFreeSpinState', () => {
-      console.log('[Symbols] resetFreeSpinState received');
       this.freeSpinController.reset();
       this.dialogListenerSetup = false;
     });
@@ -491,10 +488,8 @@ export class Symbols {
 
   private setupSpinEventListener(): void {
     gameEventManager.on(GameEventType.SPIN, () => {
-      console.log('[Symbols] Spin event detected, ensuring clean state');
 
       if (gameStateManager.isShowingWinDialog && gameStateManager.isAutoPlaying) {
-        console.log('[Symbols] Autoplay SPIN blocked - win dialog showing');
         return;
       }
 
@@ -943,7 +938,6 @@ export class Symbols {
   }
 
   private handleWinDialogClosed(): void {
-    console.log('[Symbols] WIN_DIALOG_CLOSED');
     gameStateManager.isShowingWinDialog = false;
 
     if (gameStateManager.bonusEndedByMaxWin) {
@@ -967,7 +961,6 @@ export class Symbols {
     this.pendingScatterRetrigger = { scatterGrids };
     try {
       if (gameStateManager.isBonusFinished) {
-        console.log('[Symbols] Retrigger scheduled - clearing isBonusFinished flag');
       }
       gameStateManager.isBonusFinished = false;
     } catch { /* ignore */ }
@@ -1173,11 +1166,6 @@ export class Symbols {
     if (gameStateManager.isBuyFeatureSpin) {
       this.logGridForDebug('BUY_FEATURE_SCATTER_SOURCE_GRID', liveRowMajor);
       if (Array.isArray(scatterGrids) && scatterGrids.length > 0) {
-        console.log(
-          `[BUY_FEATURE_SCATTER_POSITIONS] ${scatterGrids
-            .map((p) => `(c${p.x},r${p.y})`)
-            .join(', ')}`
-        );
       }
     }
     const data = { symbols: columnMajorForScatter };
@@ -1204,7 +1192,6 @@ export class Symbols {
 
   private logGridForDebug(tag: string, rowMajorGrid: number[][]): void {
     if (!Array.isArray(rowMajorGrid) || rowMajorGrid.length === 0) {
-      console.log(`[${tag}] (empty grid)`);
       return;
     }
     const rows = rowMajorGrid.length;
@@ -1224,7 +1211,6 @@ export class Symbols {
       }
       lines.push(`${rowLabel}: ${values.join(' ')}`);
     }
-    console.log(`[${tag}]\n${lines.join('\n')}`);
   }
 
   public hideAllSymbols(): void {
@@ -1241,7 +1227,6 @@ export class Symbols {
   }
 
   public setTurboMode(isEnabled: boolean): void {
-    console.log(`[Symbols] Turbo mode ${isEnabled ? 'enabled' : 'disabled'}`);
   }
 
   public ensureSymbolsVisibleAfterAutoplayStop(): void {
@@ -1254,7 +1239,6 @@ export class Symbols {
   }
 
   public async processSpinData(spinData: any): Promise<void> {
-    console.log('[Symbols] Processing spin data');
 
     if (!spinData?.slot?.area) {
       console.error('[Symbols] Invalid SpinData');
@@ -1328,7 +1312,6 @@ export class Symbols {
     // Set the whole array at once
     this.symbols = symbolsArray;
 
-    console.log('[Symbols] Initial symbols created');
   }
 
   private ensureCleanSymbolState(): void {
@@ -1624,7 +1607,6 @@ export class Symbols {
       ...this.getScatterTransitionAnimationConfig(),
       shouldScale: false
     });
-    console.log('[Symbols] Retrigger animation completed');
   }
 
   private getScatterTriggerMultiplier(scatterCount: number): number {
@@ -1670,10 +1652,6 @@ export class Symbols {
         bonusHeader.seedCumulativeWin(totalForHeader);
       }
 
-      console.log(
-        `[Symbols] Seeded scatter trigger total for header/bonus: $${totalForHeader.toFixed(2)} ` +
-        `(scatterCount=${scatterCount}, scatter=${scatterBaseWin.toFixed(2)}, paylines=${paylineWin.toFixed(2)}, tumbles=${tumbleWin.toFixed(2)}, includeScatterPayout=${includeScatterPayout})`
-      );
     } catch (e) {
       console.warn('[Symbols] Failed to seed scatter trigger total for header/bonus', e);
     }
@@ -1687,7 +1665,6 @@ export class Symbols {
       const slot = this.currentSpinData?.slot;
       const totalWin = getTotalWinFromSlot(slot);
       if (totalWin > 0 && typeof (this.currentSpinData?.slot as any)?.totalWin === 'number') {
-        console.log(`[Symbols] Using spinData.slot.totalWin: ${totalWin}`);
       }
       return totalWin;
     } catch (e) {
@@ -1697,16 +1674,13 @@ export class Symbols {
   }
 
   private async showCongratsDialogAfterDelay(): Promise<void> {
-    console.log('[Symbols] Showing congrats dialog');
 
     if (this.hasPendingScatterRetrigger() || this.scatterRetriggerAnimationInProgress) {
-      console.log('[Symbols] Retrigger pending/in progress - skipping total win dialog');
       try { gameStateManager.isBonusFinished = false; } catch { }
       return;
     }
 
     if (gameStateManager.suppressTotalWinDialog) {
-      console.log('[Symbols] MaxWin shown - skipping TotalWin/Congrats dialog');
       gameStateManager.suppressTotalWinDialog = false;
       return;
     }
@@ -1722,12 +1696,10 @@ export class Symbols {
       const isTotalOrCongratsShowing =
         dialogShowing && (activeDialogType === 'TotalWin' || activeDialogType === 'Congrats');
       if (isTotalOrCongratsShowing) {
-        console.log('[Symbols] TotalWin/Congrats already showing - skipping duplicate total dialog show');
         return;
       }
       const winDialogShowing = dialogShowing && typeof dialogs.isWinDialog === 'function' && dialogs.isWinDialog();
       if (gameStateManager.isShowingWinDialog || winDialogShowing) {
-        console.log('[Symbols] Win dialog active - deferring total win dialog until it closes');
         await new Promise<void>((resolve) => {
           this.scene.events.once('dialogAnimationsComplete', () => resolve());
         });
@@ -1769,13 +1741,11 @@ export class Symbols {
       gameScene.dialogs.showTotalWin(this.scene, {
         winAmount: totalWin
       });
-      console.log(`[Symbols] Total win dialog shown: win=${totalWin}, spins=${freeSpinCount}`);
     } else if (gameScene.dialogs?.showCongrats) {
       gameScene.dialogs.showCongrats(this.scene, {
         winAmount: totalWin,
         freeSpins: freeSpinCount,
       });
-      console.log(`[Symbols] Congrats shown: win=${totalWin}, spins=${freeSpinCount}`);
     }
   }
 
@@ -1801,7 +1771,6 @@ export class Symbols {
         const isFake = !!((this.scene as any)?.slotController?.gameAPI?.isFakeDataEnabled?.());
         if (isFake && this.freeSpinItemIndex < items.length) {
           const item = items[this.freeSpinItemIndex];
-          console.log(`[Symbols] Fake data: using item index ${this.freeSpinItemIndex} (spinsLeft: ${item?.spinsLeft})`);
           this.freeSpinItemIndex++;
           return item;
         }
@@ -1844,7 +1813,6 @@ export class Symbols {
     // Start each spin with a fresh snapshot set for cluster verification at WIN_STOP.
     this.clearClusterWinGridSnapshots();
 
-    console.log('[Symbols] Processing SpinData symbols:', symbolsToUse);
 
     // Reset per-item win tracker
     try { this.hadWinsInCurrentItem = false; } catch { }
@@ -1855,12 +1823,10 @@ export class Symbols {
     }
 
     // Reset symbols and clear previous state before starting new spin
-    console.log('[Symbols] Resetting symbols and clearing previous state for new spin');
     this.ensureCleanSymbolState();
     this.resetSymbolsState();
 
     // Always clear win lines and overlay when a new spin starts
-    console.log('[Symbols] Clearing win lines and overlay for new spin');
     this.hideWinningOverlay();
 
     this.resetSymbolDepths();
@@ -1888,11 +1854,6 @@ export class Symbols {
       delayBetweenSpins: adjustedDelay,
     };
 
-    console.log('[Symbols] Setting animation timing:', {
-      baseDelay,
-      isTurbo: gameStateManager.isTurbo,
-      adjustedDelay
-    });
     setSpeed(this.scene.gameData, adjustedDelay);
 
     gameStateManager.isReelSpinning = true;
@@ -2630,7 +2591,6 @@ export class Symbols {
     try {
       const cols = snapshot.length;
       const rows = snapshot[0]?.length ?? 0;
-      console.log(`[Symbols] Captured cluster grid snapshot (${reason}): ${cols}x${rows}`);
     } catch { }
   }
 
@@ -2852,11 +2812,6 @@ export class Symbols {
       dropReelsDelay: Number(this.scene.gameData?.dropReelsDelay ?? 0),
     };
 
-    console.log('[Symbols] startPreSpinDrop: starting old-symbol drop before spin response', {
-      numRows,
-      isTurbo,
-      dropTimingSnapshot
-    });
 
     this.preSpinDropInProgress = true;
     this.preSpinDropRowPromises.clear();
@@ -2930,7 +2885,6 @@ export class Symbols {
     const startY = this.slotY - this.totalGridHeight * 0.5 + adjY;
 
     let symbols = data.symbols;
-    console.log('[Symbols] Creating new symbols (column-major):', symbols);
 
     // Update current symbol data for reset purposes using canonical row-major view (row 0 = top).
     try {
@@ -3010,7 +2964,6 @@ export class Symbols {
         const actualRow = (numRows - 1) - step;
         const startDelay = step === 0 ? preDelay : rowDelay;
         await this.delay(startDelay);
-        console.log(`[Symbols] Processing row ${actualRow}/${numRows - 1}`);
         if (shouldSkipOldDropPhase && !isTurbo) {
           const oldRowDone = this.preSpinDropRowPromises.get(actualRow);
           if (oldRowDone) {
@@ -3023,7 +2976,6 @@ export class Symbols {
         await this.dropNewSymbols(actualRow, false, isTurbo, dropTimingSnapshot);
       }
 
-      console.log('[Symbols] All reels completed');
       this.clearSkipReelDrops();
       this.reelDropInProgress = false;
     } else {
@@ -3241,7 +3193,6 @@ export class Symbols {
       this.scene.time.delayedCall(timeoutDuration, () => {
         if (completedAnimations < totalAnimations) {
           const remaining = totalAnimations - completedAnimations;
-          console.log(`[Symbols] Cleanup: ${remaining} symbol(s) at row ${rowIndex} didn't complete animation, force-destroying (${completedAnimations}/${totalAnimations})`);
 
           // Force destroy any symbols that didn't animate properly
           let forcedCount = 0;
@@ -3263,7 +3214,6 @@ export class Symbols {
           }
 
           if (forcedCount > 0) {
-            console.log(`[Symbols] Force-destroyed ${forcedCount} symbol(s) at row ${rowIndex}`);
           }
 
           resolve();
@@ -3309,8 +3259,6 @@ export class Symbols {
         ? (isTurbo ? 0.7 : 0.35)
         : 1;
 
-      console.log(`[Symbols] dropNewSymbols row ${index}: ${totalAnimations} columns, isTurbo=${isTurbo}, STAGGER_MS=${STAGGER_MS}`);
-
       for (let col = 0; col < this.newSymbols.length; col++) {
         let symbol = this.newSymbols[col][index];
         const targetY = this.getYPos(index);
@@ -3325,8 +3273,6 @@ export class Symbols {
         const delayMs = isTurbo
           ? 0
           : (isSkip ? STAGGER_MS * 0.3 * col : STAGGER_MS * col);
-        console.log(`[Symbols] Column ${col}: delay=${delayMs}ms, targetY=${targetY}`);
-
         const tweens: any[] = [
           {
             delay: delayMs,
@@ -3521,15 +3467,6 @@ export class Symbols {
     }
 
     const multiplier = contributingSum > 0 ? contributingSum : 1;
-    try {
-      console.log('[Symbols] Tumble multiplier', {
-        multiplier,
-        contributingSum,
-        winningSugarCells: winningSugarCells.length,
-        isBonus: gameStateManager.isBonus
-      });
-    } catch { }
-
     return multiplier;
   }
 
@@ -3555,11 +3492,6 @@ export class Symbols {
       for (const tumble of tumbles) {
         if (hasMaxWinCap && cumulativeWin >= maxWinCapTotal - CAP_EPSILON) {
           cumulativeWin = maxWinCapTotal;
-          console.log('[Symbols] MaxWin cap reached before next tumble, stopping tumble sequence', {
-            tumbleIndex,
-            cumulativeWin,
-            maxWinCapTotal
-          });
           break;
         }
 
@@ -3572,13 +3504,6 @@ export class Symbols {
           : rawTumbleWin;
 
         if (hasMaxWinCap && rawTumbleWin > effectiveTumbleWin + CAP_EPSILON) {
-          console.log('[Symbols] MaxWin tumble win clamped to cap remainder', {
-            tumbleIndex,
-            rawTumbleWin,
-            effectiveTumbleWin,
-            cumulativeWin,
-            maxWinCapTotal
-          });
         }
 
         // Keep tumbleIndex aligned with SpinData.tumbles array indexing (0-based).
@@ -3619,11 +3544,6 @@ export class Symbols {
         }
         if (hasMaxWinCap && cumulativeWin >= maxWinCapTotal - CAP_EPSILON) {
           cumulativeWin = maxWinCapTotal;
-          console.log('[Symbols] MaxWin cap reached after tumble, stopping remaining tumbles', {
-            tumbleIndex: currentTumbleIndex,
-            cumulativeWin,
-            maxWinCapTotal
-          });
           break;
         }
         tumbleIndex++;
@@ -3681,21 +3601,6 @@ export class Symbols {
 
     // Match manual drop timings and staggering for visual consistency
     const MANUAL_STAGGER_MS: number = self.scene?.gameData?.tumbleStaggerMs ?? 100;
-
-    try {
-      const totalOutRequested = getTotalCountFromOuts(outs);
-      const totalInProvided = Array.isArray(ins) ? ins.flat().length : 0;
-      console.log('[Symbols] Tumble payload:', {
-        outs,
-        insColumns: Array.isArray(ins)
-          ? ins.map((col, idx) => ({
-              col: idx,
-              count: Array.isArray(col) ? col.length : 0,
-            }))
-          : [],
-        totals: { totalOutRequested, totalInProvided },
-      });
-    } catch {}
 
     // -------------------------------------------------------------------------
     // 2) Build removal mask and derive valid cluster cells
@@ -3930,7 +3835,6 @@ export class Symbols {
     );
     // Debug: per-column removal vs incoming
     try {
-      console.log('[Symbols] Tumble per-column removal vs incoming:', removedPerCol.map((r, c) => ({ col: c, removed: r, incoming: insCountByCol[c] })));
     } catch { }
 
     // Debug: report which cells are marked for removal per symbol
@@ -3948,7 +3852,6 @@ export class Symbols {
           }
         }
       }
-      console.log('[Symbols] Tumble removal mask summary:', { totalRemoved, removedBySymbol });
     } catch { }
 
     const bonusTumbleMultiplier = this.computeAndAdvanceBonusTumbleMultiplier(removeMask);
@@ -4032,7 +3935,7 @@ export class Symbols {
           }
         }
       }
-      if (borderCount > 0) console.log('[Symbols] Drew', borderCount, 'win borders (SHOW_WIN_BORDER_SYMBOLS)');
+      if (borderCount > 0) ;
     }
 
     // Attach ONE win text per winning symbol value, prioritizing columns 2–5 (1–4 zero-based)
@@ -4177,7 +4080,6 @@ export class Symbols {
     function notifyFirstWinIfNeeded() {
       if (!firstWinNotified) {
         firstWinNotified = true;
-        console.log(`[Symbols] notifyFirstWinIfNeeded called for tumble index: ${tumbleIndex} (first win animation started)`);
         try {
           if (typeof onFirstWinComplete === 'function') {
             onFirstWinComplete(baseTumbleTotalForUi);
@@ -4347,7 +4249,6 @@ export class Symbols {
                       })?.entry;
                       const timeScale = (self.scene?.gameData as { symbolWinAnimTimeScale?: number })?.symbolWinAnimTimeScale ?? 1;
                       if (animEntry && typeof (animEntry as any).timeScale === 'number' && timeScale > 0) (animEntry as any).timeScale = timeScale;
-                      console.log(`[Symbols] Playing win animation "${winAnim}" for tumble index: ${tumbleIndex}`);
                       // Match bonus game: no scale-up during symbol win animation (disableScaling is true in bonus; same behavior for normal so win anim looks correct).
                       // Safety fallback only: destroy after animation would have finished (duration / timeScale + buffer). Primary is animation complete event.
                       const animDurationSec = (animEntry as any)?.animation?.duration;
@@ -4539,7 +4440,6 @@ export class Symbols {
           else break;
         }
         const spawnCount = Math.min(emptyCount, incoming.length);
-        console.log(`[Symbols] (overlap) Column ${col}: empty=${emptyCount}, incoming=${incoming.length}, spawning=${spawnCount}`);
         for (let j = 0; j < spawnCount; j++) {
           const targetRow = Math.max(0, emptyCount - 1 - j);
           const targetY = startY + targetRow * symbolTotalHeight + symbolTotalHeight * 0.5;
@@ -4693,7 +4593,6 @@ export class Symbols {
           else break;
         }
         const spawnCount = Math.min(emptyCount, incoming.length);
-        console.log(`[Symbols] Column ${col}: empty=${emptyCount}, incoming=${incoming.length}, spawning=${spawnCount}`);
         for (let j = 0; j < spawnCount; j++) {
           const targetRow = Math.max(0, emptyCount - 1 - j);
           const targetY = startY + targetRow * symbolTotalHeight + symbolTotalHeight * 0.5;
@@ -4794,7 +4693,6 @@ export class Symbols {
           totalSpawned
         });
       } else {
-        console.log('[Symbols] Tumble totals OK: removed == spawned', { totalSpawned });
       }
     } catch { }
 

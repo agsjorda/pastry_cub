@@ -45,11 +45,9 @@ export class BonusBackground {
 
 	preload(scene: Scene): void {
 		// Assets are loaded centrally through AssetConfig in Preloader
-		console.log(`[BonusBackground] Assets loaded centrally through AssetConfig`);
 	}
 
 	create(scene: Scene): void {
-		console.log("[BonusBackground] Creating bonus background elements");
 		
 		// Store scene reference
 		this.scene = scene;
@@ -60,7 +58,6 @@ export class BonusBackground {
 	this.bonusContainer.setDepth(-1);
 		const assetScale = this.networkManager.getAssetScale();
 		
-		console.log(`[BonusBackground] Creating bonus background with scale: ${assetScale}x`);
 
 		// Add bonus background elements
 		this.createBonusElements(scene, assetScale);
@@ -84,7 +81,6 @@ export class BonusBackground {
 	}
 
 	private createPortraitBonusBackground(scene: Scene, assetScale: number): void {
-		console.log("[BonusBackground] Creating portrait bonus background layout (same as normal)");
 
 		// Static bonus background (same as normal: BG-Default / NormalGame.webp)
 		if (scene.textures.exists('BG-Default')) {
@@ -106,11 +102,9 @@ export class BonusBackground {
 			'normal-bg-cover'
 		).setOrigin(0.5, 0).setDepth(850);
 		this.bonusBgCover.setVisible(false);
-		console.log('[BonusBackground] Created normal-bg-cover (same layout as normal), depth 850, initially hidden');
 	}
 
 	private createLandscapeBonusBackground(scene: Scene, assetScale: number): void {
-		console.log("[BonusBackground] Creating landscape bonus background layout (same as normal)");
 
 		// Static bonus background (same as normal: BG-Default / NormalGame.webp)
 		if (scene.textures.exists('BG-Default')) {
@@ -132,7 +126,6 @@ export class BonusBackground {
 			'normal-bg-cover'
 		).setOrigin(0.5, 0).setDepth(850);
 		this.bonusBgCover.setVisible(false);
-		console.log('[BonusBackground] Created normal-bg-cover (same layout as normal), depth 850, initially hidden');
 	}
 
 	private scaleImageToCover(image: Phaser.GameObjects.Image, targetWidth: number, targetHeight: number): void {
@@ -231,16 +224,13 @@ export class BonusBackground {
 		// Check if normal-bg-cover asset loaded successfully (same as normal game)
 		if (!scene.textures.exists('normal-bg-cover')) {
 			console.error('[BonusBackground] normal-bg-cover texture not found! Check AssetConfig and file path.');
-			console.log('[BonusBackground] Available textures:', scene.textures.getTextureKeys());
 		}
 		
 		// Listen for bonus mode events using scene.events (same as Background.ts)
 		scene.events.on('setBonusMode', (isBonus: boolean) => {
-			console.log(`[BonusBackground] Bonus mode changed to: ${isBonus}`);
 			
 			if (this.bonusBgCover) {
 				this.bonusBgCover.setVisible(isBonus);
-				console.log(`[BonusBackground] Bonus bg cover visibility: ${isBonus}`);
 			}
 			
 			// Conveyor visible in both normal and bonus game (same as normal Background)
@@ -256,7 +246,6 @@ export class BonusBackground {
 
 		// Listen for showBonusBackground to refresh layout (called after dialog closes)
 		scene.events.on('showBonusBackground', () => {
-			console.log('[BonusBackground] showBonusBackground event - refreshing layout');
 			this.layout(scene);
 			// Ensure conveyors are visible
 			for (const spine of this.conveyorSpines) {
@@ -269,7 +258,6 @@ export class BonusBackground {
 		
 		if (this.bonusBgCover) {
 			this.bonusBgCover.setVisible(isBonus);
-			console.log(`[BonusBackground] Initial bonus bg cover visibility: ${isBonus} (isBonus: ${isBonus})`);
 		}
 		
 		// Conveyor visible in both normal and bonus game (same as normal Background)
@@ -318,7 +306,6 @@ export class BonusBackground {
 			this.conveyorScene = scene;
 			this.setupConveyorSpinListeners(scene);
 			scene.time.delayedCall(50, () => this.layout(scene));
-			console.log('[BonusBackground] 7 conveyor columns created successfully');
 		} catch (error) {
 			console.error('[BonusBackground] Error creating BG_Conveyor_PC:', error);
 			this.conveyorSpines = [];

@@ -56,12 +56,10 @@ export class GameStateManager {
 
     // Listen for autoplay state changes
     gameEventManager.on(GameEventType.AUTO_START, () => {
-      console.log('[GameStateManager] AUTO_START received, setting isAutoPlaying to true');
       this._isAutoPlaying = true;
     });
 
     gameEventManager.on(GameEventType.AUTO_STOP, () => {
-      console.log('[GameStateManager] AUTO_STOP received, setting isAutoPlaying to false');
       this._isAutoPlaying = false;
     });
 
@@ -107,9 +105,7 @@ export class GameStateManager {
   }
 
   public set isBonus(value: boolean) {
-    console.log(`[GameStateManager] Setting isBonus to: ${value}`);
     this._isBonus = value;
-    console.log(`[GameStateManager] isBonus is now: ${this._isBonus}`);
   }
 
   public set isReelSpinning(value: boolean) {
@@ -154,9 +150,7 @@ export class GameStateManager {
 
   public set isBonusFinished(value: boolean) {
     if (this._isBonusFinished !== value) {
-      console.log(`[GameStateManager] isBonusFinished set to: ${value}`);
     } else {
-      console.log(`[GameStateManager] isBonusFinished re-set to same value: ${value}`);
     }
     this._isBonusFinished = value;
   }
@@ -182,7 +176,6 @@ export class GameStateManager {
   public startSpin(): void {
     // Check if we're in bonus mode - if so, let the free spin autoplay system handle it
     if (this.isBonus) {
-      console.log('[GameStateManager] In bonus mode - skipping old spin system, free spin autoplay will handle it');
       return;
     }
     

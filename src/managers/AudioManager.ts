@@ -64,14 +64,12 @@ export class AudioManager {
 
 	constructor(scene: Phaser.Scene) {
 		this.scene = scene;
-		console.log('[AudioManager] AudioManager initialized');
 	}
 
 	/**
 	 * Preload all background music and sound effect files
 	 */
 	preloadMusic(): void {
-		console.log('[AudioManager] Preloading audio files...');
 		
 		// Main background music
 		this.scene.load.audio('mainbg', 'assets/sounds/BG/mainbg_BB.ogg');
@@ -94,14 +92,12 @@ export class AudioManager {
 		this.scene.load.audio('box_close', 'assets/sounds/SFX/box_close.ogg');
 		this.scene.load.audio('whistle', 'assets/sounds/SFX/whistle_BB.ogg');
 		
-		console.log('[AudioManager] Audio files preloaded successfully');
 	}
 
 	/**
 	 * Create music and sound effect instances after loading
 	 */
 	createMusicInstances(): void {
-		console.log('[AudioManager] Creating audio instances...');
 		
 		try {
 			// Create main background music
@@ -110,7 +106,6 @@ export class AudioManager {
 				loop: true
 			});
 			this.musicInstances.set(MusicType.MAIN, mainMusic);
-			console.log('[AudioManager] Main background music instance created');
 
 			// Create bonus background music
 			const bonusMusic = this.scene.sound.add('bonusbg', {
@@ -118,7 +113,6 @@ export class AudioManager {
 				loop: true
 			});
 			this.musicInstances.set(MusicType.BONUS, bonusMusic);
-			console.log('[AudioManager] Bonus background music instance created');
 
 			// Create free spin background music
 			const freespinMusic = this.scene.sound.add('freespinbg', {
@@ -126,7 +120,6 @@ export class AudioManager {
 				loop: true
 			});
 			this.musicInstances.set(MusicType.FREE_SPIN, freespinMusic);
-			console.log('[AudioManager] Free spin background music instance created');
 
 			// Create sound effect instances
 			const spinSfx = this.scene.sound.add('spinb', {
@@ -134,13 +127,11 @@ export class AudioManager {
 				loop: false
 			});
 			this.sfxInstances.set(SoundEffectType.SPIN, spinSfx);
-			console.log('[AudioManager] Spin sound effect instance created');
 
 			// Menu click SFX
 			try {
 				const clickSfx = this.scene.sound.add('click', { volume: this.sfxVolume, loop: false });
 				this.sfxInstances.set(SoundEffectType.MENU_CLICK, clickSfx);
-				console.log('[AudioManager] Menu click SFX instance created');
 			} catch (e) {
 				console.warn('[AudioManager] Failed to create click SFX instance:', e);
 			}
@@ -148,7 +139,6 @@ export class AudioManager {
 			try {
 				const spinClickSfx = this.scene.sound.add('click', { volume: this.getSpinClickVolume(), loop: false });
 				this.sfxInstances.set(SoundEffectType.SPIN_CLICK, spinClickSfx);
-				console.log('[AudioManager] Spin click SFX instance created');
 			} catch (e) {
 				console.warn('[AudioManager] Failed to create spin click SFX instance:', e);
 			}
@@ -158,7 +148,6 @@ export class AudioManager {
 				loop: false
 			});
 			this.sfxInstances.set(SoundEffectType.REEL_DROP, reelDropSfx);
-			console.log('[AudioManager] Reel drop sound effect instance created');
 
 			try {
 				const scatterDrop1 = this.scene.sound.add('scatterdrop1', { volume: this.sfxVolume, loop: false });
@@ -183,7 +172,6 @@ export class AudioManager {
 					loop: true
 				});
 				this.sfxInstances.set(SoundEffectType.REEL_ROLL, reelRollSfx);
-				console.log('[AudioManager] Reel roll sound effect instance created');
 			} catch (e) {
 				console.warn('[AudioManager] Failed to create reelroll SFX instance:', e);
 			}
@@ -193,7 +181,6 @@ export class AudioManager {
 				loop: false
 			});
 			this.sfxInstances.set(SoundEffectType.TURBO_DROP, turboDropSfx);
-			console.log('[AudioManager] Turbo drop sound effect instance created');
 
 			// Create tumble symbol-win SFX instances (twin1..4_bz)
 			try {
@@ -220,13 +207,11 @@ export class AudioManager {
 					console.warn('[AudioManager] Failed to create man_spy_pc SFX instance:', e);
 				}
 			}
-			console.log('[AudioManager] Tumble symbol-win SFX instances created');
 
 			// Box close SFX (single global instance, played once when all regular symbol wins finish).
 			try {
 				const boxCloseSfx = this.scene.sound.add('box_close', { volume: this.sfxVolume, loop: false });
 				this.sfxInstances.set(SoundEffectType.BOX_CLOSE, boxCloseSfx);
-				console.log('[AudioManager] Box close SFX instance created');
 			} catch (e) {
 				console.warn('[AudioManager] Failed to create box_close SFX instance:', e);
 			}
@@ -235,7 +220,6 @@ export class AudioManager {
 			try {
 				const whistleSfx = this.scene.sound.add('whistle', { volume: this.sfxVolume, loop: false });
 				this.sfxInstances.set(SoundEffectType.WHISTLE_BB, whistleSfx);
-				console.log('[AudioManager] Whistle (radial light) SFX instance created');
 			} catch (e) {
 				console.warn('[AudioManager] Failed to create whistle SFX instance:', e);
 			}
@@ -244,7 +228,6 @@ export class AudioManager {
 			try {
 				const scatter = this.scene.sound.add('scatter', { volume: this.sfxVolume, loop: false });
 				this.sfxInstances.set(SoundEffectType.SCATTER, scatter);
-				console.log('[AudioManager] Scatter SFX instance created');
 			} catch (e) {
 				console.warn('[AudioManager] Failed to create scatter SFX instance:', e);
 			}
@@ -254,7 +237,6 @@ export class AudioManager {
 				try {
 					const scatterCollectSfx = this.scene.sound.add('scatter_collect', { volume: this.sfxVolume, loop: false });
 					this.sfxInstances.set(SoundEffectType.SCATTER_COLLECT, scatterCollectSfx);
-					console.log('[AudioManager] Scatter collect SFX instance created');
 				} catch (e) {
 					console.warn('[AudioManager] Failed to create scatter_collect SFX instance:', e);
 				}
@@ -265,7 +247,6 @@ export class AudioManager {
 				try {
 					const scatterBurnSfx = this.scene.sound.add('scatter_burn', { volume: this.sfxVolume, loop: false });
 					this.sfxInstances.set(SoundEffectType.SCATTER_BURN, scatterBurnSfx);
-					console.log('[AudioManager] Scatter burn SFX instance created');
 				} catch (e) {
 					console.warn('[AudioManager] Failed to create scatter_burn SFX instance:', e);
 				}
@@ -287,7 +268,6 @@ export class AudioManager {
 				try {
 					const maxWinSfx = this.scene.sound.add('maxw', { volume: this.sfxVolume, loop: false });
 					this.sfxInstances.set(SoundEffectType.MAX_WIN, maxWinSfx);
-					console.log('[AudioManager] MaxWin dialog SFX instance created');
 				} catch (e) {
 					console.warn('[AudioManager] Failed to create MaxWin SFX instance:', e);
 				}
@@ -297,19 +277,16 @@ export class AudioManager {
 				try {
 					const maxWinEndSfx = this.scene.sound.add('maxwend', { volume: this.sfxVolume, loop: false });
 					this.sfxInstances.set(SoundEffectType.MAX_WIN_END, maxWinEndSfx);
-					console.log('[AudioManager] MaxWin end SFX instance created');
 				} catch (e) {
 					console.warn('[AudioManager] Failed to create MaxWin end SFX instance:', e);
 				}
 			}
-			console.log('[AudioManager] Win dialog SFX instances created');
 
 			// Create dialog-specific SFX instances (only if loaded for this game)
 			if (this.scene.cache.audio.exists('congrats')) {
 				try {
 					const congratsDlg = this.scene.sound.add('congrats', { volume: this.sfxVolume, loop: false });
 					this.sfxInstances.set(SoundEffectType.DIALOG_CONGRATS, congratsDlg);
-					console.log('[AudioManager] Congrats dialog SFX instance created');
 				} catch (e) {
 					console.warn('[AudioManager] Failed to create congrats SFX instance:', e);
 				}
@@ -317,11 +294,9 @@ export class AudioManager {
 			try {
 				const retriggerDlg = this.scene.sound.add('retrigger', { volume: this.sfxVolume, loop: false });
 				this.sfxInstances.set(SoundEffectType.DIALOG_RETRIGGER, retriggerDlg);
-				console.log('[AudioManager] Retrigger dialog SFX instance created');
 			} catch (e) {
 				console.warn('[AudioManager] Failed to create retrigger SFX instance:', e);
 			}
-			console.log('[AudioManager] Total SFX instances:', this.sfxInstances.size);
 
 			// Create ambient audio instance
 			// this.ambientInstance = this.scene.sound.add('ambience_bz', {
@@ -330,7 +305,6 @@ export class AudioManager {
 			// });
 			// console.log('[AudioManager] Ambient audio instance created');
 
-			console.log('[AudioManager] All audio instances created successfully');
 
 			// Reel roll: play while reels/tumble are moving, stop when sequence is done
 			try {
@@ -377,7 +351,6 @@ export class AudioManager {
 	 */
 	playSymbolWinByTumble(tumbleIndex: number): void {
 		if (this.isMuted) {
-			console.log('[AudioManager] Audio is muted, skipping symbol-win SFX');
 			return;
 		}
 		const clamped = Math.max(1, Math.min(4, Math.floor(tumbleIndex || 1)));
@@ -385,7 +358,6 @@ export class AudioManager {
 		if (clamped === 2) pick = SoundEffectType.SYMBOL_WIN_2;
 		else if (clamped === 3) pick = SoundEffectType.SYMBOL_WIN_3;
 		else if (clamped >= 4) pick = SoundEffectType.SYMBOL_WIN_4;
-		console.log(`[AudioManager] playSymbolWinByTumble: tumbleIndex=${tumbleIndex}, clamped=${clamped}, playing=${pick}`);
 		this.playSoundEffect(pick);
 	}
 
@@ -481,7 +453,6 @@ export class AudioManager {
 	 */
 	playBackgroundMusic(musicType: MusicType): void {
 		if (this.isMuted) {
-			console.log('[AudioManager] Audio is muted, skipping music playback');
 			return;
 		}
 
@@ -493,7 +464,6 @@ export class AudioManager {
 			try {
 				music.play();
 				this.currentMusic = musicType;
-				console.log(`[AudioManager] Playing ${musicType} background music`);
 				this.startAmbientAudio();
 			} catch (error) {
 				console.error(`[AudioManager] Error playing ${musicType} music:`, error);
@@ -518,7 +488,6 @@ export class AudioManager {
 			const music = this.musicInstances.get(this.currentMusic);
 			if (music && music.isPlaying) {
 				music.stop();
-				console.log(`[AudioManager] Stopped ${this.currentMusic} background music`);
 			}
 			this.currentMusic = null;
 		}
@@ -528,11 +497,9 @@ export class AudioManager {
 	 * Stop all background music
 	 */
 	stopAllMusic(): void {
-		console.log('[AudioManager] Stopping all background music');
 		this.musicInstances.forEach((music, type) => {
 			if (music.isPlaying) {
 				music.stop();
-				console.log(`[AudioManager] Stopped ${type} music`);
 			}
 		});
 		this.currentMusic = null;
@@ -555,7 +522,6 @@ export class AudioManager {
 			spinClick.setVolume(this.getSpinClickVolume());
 		}
 		
-		console.log(`[AudioManager] Music volume set to: ${this.musicVolume}`);
 	}
 
 	/**
@@ -587,7 +553,6 @@ export class AudioManager {
 			if (this.ambientInstance && 'setVolume' in this.ambientInstance && typeof (this.ambientInstance as any).setVolume === 'function') {
 				(this.ambientInstance as any).setVolume(targetAmbient);
 			}
-			console.log(`[AudioManager] Background ducked instantly to factor ${factor} (music=${targetMusic}, ambient=${targetAmbient})`);
 			return;
 		}
 		// Fade
@@ -613,7 +578,6 @@ export class AudioManager {
 			if (step >= steps) {
 				clearInterval(this.duckFadeTimer);
 				this.duckFadeTimer = null;
-				console.log(`[AudioManager] Background ducked to factor ${factor} (music=${targetMusic}, ambient=${targetAmbient})`);
 			}
 		}, interval);
 	}
@@ -655,7 +619,6 @@ export class AudioManager {
 			this.isDucked = false;
 			this.savedMusicVolume = null;
 			this.savedAmbientVolume = null;
-			console.log('[AudioManager] Background volume restored instantly');
 			return;
 		}
 		if (this.restoreFadeTimer) {
@@ -683,7 +646,6 @@ export class AudioManager {
 				this.isDucked = false;
 				this.savedMusicVolume = null;
 				this.savedAmbientVolume = null;
-				console.log('[AudioManager] Background volume restored');
 			}
 		}, interval);
 	}
@@ -703,9 +665,7 @@ export class AudioManager {
 		
 		if (this.isMuted) {
 			this.stopAllMusic();
-			console.log('[AudioManager] Audio muted');
 		} else {
-			console.log('[AudioManager] Audio unmuted');
 			// Resume music based on current game state
 			this.resumeMusicBasedOnGameState();
 		}
@@ -719,9 +679,7 @@ export class AudioManager {
 		
 		if (this.isMuted) {
 			this.stopAllMusic();
-			console.log('[AudioManager] Audio muted');
 		} else {
-			console.log('[AudioManager] Audio unmuted');
 			this.resumeMusicBasedOnGameState();
 		}
 	}
@@ -748,7 +706,6 @@ export class AudioManager {
 		} else {
 			// If we're in bonus mode but music isn't playing, don't auto-start bonus music
 			// It should only start when the background actually changes
-			console.log('[AudioManager] In bonus mode - bonus music will start when background changes');
 		}
 	}
 
@@ -760,7 +717,6 @@ export class AudioManager {
 
 		if (!this.ambientInstance.isPlaying) {
 			this.ambientInstance.play();
-			console.log('[AudioManager] Ambient audio started');
 		}
 	}
 
@@ -770,7 +726,6 @@ export class AudioManager {
 	stopAmbientAudio(): void {
 		if (this.ambientInstance && this.ambientInstance.isPlaying) {
 			this.ambientInstance.stop();
-			console.log('[AudioManager] Ambient audio stopped');
 		}
 	}
 
@@ -784,7 +739,6 @@ export class AudioManager {
 			this.ambientInstance.setVolume(this.ambientVolume);
 		}
 		
-		console.log(`[AudioManager] Ambient volume set to: ${this.ambientVolume}`);
 	}
 
 	/**
@@ -815,7 +769,6 @@ export class AudioManager {
 		if (this.isMuted) return;
 		
 		this.playBackgroundMusic(MusicType.FREE_SPIN);
-		console.log('[AudioManager] Switched to free spin background music');
 	}
 
 	/**
@@ -968,7 +921,6 @@ export class AudioManager {
 			}
 		});
 		
-		console.log(`[AudioManager] Sound effect volume set to: ${this.sfxVolume}`);
 	}
 
 	private getSpinClickVolume(): number {
@@ -987,12 +939,10 @@ export class AudioManager {
 	 * Clean up resources
 	 */
 	destroy(): void {
-		console.log('[AudioManager] Destroying AudioManager...');
 		this.stopAllMusic();
 		this.musicInstances.clear();
 		this.sfxInstances.clear();
 		this.ambientInstance = null;
-		console.log('[AudioManager] AudioManager destroyed');
 	}
 
 	/**
