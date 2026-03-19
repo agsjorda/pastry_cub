@@ -1862,10 +1862,11 @@ export class Symbols {
     this.createNewSymbols(mockData);
     await this.dropReels(mockData);
 
-    // Update symbols after animation
-    this.disposeSymbols(this.symbols);
-    this.symbols = this.newSymbols;
-    this.newSymbols = [];
+        // Promote the spin-data symbols to the live grid before disposing old references.
+        const previousSymbols = this.symbols;
+        this.symbols = this.newSymbols;
+        this.newSymbols = [];
+        this.disposeSymbols(previousSymbols);
 
     // Refresh marker overlay positions after symbols drop (markers persist through tumbles)
     this.symbolMarker.refreshOverlays();
@@ -2633,7 +2634,7 @@ export class Symbols {
         try { this.scene.tweens.killTweensOf(symbol); } catch { }
         try { if (overlayObj) this.scene.tweens.killTweensOf(overlayObj); } catch { }
         try { this.destroySymbolOverlays(symbol); } catch { }
-        try { if (!symbol.destroyed) symbol.destroy(); } catch { }
+        try { this.factory.releaseSymbol(symbol); } catch { }
         try { if (overlayObj && !overlayObj.destroyed) overlayObj.destroy(); } catch { }
         column[row] = null as any;
       }
@@ -2817,22 +2818,34 @@ export class Symbols {
     this.preSpinDropRowPromises.clear();
     const runPromise = (async () => {
       const rowPromises: Promise<void>[] = [];
-      for (let step = 0; step < numRows; step++) {
-        const actualRow = (numRows - 1) - step;
-        const bonusPreDropDelay = gameStateManager.isBonus
-          ? (dropTimingSnapshot.winUpDuration * 2)
-          : 0.3;
-        const rowDelayFactor = isTurbo ? 0 : 1;
-        const startDelay = bonusPreDropDelay +
-          (dropTimingSnapshot.dropReelsDelay * step * rowDelayFactor);
+      const bonusPreDropDelay = gameStateManager.isBonus
+        ? (dropTimingSnapshot.winUpDuration * 2)
+        : 0.3;
 
-        const rowPromise = (async () => {
-          await this.delayOrSkip(startDelay);
-          await this.dropOldSymbols(actualRow, isTurbo, dropTimingSnapshot);
-        })();
-        this.preSpinDropRowPromises.set(actualRow, rowPromise);
-        rowPromises.push(rowPromise);
+      if (isTurbo) {
+        const sharedStartGate = this.delayOrSkip(bonusPreDropDelay);
+        for (let step = 0; step < numRows; step++) {
+          const actualRow = (numRows - 1) - step;
+          const rowPromise = sharedStartGate.then(() =>
+            this.dropOldSymbols(actualRow, isTurbo, dropTimingSnapshot)
+          );
+          this.preSpinDropRowPromises.set(actualRow, rowPromise);
+          rowPromises.push(rowPromise);
+        }
+      } else {
+        for (let step = 0; step < numRows; step++) {
+          const actualRow = (numRows - 1) - step;
+          const startDelay = bonusPreDropDelay + (dropTimingSnapshot.dropReelsDelay * step);
+
+          const rowPromise = (async () => {
+            await this.delayOrSkip(startDelay);
+            await this.dropOldSymbols(actualRow, isTurbo, dropTimingSnapshot);
+          })();
+          this.preSpinDropRowPromises.set(actualRow, rowPromise);
+          rowPromises.push(rowPromise);
+        }
       }
+
       await Promise.all(rowPromises);
     })();
 
@@ -2922,9 +2935,11 @@ export class Symbols {
     this.reelDropInProgress = true;
     this.initializeSpinDropSoundsByColumn();
 
-    const numRows = (this.symbols && this.symbols[0] && this.symbols[0].length)
-      ? this.symbols[0].length
-      : SLOT_ROWS;
+    const numRows = (this.newSymbols && this.newSymbols[0] && this.newSymbols[0].length)
+      ? this.newSymbols[0].length
+      : ((this.symbols && this.symbols[0] && this.symbols[0].length)
+        ? this.symbols[0].length
+        : SLOT_ROWS);
     const isTurbo = !!this.scene.gameData?.isTurbo;
     const dropTimingSnapshot: ReelDropTimingSnapshot = {
       winUpDuration: Number(this.scene.gameData?.winUpDuration ?? 0),
@@ -2946,7 +2961,8 @@ export class Symbols {
       });
     }
     const shouldSkipOldDropPhase = !!pendingPreSpinDrop;
-    if (shouldSkipOldDropPhase) {
+    const allowPreSpinOverlap = shouldSkipOldDropPhase && isTurbo && !gameStateManager.isAutoPlaying;
+    if (allowPreSpinOverlap) {
       // Keep old symbols visually above while both old/new drops overlap.
       this.sendNewSymbolsBehindExisting();
     }
@@ -2964,7 +2980,7 @@ export class Symbols {
         const actualRow = (numRows - 1) - step;
         const startDelay = step === 0 ? preDelay : rowDelay;
         await this.delay(startDelay);
-        if (shouldSkipOldDropPhase && !isTurbo) {
+        if (shouldSkipOldDropPhase && !allowPreSpinOverlap) {
           const oldRowDone = this.preSpinDropRowPromises.get(actualRow);
           if (oldRowDone) {
             try { await oldRowDone; } catch {}
@@ -2978,26 +2994,18 @@ export class Symbols {
 
       this.clearSkipReelDrops();
       this.reelDropInProgress = false;
-    } else {
+    } else if (isTurbo) {
       const reelPromises: Promise<void>[] = [];
+      const bonusPreDropDelay = gameStateManager.isBonus
+        ? (dropTimingSnapshot.winUpDuration * 2)
+        : 0.5;
+      const sharedStartGate = this.delayOrSkip(bonusPreDropDelay);
 
       for (let step = 0; step < numRows; step++) {
         const actualRow = (numRows - 1) - step;
-        const isLastReel = actualRow === 0;
-
-        // In bonus mode, add small pre-drop delay
-        const bonusPreDropDelay = gameStateManager.isBonus
-          ? (dropTimingSnapshot.winUpDuration * 2)
-          : 0.5;
-
-        // In turbo mode, remove row stagger so all drop together
-        const rowDelayFactor = isTurbo ? 0 : 1;
-        const startDelay = bonusPreDropDelay +
-          (dropTimingSnapshot.dropReelsDelay * step * rowDelayFactor);
-
         const p = (async () => {
-          await this.delayOrSkip(startDelay);
-          if (shouldSkipOldDropPhase && !isTurbo) {
+          await sharedStartGate;
+          if (shouldSkipOldDropPhase && !allowPreSpinOverlap) {
             const oldRowDone = this.preSpinDropRowPromises.get(actualRow);
             if (oldRowDone) {
               try { await oldRowDone; } catch {}
@@ -3008,6 +3016,39 @@ export class Symbols {
           }
 
           // Then drop new symbols
+          await this.dropNewSymbols(actualRow, false, isTurbo, dropTimingSnapshot);
+        })();
+        reelPromises.push(p);
+      }
+
+      try {
+        await Promise.all(reelPromises);
+        this.clearSkipReelDrops();
+      } finally {
+        this.reelDropInProgress = false;
+      }
+    } else {
+      const reelPromises: Promise<void>[] = [];
+
+      for (let step = 0; step < numRows; step++) {
+        const actualRow = (numRows - 1) - step;
+        const bonusPreDropDelay = gameStateManager.isBonus
+          ? (dropTimingSnapshot.winUpDuration * 2)
+          : 0.5;
+        const startDelay = bonusPreDropDelay + (dropTimingSnapshot.dropReelsDelay * step);
+
+        const p = (async () => {
+          await this.delayOrSkip(startDelay);
+          if (shouldSkipOldDropPhase && !allowPreSpinOverlap) {
+            const oldRowDone = this.preSpinDropRowPromises.get(actualRow);
+            if (oldRowDone) {
+              try { await oldRowDone; } catch {}
+            }
+          }
+          if (!shouldSkipOldDropPhase) {
+            await this.dropOldSymbols(actualRow, isTurbo, dropTimingSnapshot);
+          }
+
           await this.dropNewSymbols(actualRow, false, isTurbo, dropTimingSnapshot);
         })();
         reelPromises.push(p);
@@ -3076,8 +3117,9 @@ export class Symbols {
               try { this.scene.tweens.killTweensOf(baseObj); } catch {}
               try { if (overlayObj) this.scene.tweens.killTweensOf(overlayObj); } catch {}
               // Destroy immediately
-              try { if (!baseObj.destroyed) baseObj.destroy(); } catch {}
+              try { this.factory.releaseSymbol(baseObj); } catch {}
               try { if (overlayObj && !overlayObj.destroyed) overlayObj.destroy(); } catch {}
+              try { this.symbols[col][rowIndex] = null as any; } catch {}
             } catch (e) {
               // Silently ignore errors during fast cleanup
             }
@@ -3092,6 +3134,107 @@ export class Symbols {
       const gridBottomY = this.slotY + this.totalGridHeight * 0.5;
       const distanceToScreenBottom = Math.max(0, this.scene.scale.height - gridBottomY);
       const extraDistance = this.displayHeight * 3;
+
+      if (isTurbo) {
+        const tweenTargets: any[] = [];
+        const symbolsToDestroy: Array<{ baseObj: any; overlayObj: any; col: number }> = [];
+
+        for (let col = 0; col < this.symbols.length; col++) {
+          const symbol = this.symbols[col]?.[rowIndex];
+          if (!symbol || (symbol as any).destroyed) {
+            continue;
+          }
+
+          const baseObj: any = symbol as any;
+          const overlayObj: any = baseObj?.__overlayImage;
+
+          if (typeof baseObj.y !== 'number' || !isFinite(baseObj.y)) {
+            console.warn(`[Symbols] Symbol at row ${rowIndex}, col ${col} has invalid position (y=${baseObj.y}), destroying immediately`);
+            try {
+              this.scene.tweens.killTweensOf(baseObj);
+              if (overlayObj) this.scene.tweens.killTweensOf(overlayObj);
+              this.factory.releaseSymbol(baseObj);
+              if (overlayObj && !overlayObj.destroyed) overlayObj.destroy();
+              try { this.symbols[col][rowIndex] = null as any; } catch {}
+            } catch {}
+            continue;
+          }
+
+          try {
+            this.scene.tweens.killTweensOf(baseObj);
+            if (overlayObj) {
+              this.scene.tweens.killTweensOf(overlayObj);
+            }
+          } catch (e) {
+            console.warn(`[Symbols] Failed to kill tweens for symbol at row ${rowIndex}, col ${col}:`, e);
+          }
+
+          tweenTargets.push(baseObj);
+          if (overlayObj && !overlayObj.destroyed) {
+            tweenTargets.push(overlayObj);
+          }
+          symbolsToDestroy.push({ baseObj, overlayObj, col });
+        }
+
+        if (symbolsToDestroy.length === 0) {
+          resolve();
+          return;
+        }
+
+        let isResolved = false;
+        const finalizeTurboDrop = () => {
+          if (isResolved) return;
+          isResolved = true;
+          for (const { baseObj, overlayObj, col } of symbolsToDestroy) {
+            try {
+              this.factory.releaseSymbol(baseObj);
+              if (overlayObj && !overlayObj.destroyed) overlayObj.destroy();
+              try { this.symbols[col][rowIndex] = null as any; } catch {}
+            } catch {}
+          }
+          resolve();
+        };
+
+        const maxAnimDuration = (winUpDuration * speed) + (dropDuration * 0.9 * speed);
+        const timeoutDuration = maxAnimDuration + (dropDuration * 0.5);
+
+        try {
+          this.scene.tweens.chain({
+            targets: tweenTargets,
+            tweens: [
+              {
+                delay: 0,
+                y: `-= ${symbolHop}`,
+                duration: Math.max(1, winUpDuration * speed),
+                ease: Phaser.Math.Easing.Circular.Out,
+              },
+              {
+                y: `+= ${distanceToScreenBottom + extraDistance}`,
+                duration: Math.max(1, dropDuration * 0.9 * speed),
+                ease: Phaser.Math.Easing.Cubic.Out,
+                onComplete: finalizeTurboDrop,
+              },
+            ],
+          });
+        } catch (e) {
+          console.warn(`[Symbols] Failed to create turbo row tween chain for row ${rowIndex}:`, e);
+          finalizeTurboDrop();
+          return;
+        }
+
+        this.scene.time.delayedCall(timeoutDuration, () => {
+          if (isResolved) return;
+          for (const { baseObj, overlayObj, col } of symbolsToDestroy) {
+            try {
+              this.scene.tweens.killTweensOf(baseObj);
+              if (overlayObj) this.scene.tweens.killTweensOf(overlayObj);
+              try { this.symbols[col][rowIndex] = null as any; } catch {}
+            } catch {}
+          }
+          finalizeTurboDrop();
+        });
+        return;
+      }
 
       for (let col = 0; col < this.symbols.length; col++) {
         const symbol = this.symbols[col]?.[rowIndex];
@@ -3112,8 +3255,9 @@ export class Symbols {
           try {
             this.scene.tweens.killTweensOf(baseObj);
             if (overlayObj) this.scene.tweens.killTweensOf(overlayObj);
-            if (!baseObj.destroyed) baseObj.destroy();
+            this.factory.releaseSymbol(baseObj);
             if (overlayObj && !overlayObj.destroyed) overlayObj.destroy();
+            try { this.symbols[col][rowIndex] = null as any; } catch {}
           } catch { }
           completedAnimations++;
           if (completedAnimations === totalAnimations) {
@@ -3153,8 +3297,9 @@ export class Symbols {
             onComplete: () => {
               // Destroy the symbol after it drops off screen
               try {
-                if (!baseObj.destroyed) baseObj.destroy();
+                this.factory.releaseSymbol(baseObj);
                 if (overlayObj && !overlayObj.destroyed) overlayObj.destroy();
+                try { this.symbols[col][rowIndex] = null as any; } catch {}
               } catch { }
 
               completedAnimations++;
@@ -3175,8 +3320,9 @@ export class Symbols {
           console.warn(`[Symbols] Failed to create tween chain for symbol at row ${rowIndex}, col ${col}:`, e);
           // If tween creation fails, count it as completed and clean up
           try {
-            if (!baseObj.destroyed) baseObj.destroy();
+            this.factory.releaseSymbol(baseObj);
             if (overlayObj && !overlayObj.destroyed) overlayObj.destroy();
+            try { this.symbols[col][rowIndex] = null as any; } catch {}
           } catch { }
           completedAnimations++;
           if (completedAnimations === totalAnimations) {
@@ -3204,8 +3350,9 @@ export class Symbols {
                 const overlayObj: any = baseObj?.__overlayImage;
                 this.scene.tweens.killTweensOf(baseObj);
                 if (overlayObj) this.scene.tweens.killTweensOf(overlayObj);
-                if (!baseObj.destroyed) baseObj.destroy();
+                this.factory.releaseSymbol(baseObj);
                 if (overlayObj && !overlayObj.destroyed) overlayObj.destroy();
+                try { this.symbols[col][rowIndex] = null as any; } catch {}
                 forcedCount++;
               } catch (e) {
                 console.warn(`[Symbols] Failed to force-destroy symbol at row ${rowIndex}, col ${col}:`, e);
@@ -3234,13 +3381,12 @@ export class Symbols {
         return;
       }
 
-      if (!this.symbols || !this.symbols[0] || !this.symbols[0][0]) {
-        console.warn('[Symbols] dropNewSymbols: invalid symbols array');
+      if (index < 0 || !this.newSymbols.some((column) => !!column?.[index])) {
+        console.warn(`[Symbols] dropNewSymbols: invalid row index ${index}`);
         resolve();
         return;
       }
 
-      const height = this.symbols[0][0].displayHeight + this.verticalSpacing;
       const extraMs = extendDuration ? 3000 : 0;
 
       let completedAnimations = 0;
@@ -3258,10 +3404,56 @@ export class Symbols {
       const speed = isSkip
         ? (isTurbo ? 0.7 : 0.35)
         : 1;
+      const targetY = this.getYPos(index);
+
+      if (isTurbo) {
+        const tweenTargets: any[] = [];
+
+        for (let col = 0; col < this.newSymbols.length; col++) {
+          const symbol = this.newSymbols[col]?.[index];
+          if (!symbol || (symbol as any).destroyed) {
+            continue;
+          }
+
+          try { this.playDropAnimationIfAvailable(symbol); } catch {}
+
+          const baseObj: any = symbol as any;
+          const overlayObj: any = (baseObj as any)?.__overlayImage;
+          tweenTargets.push(baseObj);
+          if (overlayObj && !overlayObj.destroyed) {
+            tweenTargets.push(overlayObj);
+          }
+        }
+
+        if (tweenTargets.length === 0) {
+          resolve();
+          return;
+        }
+
+        this.scene.tweens.chain({
+          targets: tweenTargets,
+          tweens: [
+            {
+              delay: 0,
+              y: `-= ${symbolHop}`,
+              duration: Math.max(1, winUpDuration * speed),
+              ease: Phaser.Math.Easing.Circular.Out,
+            },
+            {
+              y: targetY,
+              duration: Math.max(1, ((dropDuration * 0.9) + extraMs) * speed),
+              ease: Phaser.Math.Easing.Cubic.Out,
+              onComplete: () => {
+                resolve();
+              }
+            },
+          ],
+        });
+        return;
+      }
 
       for (let col = 0; col < this.newSymbols.length; col++) {
         let symbol = this.newSymbols[col][index];
-        const targetY = this.getYPos(index);
 
         // Trigger drop animation if available
         try { this.playDropAnimationIfAvailable(symbol); } catch { }
@@ -3284,6 +3476,11 @@ export class Symbols {
             y: targetY,
             duration: Math.max(1, ((dropDuration * 0.9) + extraMs) * speed),
             ease: isTurbo ? Phaser.Math.Easing.Cubic.Out : Phaser.Math.Easing.Linear,
+            onComplete: () => {
+              if (!isTurbo && (window as any).audioManager) {
+                this.playSpinReelDropSoundForColumn(col);
+              }
+            }
           },
         ];
 
@@ -3299,10 +3496,6 @@ export class Symbols {
               duration: Math.max(1, dropDuration * 0.05 * speed),
               ease: Phaser.Math.Easing.Linear,
               onComplete: () => {
-                if (!isTurbo && (window as any).audioManager) {
-                  this.playSpinReelDropSoundForColumn(col);
-                }
-
                 completedAnimations++;
                 if (completedAnimations === totalAnimations) {
                   resolve();
@@ -3420,9 +3613,7 @@ export class Symbols {
 
         try {
           this.scene.tweens.killTweensOf(symbol);
-          if (!symbol.destroyed && symbol.destroy) {
-            symbol.destroy();
-          }
+          this.factory.releaseSymbol(symbol);
         } catch (e) {
           console.warn('[Symbols] Error disposing symbol:', e);
         }
@@ -4854,7 +5045,7 @@ export class Symbols {
    */
   private clearSymbolCell(obj: any, col: number, row: number): void {
     try { this.destroySymbolOverlays(obj); } catch { }
-    try { if (obj && typeof obj.destroy === 'function' && !obj.destroyed) obj.destroy(); } catch { }
+    try { this.factory.releaseSymbol(obj); } catch { }
     try {
       if (this.symbols[col]) this.symbols[col][row] = null as any;
       if (this.currentSymbolData && this.currentSymbolData[row]) (this.currentSymbolData[row] as any)[col] = null;
