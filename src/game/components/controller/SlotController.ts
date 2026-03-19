@@ -2666,6 +2666,16 @@ export class SlotController {
 
 		// Listen for win dialog close (for high winnings case)
 		gameEventManager.on(GameEventType.WIN_DIALOG_CLOSED, () => {
+			const pausedAutoplaySpins = this.getPausedAutoplaySpinsRemaining();
+			if (
+				pausedAutoplaySpins > 0 &&
+				!gameStateManager.isAutoPlaying &&
+				!gameStateManager.isScatter &&
+				!gameStateManager.isBonus
+			) {
+				this.resumeAutoplayFromPause();
+				return;
+			}
 
 			// Autoplay continuation is handled by AutoplayController when autoplay is active.
 			if (gameStateManager.isAutoPlaying || this.getAutoplaySpinsRemaining() > 0) {

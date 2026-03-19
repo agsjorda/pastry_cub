@@ -973,18 +973,9 @@ export class Game extends Scene {
 					});
 				} catch {}
 
-				// Resume paused base-game autoplay (scatter path). Retry once after transition.
-				try {
-					const slotControllerAny: any = this.slotController as any;
-					if (slotControllerAny && typeof slotControllerAny.resumeAutoplayFromPause === 'function') {
-						slotControllerAny.resumeAutoplayFromPause();
-						this.time.delayedCall(600, () => {
-							try {
-								slotControllerAny.resumeAutoplayFromPause?.();
-							} catch {}
-						});
-					}
-				} catch { }
+				// Paused base-game autoplay is resumed after the end-of-bonus dialog fully
+				// closes. Resuming here is too early and can consume the cached autoplay
+				// state while the transition is still in progress.
 			}
 
 			// TODO: Update backend data isBonus flag if needed
