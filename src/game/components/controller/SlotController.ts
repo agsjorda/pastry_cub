@@ -3858,7 +3858,18 @@ export class SlotController {
 				} catch {}
 			}
 
-		// Avoid pre-spin symbol clearing; this should only happen on explicit skip.
+		// Start dropping old symbols immediately while waiting for spin data response.
+		// Keep grave_threat's existing reel-drop style by only pre-dropping old symbols here;
+		// new symbol drop still runs in Symbols.dropReels() after SPIN_DATA_RESPONSE.
+		if (!gameStateManager.isBonus) {
+			try {
+				if (this.symbols && typeof this.symbols.startPreSpinDrop === 'function') {
+					this.symbols.startPreSpinDrop();
+				}
+			} catch (e) {
+				console.warn('[SlotController] Failed to start pre-spin symbol drop:', e);
+			}
+		}
 
 		// Play spin sound effect
 		if ((window as any).audioManager) {
@@ -3892,6 +3903,7 @@ export class SlotController {
 				// (especially during retriggers) and the remaining display will jump (e.g. showing 12).
 				if (gameStateManager.isBonus) {
 					console.log('[SlotController] handleSpin ignored in bonus mode (FREE_SPIN_AUTOPLAY drives free spins)');
+					try { this.symbols?.clearPreSpinDropState?.(); } catch {}
 					this.hideSpinner();
 					gameStateManager.isProcessingSpin = false;
 					return;
@@ -4011,6 +4023,7 @@ export class SlotController {
 			} catch (error) {
 				console.error('[SlotController] ❌ Spin failed:', error);
 				// Don't emit the spin event if the API call failed
+				try { this.symbols?.clearPreSpinDropState?.(); } catch {}
 				gameStateManager.isProcessingSpin = false;
 			}
 		} finally {
@@ -4360,13 +4373,14 @@ export class SlotController {
 		// Listen for free spin autoplay events
 		gameEventManager.on(GameEventType.FREE_SPIN_AUTOPLAY, async () => {
 			console.log('[SlotController] FREE_SPIN_AUTOPLAY event received - triggering free spin simulation');
+			try { this.symbols?.clearPreSpinDropState?.(); } catch {}
 			const isFake = !!this.gameAPI?.isFakeDataEnabled?.();
 			if (isFake && this.freeSpinAutoplaySimInFlight) {
 				console.warn('[SlotController] FREE_SPIN_AUTOPLAY ignored (fake-data simulateFreeSpin already in-flight)');
 				return;
 			}
 			
-			// Avoid pre-spin symbol clearing; this should only happen on explicit skip.
+			// Keep free-spin autoplay behavior unchanged: no pre-spin drop kickoff here.
 			
 			// Apply turbo mode to scene game data (same as normal autoplay)
 			this.forceApplyTurboToSceneGameData();

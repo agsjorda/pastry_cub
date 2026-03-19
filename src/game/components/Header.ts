@@ -15,6 +15,8 @@ import { GlowEffect } from './vfx/GlowEffect';
 
 
 export class Header {
+	private static readonly AUTOPLAY_LAST_TUMBLE_DWELL_MS = 220;
+
 	private headerContainer: Phaser.GameObjects.Container;
 	private networkManager: NetworkManager;
 	private screenModeManager: ScreenModeManager;
@@ -38,6 +40,8 @@ export class Header {
 	private currentWinnings: number = 0;
 	private pendingWinnings: number = 0;
 	private scene: Scene | null = null;
+	private pendingTotalWinTimer: Phaser.Time.TimerEvent | null = null;
+	private lastTumbleWinProgressAt: number = 0;
 	// Shared win-bar glow tuning lives in GlowEffect.WIN_BAR_*.
 
 	constructor(networkManager: NetworkManager, screenModeManager: ScreenModeManager) {
@@ -690,6 +694,8 @@ export class Header {
 				if (gameStateManager.isBonus) {
 					return;
 				}
+				this.clearPendingTotalWinTimer();
+				this.lastTumbleWinProgressAt = Date.now();
 				const amount = Number((data as any)?.tumbleWin ?? 0);
 				if (amount > 0) {
 					// Base-game tumble pattern: show current tumble only.
@@ -704,30 +710,28 @@ export class Header {
 			try {
 				// Don't show winnings in header if in bonus mode (bonus header handles it)
 				if (gameStateManager.isBonus) {
+					this.clearPendingTotalWinTimer();
 					this.hideWinningsDisplay();
 					return;
 				}
-				const amount = this.getBaseSpinAuthoritativeTotalWin();
-				if (amount > 0) {
-					if (this.youWonText) this.youWonText.setText('TOTAL WIN');
-					// Force an animation even if the numeric value hasn't changed from the
-					// last tumble update, so the transition to "TOTAL WIN" feels responsive.
-					// By resetting currentWinnings, showWinningsDisplay will detect a change
-					// and play the pulse or scale-in animation as appropriate.
-					this.currentWinnings = 0;
-					this.showWinningsDisplay(amount);
-				} else {
-					// Zero win - hide if not in scatter
-					if (!gameStateManager.isScatter) {
-						this.hideWinningsDisplay();
-					}
+				if (this.shouldDelayAutoplayTotalWin()) {
+					const elapsedMs = Math.max(0, Date.now() - this.lastTumbleWinProgressAt);
+					const remainingMs = Math.max(0, Header.AUTOPLAY_LAST_TUMBLE_DWELL_MS - elapsedMs);
+					this.clearPendingTotalWinTimer();
+					this.pendingTotalWinTimer = this.scene?.time.delayedCall(remainingMs, () => {
+						this.pendingTotalWinTimer = null;
+						this.showBaseSpinTotalWin();
+					}) ?? null;
+					return;
 				}
+				this.showBaseSpinTotalWin();
 			} catch {}
 		});
 
 		// Listen for spin events to hide winnings display at start of manual spin
 		gameEventManager.on(GameEventType.SPIN, () => {
 			console.log('[Header] Manual spin started - showing winnings display');
+			this.clearPendingTotalWinTimer();
 			
 			// CRITICAL: Block autoplay spin actions if win dialog is showing, but allow manual spins
 			// This fixes the timing issue where manual spin winnings display was blocked
@@ -750,6 +754,7 @@ export class Header {
 		// Listen for autoplay start to hide winnings display
 		gameEventManager.on(GameEventType.AUTO_START, () => {
 			console.log('[Header] Auto play started - showing winnings display');
+			this.clearPendingTotalWinTimer();
 			// Keep winnings visible during scatter/bonus transitions (e.g., free spin autoplay)
 			if (gameStateManager.isScatter || gameStateManager.isBonus) {
 				console.log('[Header] Skipping hide on AUTO_START (scatter/bonus active)');
@@ -761,6 +766,7 @@ export class Header {
 		// Listen for reels start to hide winnings display and play conveyor top
 		gameEventManager.on(GameEventType.REELS_START, () => {
 			console.log('[Header] Reels started - hiding winnings display');
+			this.clearPendingTotalWinTimer();
 			// Keep winnings visible during scatter transition and bonus start
 			if (gameStateManager.isScatter || gameStateManager.isBonus) {
 				console.log('[Header] Skipping hide on REELS_START (scatter/bonus active)');
@@ -784,6 +790,7 @@ export class Header {
 		// Listen for reel done events to show winnings display
 		gameEventManager.on(GameEventType.REELS_STOP, (data: any) => {
 			console.log(`[Header] REELS_STOP received - checking for wins`);
+			this.clearPendingTotalWinTimer();
 			this.stopConveyorTopAnimation();
 			this.stopAnimalsMoveAnimation();
 			
@@ -840,6 +847,33 @@ export class Header {
 				}
 			}
 		});
+	}
+
+	private clearPendingTotalWinTimer(): void {
+		if (!this.pendingTotalWinTimer) return;
+		try { this.pendingTotalWinTimer.destroy(); } catch {}
+		this.pendingTotalWinTimer = null;
+	}
+
+	private shouldDelayAutoplayTotalWin(): boolean {
+		if (!gameStateManager.isAutoPlaying) return false;
+		if ((this.scene as any)?.gameData?.isTurbo) return false;
+		const symbolsComponent = (this.headerContainer?.scene as any)?.symbols;
+		const tumbleCount = Array.isArray(symbolsComponent?.currentSpinData?.slot?.tumbles)
+			? symbolsComponent.currentSpinData.slot.tumbles.length
+			: 0;
+		return tumbleCount > 1 && this.lastTumbleWinProgressAt > 0;
+	}
+
+	private showBaseSpinTotalWin(): void {
+		const amount = this.getBaseSpinAuthoritativeTotalWin();
+		if (amount > 0) {
+			if (this.youWonText) this.youWonText.setText('TOTAL WIN');
+			this.currentWinnings = 0;
+			this.showWinningsDisplay(amount);
+		} else if (!gameStateManager.isScatter) {
+			this.hideWinningsDisplay();
+		}
 	}
 
 	private updateConfettiDebugBorder(scene: Scene): void {

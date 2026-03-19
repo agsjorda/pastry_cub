@@ -12,6 +12,8 @@ import { getTotalWinFromPaylines, getTumbleTotal } from './Spin';
 import { GlowEffect } from './vfx/GlowEffect';
 
 export class BonusHeader {
+	private static readonly AUTOPLAY_TOTAL_WIN_REPEAT_GUARD_MS = 300;
+
 	private bonusHeaderContainer!: Phaser.GameObjects.Container;
 	private networkManager: NetworkManager;
 	private screenModeManager: ScreenModeManager;
@@ -44,6 +46,8 @@ export class BonusHeader {
 	private justSeededWin: boolean = false;
 	// Suppress win bar text while TotalWin dialog is showing
 	private suppressWinbarDisplay: boolean = false;
+	private lastDisplayedTotalWinValue: number | null = null;
+	private lastDisplayedTotalWinAt: number = 0;
 	private debugHeaderFrameBorder?: Phaser.GameObjects.Graphics;
 	private debugHeaderBorder?: Phaser.GameObjects.Graphics;
 	// Shared win-bar glow tuning lives in GlowEffect.WIN_BAR_*.
@@ -1284,10 +1288,13 @@ export class BonusHeader {
 				// At the start of each bonus spin, show the cumulative TOTAL WIN so far.
 				// During the spin, per-tumble updates will switch the label to "YOU WON".
 				if (totalWinSoFar > 0) {
-					if (this.youWonText) {
-						this.youWonText.setText('TOTAL WIN');
+					if (!this.shouldSkipRepeatedAutoplayTotalWin(totalWinSoFar)) {
+						if (this.youWonText) {
+							this.youWonText.setText('TOTAL WIN');
+						}
+						this.showWinningsDisplay(totalWinSoFar);
+						this.markTotalWinDisplayed(totalWinSoFar);
 					}
-					this.showWinningsDisplay(totalWinSoFar);
 				} else {
 					this.hideWinningsDisplay();
 					if (this.youWonText) {
@@ -1541,7 +1548,7 @@ export class BonusHeader {
 			} catch { }
 
 			// Show "TOTAL WIN" with the cumulative total (all spins including scatter trigger)
-			const showTotalWinForSpin = () => {
+		const showTotalWinForSpin = () => {
 				console.log(`[BonusHeader] showTotalWinForSpin: spinWin=${spinWin}, cumulativeBonusWin=$${this.cumulativeBonusWin}`);
 				this.showingTotalWin = true;
 
@@ -1563,6 +1570,7 @@ export class BonusHeader {
 
 						// Show the cumulative total (scatter + all spins so far)
 						this.showWinningsDisplay(this.cumulativeBonusWin);
+						this.markTotalWinDisplayed(this.cumulativeBonusWin);
 						console.log(`[BonusHeader] WIN_STOP (bonus): ✅ SHOWING "TOTAL WIN" with cumulative total=$${this.cumulativeBonusWin}`);
 					} else {
 						// No cumulative win yet – leave the existing display unchanged
@@ -1577,6 +1585,18 @@ export class BonusHeader {
 
 			showTotalWinForSpin();
 		});
+	}
+
+	private markTotalWinDisplayed(value: number): void {
+		this.lastDisplayedTotalWinValue = value;
+		this.lastDisplayedTotalWinAt = Date.now();
+	}
+
+	private shouldSkipRepeatedAutoplayTotalWin(value: number): boolean {
+		if (!gameStateManager.isAutoPlaying) return false;
+		if (this.lastDisplayedTotalWinValue == null) return false;
+		if (Math.abs(this.lastDisplayedTotalWinValue - value) > 0.01) return false;
+		return (Date.now() - this.lastDisplayedTotalWinAt) <= BonusHeader.AUTOPLAY_TOTAL_WIN_REPEAT_GUARD_MS;
 	}
 
 	/**
