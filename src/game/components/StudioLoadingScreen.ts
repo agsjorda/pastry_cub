@@ -359,24 +359,6 @@ export class StudioLoadingScreen {
                 }
             } catch {}
 
-            const fadeTargets: Phaser.GameObjects.GameObject[] = [];
-            if (this.bg) fadeTargets.push(this.bg);
-            if (this.dotGrid) fadeTargets.push(this.dotGrid);
-
-            const bottomTextTargets: Phaser.GameObjects.GameObject[] = [];
-            if (this.text) bottomTextTargets.push(this.text);
-            if (this.text2) bottomTextTargets.push(this.text2);
-            if (this.loadingFrame) bottomTextTargets.push(this.loadingFrame);
-
-            if (bottomTextTargets.length > 0) {
-                this.scene.tweens.add({
-                    targets: bottomTextTargets,
-                    y: '+=50',
-                    duration: fadeMs,
-                    ease: 'Power2',
-                });
-            }
-
             if (this.dijokerLogo) this.dijokerLogo.setVisible(false);
             if (this.spine) this.spine.setVisible(false);
             if (this.loadingCharacter && this.loadingCharacter !== this.spine) {
@@ -385,41 +367,18 @@ export class StudioLoadingScreen {
             if (this.progressBarBg) this.progressBarBg.setVisible(false);
             if (this.progressBarFill) this.progressBarFill.setVisible(false);
 
-            if (fadeTargets.length === 0) {
-                this.hide();
-                try { this.scene.events.emit('studio-fade-complete'); } catch {}
-                if (onComplete) onComplete();
-                return;
-            }
-
+            // Match zero_law behavior: fade the entire container together (no text y-shift),
+            // then destroy the container so preloader->game transition stays aligned.
             this.scene.tweens.add({
-                targets: fadeTargets,
+                targets: this.container,
                 alpha: 0,
                 duration: fadeMs,
                 ease: 'Power2',
                 onComplete: () => {
-                    try { this.bg?.destroy(); this.bg = undefined; } catch {}
-                    try { this.dotGrid?.destroy(); this.dotGrid = undefined; } catch {}
-                    try { this.spine?.destroy(); this.spine = undefined; } catch {}
-                    try { this.progressBarBg?.destroy(); this.progressBarBg = undefined; } catch {}
-                    try { this.progressBarFill?.destroy(); this.progressBarFill = undefined; } catch {}
-                    try { this.dijokerLogo?.destroy(); this.dijokerLogo = undefined; } catch {}
-                    try {
-                        if (this.loadingCharacter && this.loadingCharacter !== this.spine) {
-                            this.loadingCharacter.destroy?.();
-                        }
-                    } catch {}
-                    this.loadingCharacter = null;
+                    this.hide();
                     try { this.scene.events.emit('studio-fade-complete'); } catch {}
                     if (onComplete) onComplete();
                 }
-            });
-
-            this.scene.tweens.add({
-                targets: bottomTextTargets,
-                alpha: 1,
-                duration: fadeMs,
-                ease: 'Power2',
             });
         });
     }
@@ -433,7 +392,7 @@ export class StudioLoadingScreen {
         const centerY = this.scene.scale.height * 0.48;
 
         const hasSpine = ensureSpineFactory(this.scene, '[StudioLoadingScreen] createLoadingCharacter');
-        if (hasSpine) {
+        if (hasSpine && this.scene.cache.json.has('di_joker')) {
             try {
                 const spine = (this.scene.add as any).spine(centerX, centerY, 'di_joker', 'di_joker-atlas');
                 spine.setOrigin?.(0.5, 0.5);

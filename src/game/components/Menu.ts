@@ -30,7 +30,7 @@ export class Menu {
   private isMobile: boolean = true;
   private width: number = 0;
   private height: number = 0;
-  private menuEventHandlers: Function[] = [];
+  private menuEventHandlers: Array<() => void> = [];
   private isDraggingMusic: boolean = false;
   private isDraggingSFX: boolean = false;
   private scene: GameScene;
@@ -73,42 +73,42 @@ export class Menu {
   protected titleStyle = {
     fontSize: "24px",
     color: "#379557",
-    fontFamily: "Poppins-Regular",
+    fontFamily: "poppins-regular",
     fontStyle: "bold",
   };
 
   protected header1Style = {
     fontSize: "24px",
     color: "#379557",
-    fontFamily: "Poppins-Bold",
+    fontFamily: "poppins-bold",
     fontStyle: "bold",
   };
 
   protected content1Style = {
     fontSize: "20px",
     color: "#FFFFFF",
-    fontFamily: "Poppins-Regular",
+    fontFamily: "poppins-regular",
     align: "left" as const,
   };
 
   protected contentHeader1Style = {
     fontSize: "24px",
     color: "#FFFFFF",
-    fontFamily: "Poppins-Bold",
+    fontFamily: "poppins-bold",
     align: "left" as const,
   };
 
   protected header2Style = {
     fontSize: "24px",
     color: "#379557",
-    fontFamily: "Poppins-Regular",
+    fontFamily: "poppins-regular",
     fontStyle: "bold",
   };
 
   protected textStyle = {
     fontSize: "20px",
     color: "#FFFFFF",
-    fontFamily: "Poppins-Regular",
+    fontFamily: "poppins-regular",
     align: "left",
     wordWrap: { width: this.contentWidth },
   };
@@ -286,7 +286,7 @@ export class Menu {
       const text = scene.add.text(textX, tabHeight / 2, tabConfig.text, {
         fontSize: "16px",
         color: "#FFFFFF",
-        fontFamily: "Poppins-Regular",
+        fontFamily: "poppins-regular",
         align: textAlign,
       }) as ButtonText;
       if (tabConfig.icon === "close") {
@@ -618,7 +618,7 @@ export class Menu {
             {
               fontSize: "14px",
               color: "#FFFFFF",
-              fontFamily: "Poppins-Regular",
+              fontFamily: "poppins-regular",
               fontStyle: "bold",
             },
           ) as ButtonText;
@@ -641,7 +641,7 @@ export class Menu {
         {
           fontSize: "16px",
           color: "#888888",
-          fontFamily: "Poppins-Regular",
+          fontFamily: "poppins-regular",
         },
       ) as ButtonText;
       emptyMessage.setOrigin(0.5, 0.5);
@@ -729,7 +729,7 @@ export class Menu {
         const headerText = scene.add.text(columnCenters[idx], headerY, header, {
           fontSize: "14px",
           color: "#FFFFFF",
-          fontFamily: "Poppins-Regular",
+          fontFamily: "poppins-regular",
           fontStyle: "bold",
         }) as ButtonText;
         headerText.setOrigin(0.5, 0);
@@ -827,7 +827,7 @@ export class Menu {
       const text = scene.add.text(columnCenters[idx], y, value, {
         fontSize: "14px",
         color: "#FFFFFF",
-        fontFamily: "Poppins-Regular",
+        fontFamily: "poppins-regular",
       }) as ButtonText;
       text.setOrigin(0.5, 0);
       contentArea.add(text);
@@ -991,7 +991,7 @@ export class Menu {
       {
         fontSize: "20px",
         color: "#FFFFFF",
-        fontFamily: "Poppins-Regular",
+        fontFamily: "poppins-regular",
         align: "center",
       },
     ) as ButtonText;
@@ -1032,7 +1032,7 @@ export class Menu {
       {
         fontSize: "18px",
         color: "#FFFFFF",
-        fontFamily: "Poppins-Regular",
+        fontFamily: "poppins-regular",
       },
     ) as ButtonText;
     contentArea.add(musicLabel);
@@ -1041,7 +1041,7 @@ export class Menu {
     const sfxLabel = scene.add.text(startX + 0, startY + 190, "Sound FX", {
       fontSize: "18px",
       color: "#FFFFFF",
-      fontFamily: "Poppins-Regular",
+      fontFamily: "poppins-regular",
     }) as ButtonText;
     contentArea.add(sfxLabel);
 
@@ -1209,7 +1209,7 @@ export class Menu {
       {
         fontSize: "16px",
         color: "#FFFFFF",
-        fontFamily: "Poppins-Regular",
+        fontFamily: "poppins-regular",
       },
     ) as ButtonText;
     contentArea.add(musicValue);
@@ -1221,7 +1221,7 @@ export class Menu {
     const sfxValue = scene.add.text(sliderStartX, sfxSliderY + 25, "75%", {
       fontSize: "16px",
       color: "#FFFFFF",
-      fontFamily: "Poppins-Regular",
+      fontFamily: "poppins-regular",
     }) as ButtonText;
     // Background (filled portion) for SFX slider
     sfxSliderBg.fillStyle(0x379557, 1);
@@ -1354,8 +1354,27 @@ export class Menu {
     this.isDraggingMusic = false;
     this.isDraggingSFX = false;
 
+    const stopSliderDragging = () => {
+      this.isDraggingMusic = false;
+      this.isDraggingSFX = false;
+    };
+
+    const isPointerOutsideGameScreen = (pointer: Phaser.Input.Pointer) => {
+      return (
+        pointer.x < 0 ||
+        pointer.y < 0 ||
+        pointer.x > scene.scale.width ||
+        pointer.y > scene.scale.height
+      );
+    };
+
     // Global pointer move and up handlers
     const pointerMoveHandler = (pointer: Phaser.Input.Pointer) => {
+      if (isPointerOutsideGameScreen(pointer)) {
+        stopSliderDragging();
+        return;
+      }
+
       if (this.isDraggingMusic) {
         const sliderWidth = widthSlider * scaleFactor;
         const p = (musicSliderTrack as any).getLocalPoint(pointer.x, pointer.y);
@@ -1376,15 +1395,19 @@ export class Menu {
     };
 
     const pointerUpHandler = () => {
-      this.isDraggingMusic = false;
-      this.isDraggingSFX = false;
+      stopSliderDragging();
     };
-
-    // Store handlers for cleanup
-    this.menuEventHandlers.push(pointerMoveHandler, pointerUpHandler);
 
     this.scene.input.on("pointermove", pointerMoveHandler);
     this.scene.input.on("pointerup", pointerUpHandler);
+    this.scene.input.on("gameout", pointerUpHandler);
+
+    // Store cleanup callbacks for the temporary slider listeners
+    this.menuEventHandlers.push(
+      () => scene.input.off("pointermove", pointerMoveHandler),
+      () => scene.input.off("pointerup", pointerUpHandler),
+      () => scene.input.off("gameout", pointerUpHandler),
+    );
 
     // Create clickable areas for the entire slider tracks
     const musicSliderTrack = scene.add.graphics();
@@ -1478,10 +1501,7 @@ export class Menu {
 
     // Clean up event handlers
     if (this.menuEventHandlers) {
-      this.menuEventHandlers.forEach((handler) => {
-        scene.input.off("pointermove", handler);
-        scene.input.off("pointerup", handler);
-      });
+      this.menuEventHandlers.forEach((cleanup) => cleanup());
       this.menuEventHandlers = [];
     }
 
