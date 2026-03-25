@@ -11,6 +11,8 @@ import { UI_CONFIG, WIN_THRESHOLDS, TIMING_CONFIG } from '../../config/GameConfi
 import { Logger } from '../../utils/Logger';
 import { queueAnimation, startAnimation } from '../../utils/SpineAnimationHelper';
 import { CurrencyManager } from './CurrencyManager';
+import { localizationManager } from '../../managers/LocalizationManager';
+import { DIALOG_PRESS_CONTINUE, LOCALIZATION_DEFAULTS } from '../../backend/LocalizationData';
 
 export interface DialogConfig {
 	type: 'Congrats' | 'FreeSpin' | 'FreeSpinRetrigger' | 'BigWin' | 'MegaWin' | 'EpicWin' | 'SuperWin' | 'MaxWin' | 'TotalWin';
@@ -41,6 +43,17 @@ export interface CheckAndShowWinDialogContext {
 }
 
 export class Dialogs {
+	private getDialogText(key: string): string {
+		return localizationManager.getTextByKey(key) ?? LOCALIZATION_DEFAULTS[key] ?? key;
+	}
+
+	private getContinueTextPosition(scene: Scene): { x: number; y: number } {
+		return {
+			x: scene.scale.width / 2,
+			y: scene.scale.height / 2 + 300,
+		};
+	}
+
 	// Main dialog container that covers the entire screen
 	private dialogOverlay!: Phaser.GameObjects.Container;
 
@@ -749,6 +762,8 @@ export class Dialogs {
 	 * Create the "Press anywhere to continue" text
 	 */
 	private createContinueText(scene: Scene): void {
+		const position = this.getContinueTextPosition(scene);
+		const wrapWidth = Math.max(200, scene.scale.width * 0.9);
 
 		// Clean up existing text
 		if (this.continueText) {
@@ -758,15 +773,17 @@ export class Dialogs {
 
 		// Create the text with your original styling
 		this.continueText = scene.add.text(
-			scene.scale.width / 2,
-			scene.scale.height / 2 + 300,
-			'Press anywhere to continue',
+			position.x,
+			position.y,
+			this.getDialogText(DIALOG_PRESS_CONTINUE),
 			{
 				fontFamily: 'Poppins-Bold',
 				fontSize: '20px',
 				color: '#FFFFFF',
 				stroke: '#379557',
 				strokeThickness: 5,
+				align: 'center',
+				wordWrap: { width: wrapWidth, useAdvancedWrap: true },
 				shadow: {
 					offsetX: 2,
 					offsetY: 2,
@@ -777,7 +794,7 @@ export class Dialogs {
 			}
 		);
 
-		this.continueText.setOrigin(0.5, 0.5);
+		this.continueText.setOrigin(0.5, 0);
 		this.continueText.setDepth(104);
 		this.continueText.setAlpha(0); // Start invisible
 
@@ -1974,6 +1991,12 @@ export class Dialogs {
 			this.blackOverlay.clear();
 			this.blackOverlay.fillStyle(0x000000, 0.7);
 			this.blackOverlay.fillRect(0, 0, scene.scale.width, scene.scale.height);
+		}
+		if (this.continueText) {
+			const wrapWidth = Math.max(200, scene.scale.width * 0.9);
+			const position = this.getContinueTextPosition(scene);
+			this.continueText.setStyle({ wordWrap: { width: wrapWidth, useAdvancedWrap: true } });
+			this.continueText.setPosition(position.x, position.y);
 		}
 	}
 

@@ -790,6 +790,7 @@ export class HelpScreen {
             ...style,
             wordWrap: {
                 width: wrapWidth,
+                useAdvancedWrap: true,
                 ...(typeof style.wordWrap === 'object' && style.wordWrap != null ? style.wordWrap : {}),
             },
         };

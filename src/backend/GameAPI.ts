@@ -148,6 +148,13 @@ export interface RefreshTokenResponse {
   token?: string;
 }
 
+export interface LocalizationPayload {
+  sessionId: string;
+  gameId: string;
+  lang: string;
+  locale: string;
+}
+
 export class GameAPI {
   private static readonly GAME_ID: string = "00171225"; //change to 00171225 for pastry cub
   private static DEMO_BALANCE: number = 10000;
@@ -158,6 +165,7 @@ export class GameAPI {
   private currentSpinData: SpinData | null = null;
   private currentFreeSpinIndex: number = 0; // Track current free spin item index
   private initializationData: SlotInitializeData | null = null; // Cached initialization response
+  private localizationData: LocalizationPayload | null = null;
   private remainingInitFreeSpins: number = 0; // Free spin rounds from initialization still available
   private initFreeSpinBet: number | null = null; // Bet size associated with initialization free spins
   /** Runtime unresolved-spin UUID (e.g. from scatter-triggering spin payload) */
@@ -217,6 +225,14 @@ export class GameAPI {
 
   constructor(gameData: GameData) {
     this.gameData = gameData;
+  }
+
+  private getRequestedLanguage(): string {
+    const language = getUrlParameter("lang");
+    if (language !== "") {
+      return language;
+    }
+    return this.initializationData?.lang ?? "en";
   }
 
   private getSampleDataKey(): string | null {
@@ -569,7 +585,7 @@ export class GameAPI {
       player_id: 2,
       game_id: GameAPI.GAME_ID,
       device: "mobile",
-      lang: "en",
+      lang: this.getRequestedLanguage(),
       currency: "USD",
       quit_link: "www.quit.com",
       is_demo: 0,
@@ -677,7 +693,7 @@ export class GameAPI {
         gameId: GameAPI.GAME_ID,
         playerId: "",
         sessionId: "",
-        lang: "en",
+        lang: this.getRequestedLanguage(),
         currency: "USD",
         currencySymbol: "$",
         hasFreeSpinRound: false,
@@ -823,6 +839,67 @@ export class GameAPI {
    */
   public getInitializationData(): SlotInitializeData | null {
     return this.initializationData;
+  }
+
+  public getLocalizationData(): LocalizationPayload | null {
+    return this.localizationData;
+  }
+
+  public async fetchLocalizationData(): Promise<void> {
+    const apiUrl = `${getApiBaseUrl()}/api/v1/slots/locale`;
+    const requestBody = this.createLocaleAPIResponseBody();
+
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `HTTP error! status: ${response.status}, message: ${errorText}`,
+      );
+    }
+
+    const raw = await response.json();
+    const data = raw?.data ?? raw;
+    const locale =
+      typeof data?.locale === "string"
+        ? data.locale
+        : data?.locale && typeof data.locale === "object"
+          ? JSON.stringify(data.locale)
+          : "";
+
+    this.localizationData = {
+      sessionId: data?.sessionId ?? requestBody.sessionId,
+      gameId: data?.gameId ?? requestBody.gameId,
+      lang: data?.lang ?? requestBody.lang,
+      locale,
+    };
+  }
+
+  private createLocaleAPIResponseBody(): Pick<
+    LocalizationPayload,
+    "sessionId" | "gameId" | "lang"
+  > {
+    const isDemo = this.getDemoState();
+    if (isDemo) {
+      return {
+        sessionId: "",
+        gameId: GameAPI.GAME_ID,
+        lang: this.getRequestedLanguage(),
+      };
+    }
+
+    const initData = this.initializationData;
+    return {
+      sessionId: initData?.sessionId ?? "",
+      gameId: initData?.gameId ?? GameAPI.GAME_ID,
+      lang: initData?.lang ?? this.getRequestedLanguage(),
+    };
   }
 
   /**

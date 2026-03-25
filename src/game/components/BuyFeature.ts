@@ -5,6 +5,13 @@ import { CurrencyManager } from './CurrencyManager';
 import { formatCurrencyNumber } from '../../utils/NumberPrecisionFormatter';
 import { SoundEffectType } from '../../managers/AudioManager';
 import { SPINE_SYMBOL_SCALES } from '../../config/GameConfig';
+import { localizationManager } from '../../managers/LocalizationManager';
+import {
+  LOCALIZATION_DEFAULTS,
+  POPUP_BUYFEAT_CARD_TITLE,
+  POPUP_BUYFEAT_RANDOM_SCATTER,
+  POPUP_BUYFEAT_START_MULTIPLIER,
+} from '../../backend/LocalizationData';
 
 export interface BuyFeatureConfig {
 	position?: { x: number; y: number };
@@ -14,10 +21,10 @@ export interface BuyFeatureConfig {
 	featurePrice?: number;
 }
 
-/** Data for each buy feature card (title, scatter, start multiplier) */
+/** Data for each buy feature card (localized title version, scatter, start multiplier) */
 export interface BuyFeatureCardItem {
-	title: string;
-	scatterCount?: number;
+	titleVersion: number;
+	scatterCount?: string;
 	startMultiplier?: number;
 	decriptionOverride? : string;
 }
@@ -115,7 +122,7 @@ export class BuyFeature {
   /** Idle scatter size as fraction of icon size (0â€“1). */
   private static readonly CARD_SCATTER_SIZE_RATIO = 0.7;
   /** Additional per-axis scale for popup card scatter (applied after SPINE_SYMBOL_SCALES[0]). */
-  private static readonly CARD_SCATTER_SCALE_OFFSET_X = .7;
+  private static readonly CARD_SCATTER_SCALE_OFFSET_X = 0.7;
   private static readonly CARD_SCATTER_SCALE_OFFSET_Y = 1;
   private static readonly SCATTER_SPINE_KEY = "symbol_0_spine";
   private static readonly SCATTER_SPINE_ATLAS_KEY = "symbol_0_spine-atlas";
@@ -124,13 +131,30 @@ export class BuyFeature {
   private static readonly CARD_MULT_DIGIT_SCALE = 0.1;
   private static readonly CARD_MULT_DIGIT_SPACING = 0.5;
   private static readonly CARD_ITEMS: BuyFeatureCardItem[] = [
-    { title: "Chef's Big Meaty Surprise v.1", scatterCount: 3, startMultiplier: 1},
-    { title: "Chef's Big Meaty Surprise v.2", scatterCount: 3, startMultiplier: 2 },
+    {
+      titleVersion: 1,
+      scatterCount: "3-7",
+      startMultiplier: 1,
+    },
+    {
+      titleVersion: 2,
+      scatterCount: "3-7",
+      startMultiplier: 2,
+    },
   ];
 
   private static getCurrencyLabel(scene?: Scene | null): string {
     const isDemo = (scene as any)?.gameAPI?.getDemoState?.();
     return isDemo ? "" : CurrencyManager.getCurrencyCode();
+  }
+
+  private static getLocalizedCardTitle(titleVersion: number): string {
+    const baseTitle =
+      localizationManager.getTextByKey(POPUP_BUYFEAT_CARD_TITLE) ??
+      LOCALIZATION_DEFAULTS[POPUP_BUYFEAT_CARD_TITLE] ??
+      "Chef's Big Meaty Surprise v";
+
+    return `${baseTitle}.${titleVersion}`;
   }
 
   // Persist currently selected buy feature card within the session.
@@ -231,7 +255,6 @@ export class BuyFeature {
   }
 
   create(scene: Scene): void {
-
     // Create main container
     this.container = scene.add.container(0, 0);
     this.container.setDepth(9502); // Above dialogs (9501) and header/background in pastry_cub
@@ -720,6 +743,9 @@ export class BuyFeature {
     const cardWidth =
       BuyFeature.BUY_FEATURE_TYPE_WIDTH - BuyFeature.CARD_PADDING * 2;
     const item = BuyFeature.CARD_ITEMS[index] || BuyFeature.CARD_ITEMS[0];
+    const localizedCardTitle = BuyFeature.getLocalizedCardTitle(
+      item.titleVersion,
+    );
     const cardContainer = scene.add.container(0, cardCenterY);
 
     // Background (dark card + green border)
@@ -774,8 +800,12 @@ export class BuyFeature {
             // Scale to fit (Spine skeleton height ~1000â€“2000px; target scatterDisplaySize px)
             const base = scatterDisplaySize / 1500;
             spine.setScale(
-              base * scatterScaleFromConfig * BuyFeature.CARD_SCATTER_SCALE_OFFSET_X,
-              base * scatterScaleFromConfig * BuyFeature.CARD_SCATTER_SCALE_OFFSET_Y,
+              base *
+                scatterScaleFromConfig *
+                BuyFeature.CARD_SCATTER_SCALE_OFFSET_X,
+              base *
+                scatterScaleFromConfig *
+                BuyFeature.CARD_SCATTER_SCALE_OFFSET_Y,
             );
           }
         } catch {}
@@ -843,7 +873,7 @@ export class BuyFeature {
     const textLeft = leftX + iconSize + BuyFeature.CARD_TEXT_OFFSET_FROM_ICON;
     const textTop = -BuyFeature.CARD_HEIGHT / 2 + 12;
     const titleText = scene.add
-      .text(textLeft, textTop + 8, item.title, {
+      .text(textLeft, textTop + 8, localizedCardTitle, {
         fontSize: "16px",
         fontFamily: "Poppins-Bold",
         color: "#ffffff",
@@ -882,9 +912,17 @@ export class BuyFeature {
     cardContainer.setData("priceText", priceText);
     cardContainer.setData("amountText", amountText);
 
+    const localizedRandomScatter =
+      localizationManager.getTextByKey(POPUP_BUYFEAT_RANDOM_SCATTER) ??
+      LOCALIZATION_DEFAULTS[POPUP_BUYFEAT_RANDOM_SCATTER] ??
+      'Random Scatter';
+    const localizedStartMultiplier =
+      localizationManager.getTextByKey(POPUP_BUYFEAT_START_MULTIPLIER) ??
+      LOCALIZATION_DEFAULTS[POPUP_BUYFEAT_START_MULTIPLIER] ??
+      'Start Multipliers';
     const description =
       item.decriptionOverride ||
-      `${item.scatterCount} Scatter, Start Multiplier: ${item.startMultiplier}x`;
+      `${localizedRandomScatter} (${item.scatterCount}), ${localizedStartMultiplier}: ${item.startMultiplier}x`;
     const descText = scene.add
       .text(textLeft, textTop + 56, description, {
         fontSize: "12px",
@@ -1146,7 +1184,6 @@ export class BuyFeature {
   }
 
   private confirmPurchase(): void {
-
     if (this.onConfirmCallback) {
       this.onConfirmCallback();
     }
@@ -1158,9 +1195,11 @@ export class BuyFeature {
     if (this.priceDisplay) {
       const calculatedPrice = this.getCurrentBetValue();
       const isDemo = (this.container?.scene as any)?.gameAPI?.getDemoState();
-      const currencyCode = isDemo ? '' : CurrencyManager.getCurrencyCode();
+      const currencyCode = isDemo ? "" : CurrencyManager.getCurrencyCode();
       const formatted = this.formatNumberWithCommas(calculatedPrice);
-      this.priceDisplay.setText(currencyCode ? `${currencyCode}\u00A0${formatted}` : formatted);
+      this.priceDisplay.setText(
+        currencyCode ? `${currencyCode}\u00A0${formatted}` : formatted,
+      );
     }
     this.updateCardPrices();
   }
@@ -1184,8 +1223,7 @@ export class BuyFeature {
       y: 0,
       duration: 300,
       ease: "Power2.easeOut",
-      onComplete: () => {
-      },
+      onComplete: () => {},
     });
   }
 
@@ -1267,7 +1305,9 @@ export class BuyFeature {
     this.betDisplay = scene.add.text(
       x,
       y,
-      isDemoBet ? formatCurrencyNumber(displayBet) : CurrencyManager.formatAmount(displayBet),
+      isDemoBet
+        ? formatCurrencyNumber(displayBet)
+        : CurrencyManager.formatAmount(displayBet),
       {
         fontSize: "24px",
         color: "#ffffff",
@@ -1436,13 +1476,14 @@ export class BuyFeature {
       const isDemo = (this.container?.scene as any)?.gameAPI?.getDemoState();
       const displayBet = this.getDisplayBetAmount();
       this.betDisplay.setText(
-        isDemo ? formatCurrencyNumber(displayBet) : CurrencyManager.formatAmount(displayBet),
+        isDemo
+          ? formatCurrencyNumber(displayBet)
+          : CurrencyManager.formatAmount(displayBet),
       );
     }
   }
 
   public show(config?: BuyFeatureConfig): void {
-
     if (config) {
       if (config.featurePrice !== undefined) {
         this.featurePrice = config.featurePrice;
@@ -1462,7 +1503,8 @@ export class BuyFeature {
     if (
       Number.isFinite(latestBaseBet) &&
       latestBaseBet! > 0 &&
-      (this.lastExternalBaseBet === null || Math.abs(latestBaseBet! - this.lastExternalBaseBet) > 0.0001)
+      (this.lastExternalBaseBet === null ||
+        Math.abs(latestBaseBet! - this.lastExternalBaseBet) > 0.0001)
     ) {
       this.resetBetFromExternal(latestBaseBet!);
     } else {
@@ -1493,7 +1535,6 @@ export class BuyFeature {
   }
 
   public hide(): void {
-
     // Stop any continuous button presses
     this.stopContinuousDecrement();
     this.stopContinuousIncrement();

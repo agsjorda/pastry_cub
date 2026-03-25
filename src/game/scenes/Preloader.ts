@@ -12,6 +12,8 @@ import { StudioLoadingScreen } from '../components/StudioLoadingScreen';
 import { ClockDisplay } from '../components/ClockDisplay';
 import { CLOCK_DISPLAY_NAME, GAME_DISPLAY_NAME, CLOCK_DISPLAY_CONFIG, PRELOADER_CONFIG } from '../../config/GameConfig';
 import { CurrencyManager } from '../components/CurrencyManager';
+import { LOCALIZATION_DEFAULTS } from '../../backend/LocalizationData';
+import { localizationManager } from '../../managers/LocalizationManager';
 import { playRadialDimmerTransition } from '../utils/playRadialDimmerTransition';
 import { unresolvedSpinManager } from '../../managers/UnresolvedSpinManager';
 
@@ -190,8 +192,23 @@ export class Preloader extends Scene
 				unresolvedSpinManager.setFromInitializationData(null);
 			}
 
+			try {
+				await this.gameAPI.fetchLocalizationData();
+				const localizationData = this.gameAPI.getLocalizationData();
+				const locale = localizationData?.locale ?? '';
+				if (locale.length > 0) {
+					localizationManager.setTranslations(locale);
+				} else {
+					localizationManager.setTranslations(JSON.stringify(LOCALIZATION_DEFAULTS));
+				}
+			} catch (localizationError) {
+				console.warn('[Preloader] Localization fetch failed, using defaults:', localizationError);
+				localizationManager.setTranslations(JSON.stringify(LOCALIZATION_DEFAULTS));
+			}
+
         } catch (error) {
             console.error('[Preloader] Failed to initialize GameAPI or slot session:', error);
+			localizationManager.setTranslations(JSON.stringify(LOCALIZATION_DEFAULTS));
         }
 
 		// Create fullscreen toggle now that assets are loaded (using shared manager)
