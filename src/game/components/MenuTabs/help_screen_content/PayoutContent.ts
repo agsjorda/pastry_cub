@@ -2,6 +2,7 @@ import type { BorderOpts, ContentItem, ContentSection, GridCell, TextOpts } from
 import { CurrencyManager } from '../../CurrencyManager';
 import { SYMBOL_PAYTABLE, SYMBOL_PAY_COUNTS, getScatterFreeSpins } from '../../Spin';
 import { HELPSCREEN_PAYOUT_SCATTER_DEBUG_LINE } from '../../../../config/GameConfig';
+import { formatCurrencyNumber } from '../../../../utils/NumberPrecisionFormatter';
 
 interface PayoutContentOptions {
     defaultOuterBorderStyle: BorderOpts;
@@ -62,13 +63,6 @@ const symbolPayoutValueTextOpts: TextOpts = {
     fitToBounds: true,
 };
 
-function formatPayout(value: number): string {
-    return value.toLocaleString('en-US', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-    });
-}
-
 function applyBetToPayout(baseValue: number, getBetAmount: () => number): number {
     return baseValue * getBetAmount();
 }
@@ -84,10 +78,10 @@ function buildSymbolPayoutGridCells(
     for (let row = 0; row < payoutValues.length; row++) {
         const rangeValue = rangesForSymbol[row] ?? rangesForSymbol[rangesForSymbol.length - 1] ?? '';
         const adjustedPayout = applyBetToPayout(payoutValues[row] ?? 0, getBetAmount);
-        const formattedPayout = formatPayout(adjustedPayout);
+        const formattedPayout = formatCurrencyNumber(adjustedPayout);
         const isDemo = getIsDemo?.() ?? false;
-        const prefix = isDemo ? '' : CurrencyManager.getInlinePrefix().trimEnd();
-        const payoutText = prefix ? `${prefix}\u00A0${formattedPayout}` : formattedPayout;
+        const currencyCode = isDemo ? '' : CurrencyManager.getCurrencyCode();
+        const payoutText = currencyCode ? `${currencyCode}\u00A0${formattedPayout}` : formattedPayout;
 
         gridCells.push({
             Text: {

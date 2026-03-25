@@ -4,7 +4,6 @@ import { ScreenModeManager } from "../../managers/ScreenModeManager";
 import { gameEventManager, GameEventType } from '../../event/EventManager';
 import { gameStateManager } from '../../managers/GameStateManager';
 import { PaylineData } from '../../backend/SpinData';
-import { CurrencyManager } from './CurrencyManager';
 import { Animals } from './Animals';
 import { JimboyCharacter } from './JimboyCharacter';
 import { HEADER_CONFIG, SHOW_HEADER_BORDER, SHOW_HEADER_CONFETTI_BORDER, SHOW_HEADER_SCENEFRAME_BORDER } from '../../config/GameConfig';
@@ -12,6 +11,7 @@ import { ensureSpineFactory } from '../../utils/SpineGuard';
 import { startAnimation, stopAnimation } from '../../utils/SpineAnimationHelper';
 import { getTotalWinFromPaylines, getTumbleTotal } from './Spin';
 import { GlowEffect } from './vfx/GlowEffect';
+import { formatCurrencyNumber } from '../../utils/NumberPrecisionFormatter';
 
 
 export class Header {
@@ -365,9 +365,8 @@ export class Header {
 
 		// Line 2: amount value
 		// Check if demo mode is active - if so, use blank currency symbol
-		const isDemoInitial = (this.scene as any)?.gameAPI?.getDemoState();
-		const currencyPrefixInitial = isDemoInitial ? '' : CurrencyManager.getInlinePrefix();
-		this.amountText = scene.add.text(x, y + 18, `${currencyPrefixInitial}0.00`, {
+		const initialText = this.formatCurrency(0);
+		this.amountText = scene.add.text(x, y + 18, initialText, {
 			fontSize: '24px',
 			color: '#00ff00',
 			fontFamily: 'Poppins-Bold',
@@ -1140,11 +1139,7 @@ export class Header {
 	 * Format currency value for display
 	 */
 	private formatCurrency(amount: number): string {
-		// Check if demo mode is active - if so, use blank currency symbol
-		const isDemo = (this.scene as any)?.gameAPI?.getDemoState();
-		const currencyPrefix = isDemo ? '' : CurrencyManager.getInlinePrefix();
-		const formatted = amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-		return `${currencyPrefix}${formatted}`;
+		return formatCurrencyNumber(amount);
 	}
 
 	/**

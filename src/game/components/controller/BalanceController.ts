@@ -2,6 +2,7 @@ import type { Scene } from 'phaser';
 import type { GameAPI } from '../../../backend/GameAPI';
 import type { GameData } from '../GameData';
 import { CurrencyManager } from '../CurrencyManager';
+import { formatCurrencyNumber } from '../../../utils/NumberPrecisionFormatter';
 
 export interface BalanceControllerCallbacks {
   getScene: () => Scene | null;
@@ -76,9 +77,7 @@ export class BalanceController {
 
   public updateBalanceAmount(balanceAmount: number): void {
     if (this.balanceAmountText) {
-      this.balanceAmountText.setText(
-        balanceAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-      );
+      this.balanceAmountText.setText(formatCurrencyNumber(balanceAmount));
     }
   }
 

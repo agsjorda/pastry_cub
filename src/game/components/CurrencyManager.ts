@@ -31,8 +31,9 @@ function isDemoMode(): boolean {
 /**
  * Centralized currency display helper.
  *
- * For pastry_cub we always prefer the currency *code* as a text prefix
- * (e.g. "USD 1.00"), even when a currency symbol is provided.
+ * Priority:
+ * - Prefer `currencySymbol` when it is non-empty
+ * - Otherwise fall back to currency code (`currency`)
  */
 export class CurrencyManager {
 	private static currencyCode = "";
@@ -69,44 +70,30 @@ export class CurrencyManager {
 	}
 
 	/**
-	 * Returns the glyph to display where "$" used to be.
-	 * For pastry_cub this is always the currency code (if present),
-	 * never the currency symbol.
+	 * Returns the glyph to display for currency.
+	 * This is either the currency symbol, or (if blank) the currency code.
 	 */
 	public static getCurrencyGlyph(): string {
+		if (CurrencyManager.currencySymbol.length > 0) return CurrencyManager.currencySymbol;
 		if (CurrencyManager.currencyCode.length > 0) return CurrencyManager.currencyCode;
 		return "";
 	}
 
 	/**
 	 * Returns a prefix suitable for inline amounts.
-	 * We always use the currency code and include a trailing space for readability.
+	 * If we fall back to currency code, we include a trailing space for readability.
 	 */
 	public static getInlinePrefix(): string {
+		if (CurrencyManager.currencySymbol.length > 0) return CurrencyManager.currencySymbol;
 		if (CurrencyManager.currencyCode.length > 0) return `${CurrencyManager.currencyCode} `;
 		return "";
 	}
 
-	public static formatAmount(amount: number, decimals = 2): string {
+	public static formatAmount(amount: number): string {
 		const safe = Number.isFinite(amount) ? amount : 0;
-		const currencyCode = CurrencyManager.getCurrencyCode();
-		const space = currencyCode ? ' ' : '';
-		const normalizedDecimals = Number.isFinite(decimals) ? Math.max(0, Math.floor(decimals)) : 2;
-		let formatted: string;
-		if (normalizedDecimals === 2) {
-			formatted = formatCurrencyNumber(safe);
-		} else {
-			// Shuten-style: trim trailing zeros (e.g. 3.300 → 3.30, not 3.300)
-			const fixedValue = safe.toFixed(normalizedDecimals);
-			const decimalPart = fixedValue.split(".")[1] ?? "";
-			const hasNonZeroTenths = decimalPart.length > 0 && decimalPart[0] !== "0";
-			const minimumFractionDigits = hasNonZeroTenths ? Math.min(2, normalizedDecimals) : 0;
-			formatted = safe.toLocaleString("en-US", {
-				minimumFractionDigits,
-				maximumFractionDigits: normalizedDecimals,
-			});
-		}
-		return currencyCode ? `${currencyCode}${space}${formatted}` : formatted;
+		const prefix = CurrencyManager.getCurrencyCode();
+		const space = prefix && !prefix.endsWith(" ") ? " " : "";
+		return `${prefix}${space}${formatCurrencyNumber(safe)}`;
 	}
 
 	/**

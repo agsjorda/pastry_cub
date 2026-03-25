@@ -164,6 +164,8 @@ export class Game extends Scene {
 
 	create() {
 		try { ensureSpineFactory(this, '[Game] create'); } catch { }
+		this.initializeCurrencyFromGameData();
+		this.initializeNumberPrecisionFromGameData();
 
 		const fadeOverlay = this.createFadeAndResize();
 		this.createHeaderAndBackground();
@@ -188,6 +190,24 @@ export class Game extends Scene {
 		this.runFadeIn(fadeOverlay);
 		this.setupEventBusListeners();
 		this.setupGameEventListeners();
+	}
+
+	private initializeCurrencyFromGameData(): void {
+		try {
+			CurrencyManager.initializeFromInitData(this.gameAPI?.getInitializationData?.());
+		} catch (e) {
+			console.warn('[Game] Failed to initialize currency from initialization data:', e);
+		}
+	}
+
+	private initializeNumberPrecisionFromGameData(): void {
+		try {
+			const initData = this.gameAPI?.getInitializationData?.();
+			const initCurrencyPlaces = Number((initData as any)?.currencyDecimalPlaces);
+			setDecimalPlaces(Number.isFinite(initCurrencyPlaces) ? initCurrencyPlaces : 2);
+		} catch (e) {
+			console.warn('[Game] Failed to set number precision from initialization data:', e);
+		}
 	}
 
 	private initializeAndStartIdleManager(): void {
@@ -344,9 +364,6 @@ export class Game extends Scene {
 			const initData = this.gameAPI.getInitializationData();
 			const initFsRemaining = this.gameAPI.getRemainingInitFreeSpins();
 			const initFsBet = this.gameAPI.getInitFreeSpinBet();
-			const initCurrencyPlaces = Number((initData as any)?.currencyDecimalPlaces);
-			setDecimalPlaces(Number.isFinite(initCurrencyPlaces) ? initCurrencyPlaces : 2);
-			CurrencyManager.initializeFromInitData(initData);
 			this.slotController?.refreshCurrencySymbols?.();
 			this.freeRoundManager = new FreeRoundManager();
 			this.freeRoundManager.create(this, this.gameAPI, this.slotController);
@@ -395,12 +412,13 @@ export class Game extends Scene {
 			}
 
 			const currentBaseBet = this.slotController.getBaseBetAmount() || 0.20;
-			const currentDisplayText = this.slotController.getBetAmountText();
-			const currentDisplayBet = currentDisplayText ? parseFloat(currentDisplayText) : currentBaseBet;
+			const isEnhancedBet = this.gameData?.isEnhancedBet === true;
+			const betDisplayMultiplier = isEnhancedBet ? 1.25 : 1;
+			const currentDisplayBet = currentBaseBet * betDisplayMultiplier;
 			this.betOptions.show({
 				currentBet: currentBaseBet,
 				currentBetDisplay: currentDisplayBet,
-				isEnhancedBet: this.gameData?.isEnhancedBet,
+				isEnhancedBet: isEnhancedBet,
 				onClose: () => {},
 				onConfirm: (betAmount: number) => {
 					this.slotController.updateBetAmount(betAmount);

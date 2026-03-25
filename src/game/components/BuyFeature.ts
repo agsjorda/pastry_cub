@@ -123,11 +123,15 @@ export class BuyFeature {
   /** Multiplier digit display: scale and spacing (uses number_0..9 textures from numbers/Number0..9.webp) */
   private static readonly CARD_MULT_DIGIT_SCALE = 0.1;
   private static readonly CARD_MULT_DIGIT_SPACING = 0.5;
-  private static readonly CURRENCY_LABEL = CurrencyManager.getInlinePrefix();
   private static readonly CARD_ITEMS: BuyFeatureCardItem[] = [
     { title: "Chef's Big Meaty Surprise v.1", scatterCount: 3, startMultiplier: 1},
     { title: "Chef's Big Meaty Surprise v.2", scatterCount: 3, startMultiplier: 2 },
   ];
+
+  private static getCurrencyLabel(scene?: Scene | null): string {
+    const isDemo = (scene as any)?.gameAPI?.getDemoState?.();
+    return isDemo ? "" : CurrencyManager.getCurrencyCode();
+  }
 
   // Persist currently selected buy feature card within the session.
   // -1 indicates "no selection yet" and will default to the first card on first show().
@@ -853,8 +857,9 @@ export class BuyFeature {
       item.startMultiplier === 2
         ? this.getCurrentBetValue() * 5
         : this.getCurrentBetValue();
+    const currencyLabel = BuyFeature.getCurrencyLabel(scene);
     const priceText = scene.add
-      .text(textLeft, textTop + 32, BuyFeature.CURRENCY_LABEL + " ", {
+      .text(textLeft, textTop + 32, currencyLabel ? `${currencyLabel} ` : "", {
         fontSize: "16px",
         fontFamily: "Poppins-Regular",
         color: "#ffffff",
@@ -1152,10 +1157,10 @@ export class BuyFeature {
   private updatePriceDisplay(): void {
     if (this.priceDisplay) {
       const calculatedPrice = this.getCurrentBetValue();
-      const currencyPrefix = CurrencyManager.getInlinePrefix();
-      this.priceDisplay.setText(
-        `${currencyPrefix}${this.formatNumberWithCommas(calculatedPrice)}`,
-      );
+      const isDemo = (this.container?.scene as any)?.gameAPI?.getDemoState();
+      const currencyCode = isDemo ? '' : CurrencyManager.getCurrencyCode();
+      const formatted = this.formatNumberWithCommas(calculatedPrice);
+      this.priceDisplay.setText(currencyCode ? `${currencyCode}\u00A0${formatted}` : formatted);
     }
     this.updateCardPrices();
   }
@@ -1257,11 +1262,12 @@ export class BuyFeature {
     this.container.add(this.minusButton);
 
     // Bet display - show current bet value (5x when buy feature 2 selected)
-    const currencyPrefix = CurrencyManager.getInlinePrefix();
+    const isDemoBet = (scene as any).gameAPI?.getDemoState();
+    const displayBet = this.getDisplayBetAmount();
     this.betDisplay = scene.add.text(
       x,
       y,
-      `${currencyPrefix}${formatCurrencyNumber(this.getDisplayBetAmount())}`,
+      isDemoBet ? formatCurrencyNumber(displayBet) : CurrencyManager.formatAmount(displayBet),
       {
         fontSize: "24px",
         color: "#ffffff",
@@ -1427,9 +1433,10 @@ export class BuyFeature {
 
   private updateBetDisplay(): void {
     if (this.betDisplay) {
-      const currencyPrefix = CurrencyManager.getInlinePrefix();
+      const isDemo = (this.container?.scene as any)?.gameAPI?.getDemoState();
+      const displayBet = this.getDisplayBetAmount();
       this.betDisplay.setText(
-        `${currencyPrefix}${formatCurrencyNumber(this.getDisplayBetAmount())}`,
+        isDemo ? formatCurrencyNumber(displayBet) : CurrencyManager.formatAmount(displayBet),
       );
     }
   }

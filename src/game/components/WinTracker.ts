@@ -8,7 +8,6 @@ import {
 } from './Spin';
 import { UI_CONFIG } from '../../config/GameConfig';
 import { Logger } from '../../utils/Logger';
-import { CurrencyManager } from './CurrencyManager';
 import { formatCurrencyNumber } from '../../utils/NumberPrecisionFormatter';
 
 interface WinTrackerLayoutOptions {
@@ -342,9 +341,7 @@ export class WinTracker {
       0,
       0,
       (() => {
-        const isDemo = (this.scene as any).gameAPI?.getDemoState();
-        const currencyPrefix = isDemo ? '' : CurrencyManager.getInlinePrefix();
-        return `${currencyPrefix}${formatCurrencyNumber(data.totalWin)}`;
+        return formatCurrencyNumber(data.totalWin);
       })(),
       {
         fontSize: `${this.labelFontSize}px`,

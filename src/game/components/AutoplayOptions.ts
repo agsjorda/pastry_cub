@@ -248,8 +248,9 @@ export class AutoplayOptions {
 		// Balance amount - using the current balance from game data
 		// Check if demo mode is active - if so, use blank currency prefix
 		const isDemo = (scene as any).gameAPI?.getDemoState();
-		const prefix = isDemo ? '' : CurrencyManager.getInlinePrefix();
-		const balanceAmount = scene.add.text(150, 1, `${prefix}${this.currentBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, {
+		const currencyCode = isDemo ? '' : CurrencyManager.getCurrencyCode();
+		const formattedBalance = formatCurrencyNumber(this.currentBalance);
+		const balanceAmount = scene.add.text(150, 1, currencyCode ? `${currencyCode}\u00A0${formattedBalance}` : formattedBalance, {
 			fontSize: '20px',
 			color: '#00ff00',
 			fontFamily: 'Poppins-Bold'
@@ -381,8 +382,9 @@ export class AutoplayOptions {
 		this.container.add(this.minusButton);
 		
 		// Bet display
-		const displayPrefix = ((scene as any).gameAPI?.getDemoState?.() ? '' : CurrencyManager.getInlinePrefix());
-		this.autoplayDisplay = scene.add.text(x, y, `${displayPrefix}${formatCurrencyNumber(this.currentBet)}` , {
+		const isDemoBet = !!(scene as any).gameAPI?.getDemoState?.();
+		const initialAutoplayBet = isDemoBet ? formatCurrencyNumber(this.currentBet) : CurrencyManager.formatAmount(this.currentBet);
+		this.autoplayDisplay = scene.add.text(x, y, initialAutoplayBet , {
 			fontSize: '24px',
 			color: '#ffffff',
 			fontFamily: 'Poppins-Bold'
@@ -576,16 +578,17 @@ export class AutoplayOptions {
 		if (this.autoplayDisplay) {
 			const displayBet = this.isEnhancedBet ? this.currentBet * 1.25 : this.currentBet;
 			const isDemo = (this.container?.scene as any)?.gameAPI?.getDemoState?.();
-			const prefix = isDemo ? '' : CurrencyManager.getInlinePrefix();
-			this.autoplayDisplay.setText(`${prefix}${formatCurrencyNumber(displayBet)}`);
+			const formattedDisplayBet = isDemo ? formatCurrencyNumber(displayBet) : CurrencyManager.formatAmount(displayBet);
+			this.autoplayDisplay.setText(formattedDisplayBet);
 		}
 	}
 
 	private updateBalanceDisplay(): void {
 		if (this.balanceAmountText) {
 			const isDemo = (this.container?.scene as any)?.gameAPI?.getDemoState?.();
-			const prefix = isDemo ? '' : CurrencyManager.getInlinePrefix();
-			this.balanceAmountText.setText(`${prefix}${formatCurrencyNumber(this.currentBalance)}`);
+			const currencyCode = isDemo ? '' : CurrencyManager.getCurrencyCode();
+			const formatted = formatCurrencyNumber(this.currentBalance);
+			this.balanceAmountText.setText(currencyCode ? `${currencyCode}\u00A0${formatted}` : formatted);
 		}
 	}
 

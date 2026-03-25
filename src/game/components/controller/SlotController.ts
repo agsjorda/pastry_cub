@@ -2032,8 +2032,7 @@ export class SlotController {
 		const price = hasOverride
 			? this.featureButtonAmountOverride!
 			: baseBet * 100;
-		// Format with thousands separators and 2 decimals
-		this.featureAmountText.setText(price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+		this.featureAmountText.setText(formatCurrencyNumber(price));
 		const isDemo = this.gameAPI?.getDemoState();
 		if (this.scene) {
 			const featureX = this.scene.scale.width * 0.5;
