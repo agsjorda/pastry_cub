@@ -16,6 +16,7 @@ import { LOCALIZATION_DEFAULTS } from '../../backend/LocalizationData';
 import { localizationManager } from '../../managers/LocalizationManager';
 import { playRadialDimmerTransition } from '../utils/playRadialDimmerTransition';
 import { unresolvedSpinManager } from '../../managers/UnresolvedSpinManager';
+import { AudioManager, MusicType } from '../../managers/AudioManager';
 
 export class Preloader extends Scene
 {
@@ -35,6 +36,8 @@ export class Preloader extends Scene
 	private websiteText?: Phaser.GameObjects.Text;
 	private maxWinText?: Phaser.GameObjects.Text;
 	private fullscreenBtn?: Phaser.GameObjects.Image;
+	private audioManager?: AudioManager;
+	private transitionBlackCover?: Phaser.GameObjects.Rectangle;
 
 	constructor ()
 	{
@@ -233,13 +236,50 @@ export class Preloader extends Scene
 
 		// Start game on click – use radial dimmer transition then start Game
         this.buttonSpin?.once('pointerdown', () => {
+			// Attempt to unlock audio on the same gesture that starts the transition.
+			try { (this.sound as any)?.unlock?.(); } catch {}
+			try {
+				const ctx: any = (this.sound as any)?.context;
+				if (ctx && typeof ctx.resume === 'function' && ctx.state === 'suspended') {
+					ctx.resume();
+				}
+			} catch {}
+
+			// Create (once) an AudioManager in Preloader so music can start during the transition.
+			if (!this.audioManager) {
+				this.audioManager = new AudioManager(this);
+				(window as any).audioManager = this.audioManager;
+			}
+
             playRadialDimmerTransition(this, () => {
+				// Match grave_threat: once the transition finishes, never show the preloader again.
+				try {
+					this.transitionBlackCover = this.add.rectangle(
+						this.scale.width * 0.5,
+						this.scale.height * 0.5,
+						this.scale.width,
+						this.scale.height,
+						0x000000
+					).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(100001).setAlpha(1);
+					this.events.once('shutdown', () => {
+						try { this.transitionBlackCover?.destroy(); } catch {}
+						this.transitionBlackCover = undefined;
+					});
+				} catch {}
                 this.scene.start('Game', {
                     networkManager: this.networkManager,
                     screenModeManager: this.screenModeManager,
-                    gameAPI: this.gameAPI
+                    gameAPI: this.gameAPI,
+					audioManager: this.audioManager,
                 });
-            });
+            }, {
+				// Seamless handoff: start MAIN BGM immediately after the whistle ends,
+				// even if the Game scene hasn't finished creating yet.
+				onWhistleComplete: () => {
+					try { this.audioManager?.createMusicInstances?.(); } catch {}
+					try { this.audioManager?.playBackgroundMusic?.(MusicType.MAIN); } catch {}
+				}
+			});
         });
 
 		// Start loading audio in the background now that the main visual load is complete.

@@ -66,6 +66,11 @@ export class AudioManager {
 		this.scene = scene;
 	}
 
+	/** Rebind the manager to a new scene (same Phaser SoundManager underneath). */
+	public setScene(scene: Phaser.Scene): void {
+		this.scene = scene;
+	}
+
 	/**
 	 * Preload all background music and sound effect files
 	 */
@@ -98,7 +103,13 @@ export class AudioManager {
 	 * Create music and sound effect instances after loading
 	 */
 	createMusicInstances(): void {
-		
+		// Idempotent: do not create duplicate BaseSound instances (prevents double BGM).
+		try {
+			if (this.musicInstances.get(MusicType.MAIN) && this.musicInstances.get(MusicType.BONUS) && this.musicInstances.get(MusicType.FREE_SPIN)) {
+				return;
+			}
+		} catch {}
+
 		try {
 			// Create main background music
 			const mainMusic = this.scene.sound.add('mainbg', {
@@ -455,6 +466,16 @@ export class AudioManager {
 		if (this.isMuted) {
 			return;
 		}
+
+		// If the requested track is already playing, don't restart it (prevents audible cut).
+		try {
+			if (this.currentMusic === musicType) {
+				const current = this.musicInstances.get(musicType);
+				if (current && current.isPlaying) {
+					return;
+				}
+			}
+		} catch {}
 
 		// Stop current music if playing
 		this.stopCurrentMusic();

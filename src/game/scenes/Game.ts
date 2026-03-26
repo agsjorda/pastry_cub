@@ -131,6 +131,15 @@ export class Game extends Scene {
 			this.gameAPI = new GameAPI(this.gameData);
 		}
 
+		// Reuse the AudioManager created in Preloader (so music can start during the transition).
+		// Rebind it to this scene so future SFX/music calls use the active scene.
+		try {
+			if (data.audioManager) {
+				this.audioManager = data.audioManager as AudioManager;
+				this.audioManager.setScene(this);
+			}
+		} catch {}
+
 	}
 
 	public getCurrentBetAmount(): number {
@@ -301,15 +310,30 @@ export class Game extends Scene {
 	}
 
 	private createAudio(): void {
-		this.audioManager = new AudioManager(this);
+		// If Preloader handed us an audioManager, keep it to avoid restarting music.
+		if (!this.audioManager) {
+			this.audioManager = new AudioManager(this);
+		} else {
+			try { this.audioManager.setScene(this); } catch {}
+		}
 		this.time.delayedCall(0, () => {
 			const tryInitAudio = () => {
 				try {
+					// If Preloader already created/started BGM, avoid creating duplicates.
 					this.audioManager.createMusicInstances();
 					this.audioManager.playBackgroundMusic(MusicType.MAIN);
 					return true;
 				} catch { return false; }
 			};
+			// If MAIN is already playing (e.g. started in Preloader after whistle), do nothing.
+			try {
+				const anyAm: any = this.audioManager as any;
+				if (anyAm?.hasMusicInstance?.(MusicType.MAIN)) {
+					// playBackgroundMusic is safe (won't restart same track), but avoid extra work.
+					this.audioManager.playBackgroundMusic(MusicType.MAIN);
+					return;
+				}
+			} catch {}
 			if (tryInitAudio()) return;
 			try {
 				const audioAssets = new AssetConfig(this.networkManager, this.screenModeManager).getAudioAssets();
@@ -331,6 +355,32 @@ export class Game extends Scene {
 			}
 		});
 		(window as any).audioManager = this.audioManager;
+
+		// Ensure background music starts as soon as the Game scene is visible.
+		// On some browsers, audio is blocked until the first user gesture; unlock/resume then retry.
+		const ensureUnlockedAndPlay = () => {
+			try {
+				// Phaser WebAudioSoundManager exposes `unlock()` / `locked` in WebAudio mode.
+				(this.sound as any)?.unlock?.();
+			} catch {}
+			try {
+				const ctx: any = (this.sound as any)?.context;
+				if (ctx && typeof ctx.resume === 'function' && ctx.state === 'suspended') {
+					ctx.resume();
+				}
+			} catch {}
+			// Don't create duplicate instances here; only ensure playback.
+			try {
+				this.audioManager.playBackgroundMusic(MusicType.MAIN);
+			} catch {}
+		};
+
+		try {
+			// Immediate attempt (works when autoplay is allowed).
+			ensureUnlockedAndPlay();
+			// Gesture fallback: first tap/click starts music reliably.
+			this.input.once('pointerdown', ensureUnlockedAndPlay);
+		} catch {}
 	}
 
 	private createDialogsAndScatter(): void {

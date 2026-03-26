@@ -6,13 +6,25 @@ import { RadialDimmerTransition } from '../components/RadialDimmerTransition';
  * Used e.g. from Preloader to transition into the Game scene.
  * Plays whistle_BB.ogg at the start of the transition when available.
  */
-export function playRadialDimmerTransition(scene: Scene, onComplete: () => void): void {
+export function playRadialDimmerTransition(
+	scene: Scene,
+	onComplete: () => void,
+	opts?: { onWhistleComplete?: () => void },
+): void {
 	// Play whistle SFX at transition start (asset key 'whistle' – e.g. whistle_BB.ogg)
 	try {
 		if (scene.cache.audio.exists('whistle')) {
-			scene.sound.play('whistle', { volume: 0.55 });
+			const whistle = scene.sound.add('whistle', { volume: 0.55, loop: false });
+			if (opts?.onWhistleComplete) {
+				try { whistle.once('complete', opts.onWhistleComplete); } catch {}
+			}
+			whistle.play();
+		} else {
+			opts?.onWhistleComplete?.();
 		}
-	} catch (_) {}
+	} catch (_) {
+		try { opts?.onWhistleComplete?.(); } catch {}
+	}
 
 	const dimmer = new RadialDimmerTransition(scene);
 	const centerX = scene.scale.width * 0.5;
