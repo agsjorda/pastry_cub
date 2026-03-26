@@ -480,7 +480,12 @@ export class AudioManager {
 		// Stop current music if playing
 		this.stopCurrentMusic();
 
-		const music = this.musicInstances.get(musicType);
+		// If instances weren't created yet (race with scene startup), create them and retry once.
+		let music = this.musicInstances.get(musicType);
+		if (!music) {
+			try { this.createMusicInstances(); } catch {}
+			music = this.musicInstances.get(musicType);
+		}
 		if (music) {
 			try {
 				music.play();
@@ -490,6 +495,7 @@ export class AudioManager {
 				console.error(`[AudioManager] Error playing ${musicType} music:`, error);
 			}
 		} else {
+			// This can still happen if the audio key isn't loaded yet.
 			console.warn(`[AudioManager] Music instance not found for type: ${musicType}`);
 		}
 	}
